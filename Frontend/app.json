@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "WoW Laundry",
+    "slug": "Frontend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/iconic.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/iconic.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.salgotra111.Frontend",
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8a80cf63-bf9b-4c62-b807-480683bdd06c"
+      }
+    },
+    "owner": "salgotra111"
+  }
+}

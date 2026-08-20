@@ -1,0 +1,28 @@
+# Environment variables — NEVER commit real credentials
+.env
+.env.local
+.env.*.local
+.env.development
+.env.staging
+.env.production
+
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Secrets and service account keys
+firebase-service-account.json
+google-services.json
+GoogleService-Info.plist
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# OS
+.DS_Store
+Thumbs.db

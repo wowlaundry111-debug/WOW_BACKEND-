@@ -1,0 +1,20 @@
+{
+  "name": "@wow/auth-service",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@wow/shared": "*",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
+    "nodemailer": "^8.0.10"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/nodemailer": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}
