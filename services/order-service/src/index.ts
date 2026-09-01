@@ -448,6 +448,98 @@ router.patch('/:orderId/admin-details', requireAuth, requireRole(['ShopAdmin', '
   }
 });
 
+// Update KG item weights (Delivery agent — after weighing clothes at delivery time)
+// Body: { items: [{ itemId: string, kgWeight: number }] }
+// Each KG item's price is computed as kgWeight * (catalog pricePerKg from the item record)
+// After update, totalAmount is recalculated and kgPriceUpdated is set to true.
+router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const { items: weightUpdates } = req.body;
+    if (!Array.isArray(weightUpdates) || weightUpdates.length === 0) {
+      return res.status(400).json({ error: 'items array with { itemId, kgWeight } entries is required' });
+    }
+
+    const order = await Order.findById(req.params.orderId) as any;
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // Fetch catalog items to get pricePerKg values
+    const { Item } = require('@wow/shared');
+    const itemIds = weightUpdates.map((u: any) => u.itemId);
+    const catalogItems = await Item.find({ _id: { $in: itemIds } }).select('_id pricePerKg').lean() as any[];
+    const catalogMap: Record<string, number> = {};
+    catalogItems.forEach((ci: any) => {
+      catalogMap[ci._id] = ci.pricePerKg || 0;
+    });
+
+    // Apply weights to order items
+    let addedKgTotal = 0;
+    const updatedItems = order.items.map((it: any) => {
+      const update = weightUpdates.find((u: any) => u.itemId === it.itemId);
+      if (update && it.unit === 'KG') {
+        const kgWeight = Math.max(0, Number(update.kgWeight) || 0);
+        const pricePerKg = catalogMap[it.itemId] || 0;
+        const kgPrice = Math.round(kgWeight * pricePerKg * 100) / 100;
+        addedKgTotal += kgPrice;
+        return { ...it.toObject(), kgWeight, price: kgPrice };
+      }
+      // Non-KG items already have price; add them to running total
+      if (it.unit !== 'KG') {
+        addedKgTotal += it.price * it.quantity;
+      }
+      return it;
+    });
+
+    // Recalculate total from scratch (perItem + KG + fees - discount + tax)
+    const perItemSubtotal = updatedItems
+      .filter((it: any) => it.unit !== 'KG')
+      .reduce((s: number, it: any) => s + it.price * it.quantity, 0);
+
+    const kgSubtotal = updatedItems
+      .filter((it: any) => it.unit === 'KG')
+      .reduce((s: number, it: any) => s + (it.price || 0), 0);
+
+    const newTotal = perItemSubtotal + kgSubtotal
+      + (order.taxAmount || 0)
+      + (order.deliveryFee || 0)
+      - (order.discountAmount || 0)
+      + ((order.washPreferences || []).reduce((s: number, p: any) => s + (p.price || 0), 0));
+
+    order.items = updatedItems;
+    order.totalAmount = Math.round(newTotal * 100) / 100;
+    order.kgPriceUpdated = true;
+    await order.save();
+
+    const updatedOrder = order.toObject();
+    res.json(updatedOrder);
+
+    // Notify customer and shop
+    emitToShop(req, updatedOrder.shopId, 'order_updated', updatedOrder);
+    emitToUser(req, String(updatedOrder.customerId), 'order_updated', updatedOrder);
+
+    // Push notification to customer
+    setImmediate(async () => {
+      try {
+        const customer = await User.findById(updatedOrder.customerId).select('expoPushToken').lean() as any;
+        if (customer?.expoPushToken) {
+          await sendPushNotification(
+            [customer.expoPushToken],
+            'Order Total Updated 🏋️',
+            `Your KG items have been weighed. Total: ₹${updatedOrder.totalAmount}`,
+            { orderId: updatedOrder._id }
+          );
+        }
+      } catch (e) {
+        console.error('Failed to send kg-weight notification:', e);
+      }
+    });
+  } catch (err) {
+    console.error('Failed to update kg weights:', err);
+    res.status(500).json({ error: 'Failed to update KG weights' });
+  }
+});
+
+
+
 // Verify order items (Delivery & Admin — pickup confirmation / count verification step)
 router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {

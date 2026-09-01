@@ -105,12 +105,14 @@ export interface IOrder {
     quantity: number;
     unit?: string;
     price: number;
+    kgWeight?: number; // set by delivery agent after weighing
   }[];
   washPreferences?: {
     name: string;
     price: number;
   }[];
   totalAmount: number;
+  kgPriceUpdated?: boolean; // true once delivery agent has weighed and finalized KG item prices
   taxAmount?: number;
   deliveryFee?: number;
   discountAmount?: number;

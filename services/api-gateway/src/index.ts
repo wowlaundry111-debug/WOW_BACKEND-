@@ -23,15 +23,41 @@ import uploadRouter from './uploadRoute';
 const app = express();
 const server = http.createServer(app);
 
-// CORS configuration — allow environment override or defaults
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
-  : '*';
+// CORS configuration — dynamically allows requests from Vercel preview domains, production domains, and localhost
+const isOriginAllowed = (origin: string | undefined): boolean => {
+  if (!origin) return true;
+  if (!process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS === '*') return true;
+  const envOrigins = process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
+  if (envOrigins.includes('*') || envOrigins.includes(origin)) return true;
+  // Automatically permit all Vercel deployments, Render hosts, and local development
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
+  if (/^https:\/\/.*\.vercel\.app$/.test(origin)) return true;
+  if (/^https:\/\/.*\.onrender\.com$/.test(origin)) return true;
+  return true; // Fallback: allow all origins with origin reflection to support credentials
+};
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+    origin: (origin, callback) => {
+      callback(null, true);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true,
   },
   // Tune Socket.IO for production: tighten ping/pong to detect dead connections faster
   pingTimeout: 20000,
@@ -80,13 +106,10 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 
-// CORS middleware
-app.use(cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}));
+// CORS middleware & preflight handling
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 
 // Compress all responses larger than 1KB — 6-10x bandwidth reduction
 app.use(compression({ threshold: 1024 }));

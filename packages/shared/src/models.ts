@@ -122,13 +122,15 @@ const OrderSchema = new Schema<IOrder>({
     name: { type: String },
     quantity: { type: Number, required: true },
     unit: { type: String },
-    price: { type: Number, required: true }
+    price: { type: Number, required: true },
+    kgWeight: { type: Number }, // set by delivery agent after weighing
   }],
   washPreferences: [{
     name: { type: String },
     price: { type: Number }
   }],
   totalAmount: { type: Number, required: true },
+  kgPriceUpdated: { type: Boolean, default: false },
   taxAmount: { type: Number },
   deliveryFee: { type: Number },
   discountAmount: { type: Number, default: 0 },
