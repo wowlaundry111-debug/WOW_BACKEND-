@@ -163,6 +163,10 @@ app.use('/api/orders', orderRouter);
 app.use('/api/upload', uploadRouter);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
+app.all('/', (_req: Request, res: Response) => {
+  res.json({ status: 'OK', message: 'WOW API Gateway is running', uptime: process.uptime() });
+});
+
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'API Gateway is running', uptime: process.uptime() });
 });
