@@ -74,9 +74,12 @@ export interface IItem {
   description?: string;
   pricePerItem?: number;
   pricePerKg?: number;
+  price?: number;
+  unit?: 'KG' | 'ITEM';
   image?: string;
   isActive: boolean;
 }
+
 
 export interface IOffer {
   _id: string;
