@@ -18,27 +18,40 @@ const router = Router();
 let transporter: nodemailer.Transporter | null = null;
 function getTransporter() {
   if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '465'),
-      secure: process.env.SMTP_SECURE !== 'false',
-      auth: {
-        user: process.env.SMTP_USER || '',
-        pass: process.env.SMTP_PASS || '',
-      },
-      tls: { rejectUnauthorized: true },
-      connectionTimeout: 3000,
-      greetingTimeout: 3000,
-      socketTimeout: 3000,
-      family: 4,
-    } as any);
+    const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
+    const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
+    const isGmail = (process.env.SMTP_HOST || '').includes('gmail') || user.endsWith('@gmail.com');
+
+    if (isGmail) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user, pass },
+        pool: true,
+        maxConnections: 5,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+      });
+    } else {
+      const port = parseInt(process.env.SMTP_PORT || '587', 10);
+      const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port,
+        secure: isSecure,
+        auth: { user, pass },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+      });
+    }
   }
   return transporter;
 }
 
 async function sendOtpEmail(email: string, otp: string) {
   const mailOptions = {
-    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'no-reply@wow.com'}>`,
+    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'salgotraaditya555@gmail.com'}>`,
     to: email,
     subject: 'WOW Laundry Verification Code',
     text: `Your verification code is ${otp}. It is valid for 5 minutes.`,
@@ -55,17 +68,20 @@ async function sendOtpEmail(email: string, otp: string) {
     `,
   };
 
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log(`[SMTP Config Missing] Fallback OTP for ${email}: ${otp}`);
+  const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
+  const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
+
+  if (!user || !pass) {
+    console.warn(`[SMTP Config Missing] Fallback OTP for ${email}: ${otp}`);
     return false;
   }
 
   try {
-    await getTransporter().sendMail(mailOptions);
-    console.log(`OTP email sent to ${email}`);
+    const info = await getTransporter().sendMail(mailOptions);
+    console.log(`[SMTP Success] OTP email sent to ${email} (MessageId: ${info.messageId})`);
     return true;
-  } catch (error) {
-    console.error(`Failed to send OTP email to ${email}:`, error);
+  } catch (error: any) {
+    console.error(`[SMTP Error] Failed to send OTP email to ${email}:`, error.message || error);
     return false;
   }
 }
