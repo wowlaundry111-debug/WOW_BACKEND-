@@ -154,13 +154,24 @@ const globalLimiter = rateLimit({
 app.use(globalLimiter);
 
 // ── Service Routers (with targeted rate limiters) ─────────────────────────────
+// Supports both with '/api' prefix and root paths seamlessly
 app.use('/api/auth/send-otp', otpSendLimiter);
+app.use('/auth/send-otp', otpSendLimiter);
 app.use('/api/auth/verify-otp', otpVerifyLimiter);
+app.use('/auth/verify-otp', otpVerifyLimiter);
 app.use('/api/auth', authRouter);
+app.use('/auth', authRouter);
+
 app.use('/api/catalog', catalogRouter);
-app.use('/api/orders', orderCreateLimiter); // applies to POST /api/orders
+app.use('/catalog', catalogRouter);
+
+app.use('/api/orders', orderCreateLimiter);
+app.use('/orders', orderCreateLimiter);
 app.use('/api/orders', orderRouter);
+app.use('/orders', orderRouter);
+
 app.use('/api/upload', uploadRouter);
+app.use('/upload', uploadRouter);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.all('/', (_req: Request, res: Response) => {
