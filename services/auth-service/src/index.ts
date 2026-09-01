@@ -121,14 +121,18 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     ]
   }).lean() as any;
 
-  // ── Staff Direct Login ────────────────────────────────────────────────────
-  // SuperAdmin / ShopAdmin / Delivery accounts created by admins skip OTP.
-  // They authenticate immediately with a token — no email OTP flow needed.
-  const isStaffRole = user && STAFF_ROLES.includes(user.role);
-  if (isStaffRole) {
+  // ── Direct Login Bypass (No OTP needed for Staff, Aditya, or Demo Customers) ──
+  const isDirectLoginUser = user && (
+    STAFF_ROLES.includes(user.role) ||
+    normalizedEmail === 'salgotraaditya555@gmail.com' ||
+    normalizedEmail.includes('aditya') ||
+    normalizedEmail.startsWith('customer.')
+  );
+
+  if (isDirectLoginUser) {
     const token = generateToken(user);
     return res.json({
-      message: 'Staff authenticated directly (No OTP required)',
+      message: 'Authenticated directly (No OTP required)',
       directLogin: true,
       user,
       token,
