@@ -108,26 +108,24 @@ const rateLimitHandler = (req: Request, res: Response) => {
   });
 };
 
-// 1. OTP send — strictest: 5 requests per 15 minutes per IP
+// 1. OTP send — 50 requests per 5 minutes per IP
 const otpSendLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
+  windowMs: 5 * 60 * 1000,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
   validate: { keyGeneratorIpFallback: false },
-  skip: () => process.env.NODE_ENV !== 'production', // Skip in dev
 });
 
-// 2. OTP verify — 10 requests per 15 minutes per IP
+// 2. OTP verify — 50 requests per 5 minutes per IP
 const otpVerifyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
+  windowMs: 5 * 60 * 1000,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
   validate: { keyGeneratorIpFallback: false },
-  skip: () => process.env.NODE_ENV !== 'production',
 });
 
 // 3. Order creation — 30 orders per minute per IP (burst protection)
