@@ -86,7 +86,7 @@ const ORDERS = [
     ],
     totalAmount: 220,
     paymentStatus: 'PENDING',
-    paymentMode: 'CASH',
+    paymentMode: 'COD',
     pickupAddress: 'Hostel 1',
     deliveryAddress: 'Hostel 1',
     createdAt: new Date().toISOString()
@@ -103,8 +103,8 @@ const ORDERS = [
       { itemId: 'item_lg_4', name: 'Heavy Winter Jacket', quantity: 1, unit: 'ITEM', price: 250 }
     ],
     totalAmount: 250,
-    paymentStatus: 'PAID',
-    paymentMode: 'ONLINE',
+    paymentStatus: 'SUCCESS',
+    paymentMode: 'UPI',
     pickupAddress: 'Hostel 1',
     deliveryAddress: 'Hostel 1',
     createdAt: new Date(Date.now() - 86400000).toISOString()
