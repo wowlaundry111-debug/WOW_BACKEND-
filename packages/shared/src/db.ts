@@ -2,41 +2,52 @@ import mongoose from 'mongoose';
 
 let isConnected = false;
 
-export const connectDB = async () => {
+export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
   if (isConnected) {
     return;
   }
-  try {
-    const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/wow_laundry';
-    const db = await mongoose.connect(MONGODB_URI, {
-      maxPoolSize: 100,       // Allow up to 100 concurrent DB pool connections for high concurrency
-      minPoolSize: 10,        // Keep 10 warm connections ready
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      heartbeatFrequencyMS: 10000,
-      connectTimeoutMS: 10000,
-      retryWrites: true,
-      w: 'majority',
-    });
-    isConnected = db.connections[0].readyState === 1;
 
-    // Production connection monitoring
-    mongoose.connection.on('error', (err) => {
-      process.stdout.write(JSON.stringify({ ts: new Date().toISOString(), level: 'error', msg: 'MongoDB connection error', error: err.message }) + '\n');
-    });
-    mongoose.connection.on('disconnected', () => {
-      isConnected = false;
-      process.stdout.write(JSON.stringify({ ts: new Date().toISOString(), level: 'warn', msg: 'MongoDB disconnected — Mongoose will retry automatically' }) + '\n');
-    });
-    mongoose.connection.on('reconnected', () => {
-      isConnected = true;
-      process.stdout.write(JSON.stringify({ ts: new Date().toISOString(), level: 'info', msg: 'MongoDB reconnected' }) + '\n');
-    });
+  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/wow_laundry';
 
-    console.log('MongoDB Connected');
-  } catch (error) {
-    console.error('MongoDB connection error:', error);
-    process.exit(1);
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`Attempting MongoDB connection (attempt ${attempt}/${retries})...`);
+      const db = await mongoose.connect(MONGODB_URI, {
+        maxPoolSize: 50,
+        minPoolSize: 5,
+        serverSelectionTimeoutMS: 30000,
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 30000,
+        retryWrites: true,
+        w: 'majority',
+      });
+      isConnected = db.connections[0].readyState === 1;
+
+      // Production connection monitoring
+      mongoose.connection.on('error', (err) => {
+        console.error('MongoDB connection error:', err.message);
+      });
+      mongoose.connection.on('disconnected', () => {
+        isConnected = false;
+        console.warn('MongoDB disconnected — Mongoose will retry automatically');
+      });
+      mongoose.connection.on('reconnected', () => {
+        isConnected = true;
+        console.log('MongoDB reconnected');
+      });
+
+      console.log('MongoDB Connected successfully');
+      return;
+    } catch (error: any) {
+      console.error(`MongoDB connection attempt ${attempt} failed:`, error.message || error);
+      if (attempt < retries) {
+        console.log(`Retrying in ${delayMs / 1000}s...`);
+        await new Promise((res) => setTimeout(res, delayMs));
+      } else {
+        console.error('All MongoDB connection attempts failed. Exiting process.');
+        process.exit(1);
+      }
+    }
   }
 };
 
