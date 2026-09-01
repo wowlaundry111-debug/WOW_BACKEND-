@@ -1,0 +1,24 @@
+{
+  "name": "wow-backend",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "start": "node services/api-gateway/dist/index.js",
+    "build": "npm run build -w @wow/shared && npm run build -w @wow/auth-service && npm run build -w @wow/catalog-service && npm run build -w @wow/order-service && npm run build -w @wow/api-gateway",
+    "dev": "concurrently \"npm run dev -w @wow/shared\" \"npm run dev -w @wow/auth-service\" \"npm run dev -w @wow/catalog-service\" \"npm run dev -w @wow/order-service\" \"npm run dev -w @wow/api-gateway\""
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.0",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "mongodb-memory-server": "^11.2.0",
+    "socket.io": "^4.8.3"
+  }
+}
