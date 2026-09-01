@@ -90,7 +90,20 @@ router.post('/send-otp', async (req: Request, res: Response) => {
   }
 
   const normalizedEmail = email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail }).lean() as any;
+  
+  // Look up user by normalized email OR domain alias (@wowlaundry.com <-> @wow.com)
+  const aliasEmail = normalizedEmail.includes('@wowlaundry.com')
+    ? normalizedEmail.replace('@wowlaundry.com', '@wow.com')
+    : normalizedEmail.includes('@wow.com')
+      ? normalizedEmail.replace('@wow.com', '@wowlaundry.com')
+      : null;
+
+  const user = await User.findOne({
+    $or: [
+      { email: normalizedEmail },
+      ...(aliasEmail ? [{ email: aliasEmail }] : [])
+    ]
+  }).lean() as any;
 
   // ── Staff Direct Login ────────────────────────────────────────────────────
   // SuperAdmin / ShopAdmin / Delivery accounts created by admins skip OTP.
