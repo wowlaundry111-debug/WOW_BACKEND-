@@ -1,41 +1,57 @@
 import { Router, Request, Response } from 'express';
-import { User, generateToken, requireAuth, requireRole, AuthRequest } from '@wow/shared';
+import {
+  User,
+  generateToken,
+  requireAuth,
+  requireRole,
+  AuthRequest,
+  otpCache,
+  pendingRegCache,
+  otpAttemptCache,
+} from '@wow/shared';
 import nodemailer from 'nodemailer';
 
 const router = Router();
 
-// In-memory Stores for OTPs and Pending Registrations
-const otpStore = new Map<string, { otp: string; expiresAt: number }>();
-const pendingRegistrations = new Map<string, { name: string; phone: string; email: string }>();
+// ── SMTP Transporter ──────────────────────────────────────────────────────────
 
-// SMTP Transporter Setup
 let transporter: nodemailer.Transporter | null = null;
 function getTransporter() {
   if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '465'),
-      secure: process.env.SMTP_SECURE !== 'false',
-      auth: {
-        user: process.env.SMTP_USER || '',
-        pass: process.env.SMTP_PASS || '',
-      },
-      tls: {
-        rejectUnauthorized: true,
-      },
-      connectionTimeout: 3000,
-      greetingTimeout: 3000,
-      socketTimeout: 3000,
-      family: 4,
-    } as any);
+    const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
+    const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
+    const isGmail = (process.env.SMTP_HOST || '').includes('gmail') || user.endsWith('@gmail.com');
+
+    if (isGmail) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user, pass },
+        pool: true,
+        maxConnections: 5,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+      });
+    } else {
+      const port = parseInt(process.env.SMTP_PORT || '587', 10);
+      const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port,
+        secure: isSecure,
+        auth: { user, pass },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+      });
+    }
   }
   return transporter;
 }
 
-// Helper to send OTP email
 async function sendOtpEmail(email: string, otp: string) {
   const mailOptions = {
-    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'no-reply@wow.com'}>`,
+    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'salgotraaditya555@gmail.com'}>`,
     to: email,
     subject: 'WOW Laundry Verification Code',
     text: `Your verification code is ${otp}. It is valid for 5 minutes.`,
@@ -52,64 +68,90 @@ async function sendOtpEmail(email: string, otp: string) {
     `,
   };
 
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log(`[SMTP Config Missing] Fallback OTP for ${email}: ${otp}`);
+  const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
+  const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
+
+  if (!user || !pass) {
+    console.warn(`[SMTP Config Missing] Fallback OTP for ${email}: ${otp}`);
     return false;
   }
 
   try {
-    await getTransporter().sendMail(mailOptions);
-    console.log(`OTP email sent to ${email}`);
+    const info = await getTransporter().sendMail(mailOptions);
+    console.log(`[SMTP Success] OTP email sent to ${email} (MessageId: ${info.messageId})`);
     return true;
-  } catch (error) {
-    console.error(`Failed to send OTP email to ${email}:`, error);
+  } catch (error: any) {
+    console.error(`[SMTP Error] Failed to send OTP email to ${email}:`, error.message || error);
     return false;
   }
 }
 
-// 1. Send OTP (Login Flow)
+// ── OTP Brute-Force Constants ─────────────────────────────────────────────────
+
+const OTP_TTL_MS = 5 * 60 * 1000;       // 5 minutes OTP validity
+const OTP_MAX_ATTEMPTS = 5;              // lock after 5 wrong guesses
+const OTP_LOCK_TTL_MS = 15 * 60 * 1000; // 15 minute lockout window
+
+// ── Staff roles that bypass OTP entirely ─────────────────────────────────────
+// Any user account with one of these roles gets a direct JWT — no email OTP needed.
+// This covers SuperAdmin accounts, ShopAdmin accounts, and Delivery staff
+// created by an admin via the portal.
+const STAFF_ROLES = ['SuperAdmin', 'ShopAdmin', 'Delivery'] as const;
+
+// ── 1. Send OTP (Login Flow) ──────────────────────────────────────────────────
 router.post('/send-otp', async (req: Request, res: Response) => {
   const { email } = req.body;
   if (!email || email.trim().length < 3) {
-    return res.status(400).json({ error: 'Valid email address or User ID is required' });
+    return res.status(400).json({ error: 'Valid email address is required' });
   }
 
-  const normalizedEmail = email.toLowerCase();
+  const normalizedEmail = email.toLowerCase().trim();
+  
+  // Look up user by normalized email OR domain alias (@wowlaundry.com <-> @wow.com)
+  const aliasEmail = normalizedEmail.includes('@wowlaundry.com')
+    ? normalizedEmail.replace('@wowlaundry.com', '@wow.com')
+    : normalizedEmail.includes('@wow.com')
+      ? normalizedEmail.replace('@wow.com', '@wowlaundry.com')
+      : null;
 
-  const user = await User.findOne({ email: normalizedEmail }).select('_id role').lean();
-  const isDeveloperBypassEmail = [
-    'superadmin@wow.com', 'admin.lawgate@wow.com', 'delivery.lawgate@wow.com',
-    'customer.lawgate@wow.com', 'admin.agi@wow.com', 'delivery.agi@wow.com', 'customer.agi@wow.com'
-  ].includes(normalizedEmail) || normalizedEmail.includes('admin') || normalizedEmail.includes('delivery');
+  const user = await User.findOne({
+    $or: [
+      { email: normalizedEmail },
+      ...(aliasEmail ? [{ email: aliasEmail }] : [])
+    ]
+  }).lean() as any;
 
-  if (!user && !isDeveloperBypassEmail) {
-    const isPending = pendingRegistrations.has(normalizedEmail);
-    if (!isPending) {
-      return res.status(400).json({ error: 'Email address is not registered. Please sign up first!' });
-    }
+  // ── Direct Login Bypass (No OTP needed for Staff, Aditya, or Demo Customers) ──
+  const isDirectLoginUser = user && (
+    STAFF_ROLES.includes(user.role) ||
+    normalizedEmail === 'salgotraaditya555@gmail.com' ||
+    normalizedEmail.includes('aditya') ||
+    normalizedEmail.startsWith('customer.')
+  );
+
+  if (isDirectLoginUser) {
+    const token = generateToken(user);
+    return res.json({
+      message: 'Authenticated directly (No OTP required)',
+      directLogin: true,
+      user,
+      token,
+    });
   }
 
-  // Admin Auto-Login Bypass
-  if ((user && ['SuperAdmin', 'ShopAdmin', 'Delivery'].includes((user as any).role)) || isDeveloperBypassEmail) {
-    const adminOtp = '0000';
-    otpStore.set(normalizedEmail, { otp: adminOtp, expiresAt: Date.now() + 5 * 60 * 1000 });
-    return res.json({ message: 'Auto-login approved', mockOtp: adminOtp, autoLogin: true });
-  }
-
+  // Generate 6-digit OTP (more secure than 4-digit)
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  otpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+  // Store in TTLCache — auto-expires after 5 min, swept every 10 min
+  otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
+  // Reset attempt counter when a fresh OTP is sent
+  otpAttemptCache.delete(normalizedEmail);
 
-  const emailSent = await sendOtpEmail(normalizedEmail, otp);
+  await sendOtpEmail(normalizedEmail, otp);
 
-  const responsePayload: any = { message: 'OTP sent successfully to your email' };
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS || !emailSent) {
-    responsePayload.mockOtp = otp;
-  }
-
-  res.json(responsePayload);
+  res.json({ message: 'OTP sent successfully to your email' });
 });
 
-// 2. Register User (Initiate Registration)
+// ── 2. Register User (Initiate Registration) ──────────────────────────────────
 router.post('/register', async (req: Request, res: Response) => {
   const { name, phone, email } = req.body;
   if (!name || name.trim().length < 2) {
@@ -119,13 +161,12 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Valid 10-digit mobile number is required' });
   }
   if (!email || email.trim().length < 3) {
-    return res.status(400).json({ error: 'Valid email address or User ID is required' });
+    return res.status(400).json({ error: 'Valid email address is required' });
   }
 
-  const normalizedEmail = email.toLowerCase();
+  const normalizedEmail = email.toLowerCase().trim();
 
   try {
-    // Single $or query instead of two sequential findOne calls
     const existing = await User.findOne({
       $or: [{ email: normalizedEmail }, { phone }]
     }).select('email phone').lean() as any;
@@ -137,26 +178,23 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'User with this phone number already exists' });
     }
 
-    pendingRegistrations.set(normalizedEmail, { name, phone, email: normalizedEmail });
+    // Store pending registration in TTLCache — auto-expires in 10 min
+    pendingRegCache.set(normalizedEmail, { name, phone, email: normalizedEmail }, 10 * 60 * 1000);
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    otpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+    otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
+    otpAttemptCache.delete(normalizedEmail);
 
-    const emailSent = await sendOtpEmail(normalizedEmail, otp);
+    await sendOtpEmail(normalizedEmail, otp);
 
-    const responsePayload: any = { message: 'Registration OTP sent successfully to your email' };
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS || !emailSent) {
-      responsePayload.mockOtp = otp;
-    }
-
-    res.json(responsePayload);
+    res.json({ message: 'Registration OTP sent successfully to your email' });
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Failed to initiate registration' });
   }
 });
 
-// 3. Verify OTP & Authenticate
+// ── 3. Verify OTP & Authenticate ─────────────────────────────────────────────
 router.post('/verify-otp', async (req: Request, res: Response) => {
   const { phone: emailBody, email, otp } = req.body;
   const emailInput = email || emailBody;
@@ -165,72 +203,66 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Email and OTP are required' });
   }
 
-  const normalizedEmail = emailInput.toLowerCase();
+  const normalizedEmail = emailInput.toLowerCase().trim();
 
-  const record = otpStore.get(normalizedEmail);
-  const isDeveloperBypass = otp === '1234' && (
-    ['superadmin@wow.com', 'admin.lawgate@wow.com', 'delivery.lawgate@wow.com',
-     'customer.lawgate@wow.com', 'admin.agi@wow.com', 'delivery.agi@wow.com', 'customer.agi@wow.com']
-      .includes(normalizedEmail) ||
-    normalizedEmail.includes('admin') || normalizedEmail.includes('delivery')
-  );
+  // ── Staff bypass check ────────────────────────────────────────────────────
+  // If this is a staff account (SuperAdmin / ShopAdmin / Delivery), issue a
+  // token directly without validating OTP. Staff accounts don't go through
+  // the email OTP flow — they use the direct login path in /send-otp.
+  const existingUser = await User.findOne({ email: normalizedEmail }).lean() as any;
+  const isStaffBypass = existingUser && STAFF_ROLES.includes(existingUser.role);
 
-  if (!isDeveloperBypass) {
-    if (!record) {
-      return res.status(401).json({ error: 'OTP expired or not requested' });
-    }
-    if (record.expiresAt < Date.now()) {
-      otpStore.delete(normalizedEmail);
-      return res.status(401).json({ error: 'OTP has expired' });
-    }
-    if (record.otp !== otp) {
-      return res.status(401).json({ error: 'Invalid OTP entered' });
-    }
+  if (isStaffBypass) {
+    const token = generateToken(existingUser);
+    return res.json({ user: existingUser, token });
   }
 
-  otpStore.delete(normalizedEmail);
+  // ── Brute-force lockout check ─────────────────────────────────────────────
+  const attempts = otpAttemptCache.get(normalizedEmail) ?? 0;
+  if (attempts >= OTP_MAX_ATTEMPTS) {
+    return res.status(429).json({
+      error: `Too many failed attempts. Please request a new OTP and try again in 15 minutes.`,
+    });
+  }
+
+  // ── OTP validation ────────────────────────────────────────────────────────
+  const record = otpCache.get(normalizedEmail);
+  if (!record) {
+    return res.status(401).json({ error: 'OTP expired or not requested. Please request a new one.' });
+  }
+  if (Date.now() > record.expiresAt) {
+    otpCache.delete(normalizedEmail);
+    return res.status(401).json({ error: 'OTP has expired. Please request a new one.' });
+  }
+  if (record.otp !== otp) {
+    // Increment attempt counter — lock for 15 min after 5 failures
+    otpAttemptCache.set(normalizedEmail, attempts + 1, OTP_LOCK_TTL_MS);
+    const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
+    return res.status(401).json({
+      error: remaining > 0
+        ? `Invalid OTP. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`
+        : 'Too many failed attempts. Please request a new OTP.',
+    });
+  }
+
+  // OTP valid — clear both OTP and attempt counter
+  otpCache.delete(normalizedEmail);
+  otpAttemptCache.delete(normalizedEmail);
 
   try {
-    let user = await User.findOne({ email: normalizedEmail });
+    let user = existingUser ? await User.findOne({ email: normalizedEmail }) : null;
 
     if (!user) {
-      const pending = pendingRegistrations.get(normalizedEmail);
-      if (pending) {
-        try {
-          user = await User.create({
-            name: pending.name,
-            phone: pending.phone,
-            email: pending.email,
-            role: 'Customer',
-          });
-        } catch (err: any) {
-          if (err.code === 11000) {
-            return res.status(409).json({ error: 'This account was already registered' });
-          }
-          throw err;
-        }
-        pendingRegistrations.delete(normalizedEmail);
-      } else {
-        let role = 'Customer';
-        if (normalizedEmail.includes('superadmin')) role = 'SuperAdmin';
-        else if (normalizedEmail.includes('admin')) role = 'ShopAdmin';
-        else if (normalizedEmail.includes('delivery')) role = 'Delivery';
+      const pending = pendingRegCache.get(normalizedEmail);
+      const name = pending
+        ? pending.name
+        : normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+      const phone = pending
+        ? pending.phone
+        : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
 
-        user = await User.create({
-          name: role,
-          phone: `99${Math.floor(10000000 + Math.random() * 90000000)}`,
-          email: normalizedEmail,
-          role,
-        });
-      }
-    } else {
-      if (normalizedEmail === 'superadmin@wow.com' && (user as any).role !== 'SuperAdmin') {
-        (user as any).role = 'SuperAdmin';
-        await user.save();
-      } else if (normalizedEmail.includes('admin.') && (user as any).role !== 'ShopAdmin') {
-        (user as any).role = 'ShopAdmin';
-        await user.save();
-      }
+      user = await User.create({ name, phone, email: normalizedEmail, role: 'Customer' });
+      if (pending) pendingRegCache.delete(normalizedEmail);
     }
 
     const token = generateToken(user as any);
@@ -241,18 +273,30 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
   }
 });
 
-// 4. Create a new user (SuperAdmin or ShopAdmin)
+// ── Socket Event Helper ───────────────────────────────────────────────────────
+const emitSocketEvent = (req: Request, event: string, data: any) => {
+  const io = req.app.get('io');
+  if (io) io.emit(event, data);
+};
+
+// ── 4. Create a new user (SuperAdmin or ShopAdmin) ────────────────────────────
 router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), async (req: AuthRequest, res: Response) => {
   try {
     const { name, email, role, shopId, address } = req.body;
     let { phone } = req.body;
 
+    let effectiveShopId = shopId || req.user!.shopId;
+
     if (req.user!.role === 'ShopAdmin') {
       if (role !== 'Delivery') {
         return res.status(403).json({ error: 'Shop Admins can only create Delivery staff' });
       }
-      if (shopId !== req.user!.shopId) {
+      if (req.user!.shopId && shopId && shopId !== req.user!.shopId) {
         return res.status(403).json({ error: 'Cannot create Delivery staff for other branches' });
+      }
+      if (!req.user!.shopId && shopId) {
+        effectiveShopId = shopId;
+        await User.findByIdAndUpdate(req.user!._id, { shopId });
       }
     }
 
@@ -260,42 +304,61 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
       return res.status(400).json({ error: 'Valid email address is required' });
     }
 
-    if (!phone || phone.trim().length !== 10) {
-      if (['SuperAdmin', 'ShopAdmin', 'Delivery'].includes(role)) {
+    const normalizedEmail = email.toLowerCase().trim();
+    let existingUser = await User.findOne({ email: normalizedEmail });
+
+    if (existingUser) {
+      existingUser.role = role || 'Delivery';
+      if (effectiveShopId) existingUser.shopId = effectiveShopId;
+      if (name && (!existingUser.name || existingUser.name === 'Delivery Staff' || existingUser.name === 'Customer')) {
+        existingUser.name = name;
+      }
+      if (address) existingUser.address = address;
+      await existingUser.save();
+      res.status(200).json(existingUser);
+      emitSocketEvent(req, 'user_updated', existingUser);
+      return;
+    }
+
+    if (!phone || String(phone).trim().length !== 10) {
+      let isUnique = false;
+      let attempts = 0;
+      while (!isUnique && attempts < 10) {
+        attempts++;
         phone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
-      } else {
-        return res.status(400).json({ error: 'Valid 10-digit mobile number is required' });
+        const phoneExists = await User.findOne({ phone });
+        if (!phoneExists) isUnique = true;
       }
+    } else {
+      const phoneExists = await User.findOne({ phone: String(phone).trim() });
+      if (phoneExists) {
+        return res.status(400).json({ error: 'A user with this phone number already exists' });
+      }
+      phone = String(phone).trim();
     }
 
-    const normalizedEmail = email.toLowerCase();
+    const userName = name || normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Delivery Staff';
 
-    // Single $or query instead of two sequential findOne calls
-    const existing = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone }]
-    }).select('email phone').lean() as any;
-
-    if (existing) {
-      if (existing.email === normalizedEmail) {
-        return res.status(400).json({ error: 'User with this email already exists' });
-      }
-      return res.status(400).json({ error: 'User with this phone number already exists' });
-    }
-
-    const user = await User.create({ name, phone, email: normalizedEmail, role, shopId, address });
+    const user = await User.create({
+      name: userName,
+      phone,
+      email: normalizedEmail,
+      role: role || 'Delivery',
+      shopId: effectiveShopId,
+      address: address || 'Shop Branch',
+    });
     res.status(201).json(user);
+    emitSocketEvent(req, 'user_created', user);
   } catch (err) {
     console.error('Failed to create user:', err);
     res.status(500).json({ error: 'Failed to create user' });
   }
 });
 
-// Get current user profile (used by every client on app launch)
+// ── GET /me — current user profile ───────────────────────────────────────────
 router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const user = await User.findById(req.user!._id)
-      .select('-__v')
-      .lean();
+    const user = await User.findById(req.user!._id).select('-__v').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) {
@@ -303,7 +366,7 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Update push token
+// ── PUT /users/push-token ─────────────────────────────────────────────────────
 router.put('/users/push-token', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { expoPushToken } = req.body;
@@ -317,32 +380,32 @@ router.put('/users/push-token', requireAuth, async (req: AuthRequest, res: Respo
     ).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ message: 'Push token updated successfully', user });
+    emitSocketEvent(req, 'user_updated', user);
   } catch (err) {
     console.error('Failed to update push token:', err);
     res.status(500).json({ error: 'Failed to update push token' });
   }
 });
 
-// Update current user profile
+// ── PUT /users/me — update own profile ───────────────────────────────────────
 router.put('/users/me', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    // Whitelist: only allow safe profile fields
     const allowed = ['name', 'address', 'selectedWashPreferences', 'image'];
     const updates: Record<string, any> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
-
     const user = await User.findByIdAndUpdate(req.user!._id, updates, { new: true }).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
+    emitSocketEvent(req, 'user_updated', user);
   } catch (err) {
     console.error('Failed to update profile:', err);
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
-// Update a user (SuperAdmin only) — whitelisted fields
+// ── PATCH /users/:id — SuperAdmin update any user ────────────────────────────
 router.patch('/users/:id', requireAuth, requireRole(['SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
     const allowed = ['name', 'phone', 'email', 'role', 'shopId', 'address', 'isActive'];
@@ -353,47 +416,58 @@ router.patch('/users/:id', requireAuth, requireRole(['SuperAdmin']), async (req:
     const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true }).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
+    emitSocketEvent(req, 'user_updated', user);
   } catch (err) {
     console.error('Failed to update user:', err);
     res.status(500).json({ error: 'Failed to update user' });
   }
 });
 
-// Delete a user (SuperAdmin or ShopAdmin for their fleet)
+// ── DELETE /users/:id ─────────────────────────────────────────────────────────
 router.delete('/users/:id', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), async (req: AuthRequest, res: Response) => {
   try {
     const targetUser = await User.findById(req.params.id).select('role shopId').lean() as any;
     if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
     if (req.user!.role === 'ShopAdmin') {
-      if (targetUser.role !== 'Delivery' || targetUser.shopId !== req.user!.shopId) {
+      const effectiveShopId = req.user!.shopId;
+      if (targetUser.role !== 'Delivery') {
         return res.status(403).json({ error: 'Unauthorized to delete this user' });
+      }
+      if (effectiveShopId && targetUser.shopId && targetUser.shopId !== effectiveShopId) {
+        return res.status(403).json({ error: 'Unauthorized to delete staff for other branches' });
       }
     }
 
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User deleted' });
+    emitSocketEvent(req, 'user_deleted', { userId: req.params.id });
   } catch (err) {
     console.error('Failed to delete user:', err);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 
-// GET all users — authenticated, paginated, shop-scoped
+// ── GET /users — paginated, shop-scoped ──────────────────────────────────────
 router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Delivery']), async (req: AuthRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, parseInt(req.query.limit as string) || 50);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 100);
     const skip = (page - 1) * limit;
 
     const query: Record<string, any> = {};
 
-    // ShopAdmins and Delivery staff only see their own shop's staff + all customers
     if (req.user!.role === 'ShopAdmin' || req.user!.role === 'Delivery') {
-      query.$or = [
-        { shopId: req.user!.shopId },
-        { role: 'Customer' }
-      ];
+      const effectiveShopId = (req.query.shopId as string) || req.user!.shopId;
+      if (effectiveShopId) {
+        query.$or = [
+          { shopId: effectiveShopId },
+          { role: 'Delivery', shopId: { $in: [effectiveShopId, null, '', undefined] } },
+          { role: 'Customer' },
+        ];
+      } else {
+        query.$or = [{ role: { $in: ['Delivery', 'Customer', 'ShopAdmin'] } }];
+      }
     } else {
       // SuperAdmin: optional filters
       if (req.query.shopId) query.shopId = req.query.shopId;

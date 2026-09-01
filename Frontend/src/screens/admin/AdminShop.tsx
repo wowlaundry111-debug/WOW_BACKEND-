@@ -1,12 +1,3 @@
-/**
- * WOW Laundry — Admin Shop & Profile Screen
- * Premium UI/UX design:
- *  • Frosted profile header with circular avatar, edit badge, and branch indicators
- *  • Glassmorphic SettingsItem rows featuring Lucide vector icons on HSL boxes
- *  • High-fidelity visual UPI QR modal showing bordered QR visual blocks
- *  • Clean branch manager modal with glass tiles
- *  • Danger Log Out button with confirmation alert
- */
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,1238 +5,1296 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  Alert,
-  Modal,
   TextInput,
+  Alert,
+  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { MapPin, CreditCard, QrCode, Truck, LogOut, Edit2, Plus, X, CheckCircle2, ChevronRight, Building2, Store, Clock, Droplets, StoreIcon } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  Store,
+  CreditCard,
+  Truck,
+  LogOut,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  User,
+  Sparkles,
+  Droplets,
+  ChevronDown,
+  ChevronUp,
+  SlidersHorizontal,
+  Layers,
+} from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { COLORS, SPACING, RADIUS, TYPO, GLASS, SHADOW } from '../../components/Theme';
-import { GlassCard, Button, ToggleSwitch } from '../../components/UIPack';
-import { Skeleton, ItemSkeleton } from '../../components/SkeletonLoaders';
-import { EmptyState } from '../../components/EmptyState';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
+import { ToggleSwitch } from '../../components/UIPack';
 import { useAppStore } from '../../store/useAppStore';
 
-const MapPinIcon = MapPin as any;
-const CreditCardIcon = CreditCard as any;
-const QrCodeIcon = QrCode as any;
-const TruckIcon = Truck as any;
-const ChevronRightIcon = ChevronRight as any;
-const LogOutIcon = LogOut as any;
-const Edit2Icon = Edit2 as any;
-const PlusIcon = Plus as any;
-const XIcon = X as any;
-const ClockIcon = Clock as any;
-const DropletsIcon = Droplets as any;
+const DEFAULT_PROMOS = [
+  { id: '1', badge: 'PROMO', title: '50% OFF', subtitle: 'Winter Wear Deep Dryclean', type: 'promo' },
+  { id: '2', badge: 'EXPRESS', title: 'EXPRESS DOORSTEP', subtitle: 'Fast scheduled pickup & delivery', type: 'express' },
+];
 
-// ─── Settings Row Component ───────────────────────────────────────────────────
-interface SettingsItemProps {
-  Icon: any;
-  bg: string;
-  color: string;
-  title: string;
+const DEFAULT_WASH_PREFS = [
+  { id: 'extra_softener', name: 'Extra Fabric Softener', description: 'Delicate lavender scent & plush softness', price: 20, enabled: true },
+  { id: 'anti_bacterial', name: 'Anti-Bacterial Sanitization', description: 'Deep hygiene rinse eliminating 99.9% germs', price: 30, enabled: true },
+  { id: 'eco_organic', name: 'Eco Organic Detergent', description: 'Hypoallergenic wash for sensitive skin', price: 25, enabled: false },
+  { id: 'stain_booster', name: 'Stain Remover Booster', description: 'Spot treatment for tough grease & collar marks', price: 40, enabled: true },
+];
+
+type SectionId = 'store' | 'payment' | 'banners' | 'addons' | 'fleet';
+
+interface SettingsMenuItem {
+  id: SectionId;
+  label: string;
+  shortLabel: string;
   subtitle: string;
-  onPress: () => void;
+  icon: any;
+  color: string;
 }
 
-const SettingsItem: React.FC<SettingsItemProps> = ({ Icon, bg, color, title, subtitle, onPress }) => (
-  <GlassCard onPress={onPress} radius={RADIUS.xxl} style={styles.settingsCard}>
-    <View style={styles.settingsCardInner}>
-      <View style={styles.settingsLeft}>
-        <View style={[styles.settingsIconBox, { backgroundColor: bg }]}>
-          <Icon size={20} color={color} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>{title}</Text>
-          <Text style={[TYPO.bodyMd, { color: COLORS.outline, marginTop: 2, fontSize: 13 }]}>{subtitle}</Text>
-        </View>
-      </View>
-      <ChevronRightIcon size={18} color={COLORS.outlineVariant} />
-    </View>
-  </GlassCard>
-);
+const SETTINGS_SECTIONS: SettingsMenuItem[] = [
+  {
+    id: 'store',
+    label: 'Store Operations',
+    shortLabel: 'Store',
+    subtitle: 'Open/close, min order, tax & fees',
+    icon: Store,
+    color: '#B0FF49',
+  },
+  {
+    id: 'payment',
+    label: 'Payment & Banking',
+    shortLabel: 'Payment',
+    subtitle: 'UPI ID, bank account & settlement',
+    icon: CreditCard,
+    color: '#0D8DE3',
+  },
+  {
+    id: 'banners',
+    label: 'Home Promo Banners',
+    shortLabel: 'Banners',
+    subtitle: 'Customer app hero promo cards',
+    icon: Sparkles,
+    color: '#FACC15',
+  },
+  {
+    id: 'addons',
+    label: 'Wash Add-Ons & Prefs',
+    shortLabel: 'Wash Add-ons',
+    subtitle: 'Fabric softeners, hygiene & wash options',
+    icon: Droplets,
+    color: '#C084FC',
+  },
+  {
+    id: 'fleet',
+    label: 'Delivery Fleet & Staff',
+    shortLabel: 'Fleet',
+    subtitle: 'Manage delivery personnel & drivers',
+    icon: Truck,
+    color: '#FB923C',
+  },
+];
 
-// ─── QR Modal (Visual UPI Mock QR Canvas) ─────────────────────────────────────
-interface QrModalProps {
-  visible: boolean;
-  qrValue: string;
-  shopName: string;
-  onClose: () => void;
-}
-
-const QrModal: React.FC<QrModalProps> = ({ visible, qrValue, shopName, onClose }) => {
-  const webBlurStyle: any = {
-    backdropFilter: 'blur(25px)',
-    WebkitBackdropFilter: 'blur(25px)',
-  };
-
-  return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={styles.qrOverlay}>
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-        <View style={[styles.qrSheet, webBlurStyle]}>
-          <View style={styles.sheetHandle} />
-          
-          <Text style={[TYPO.headlineMd, { color: COLORS.onSurface, textAlign: 'center', fontWeight: '700' }]}>
-            UPI Payment QR Code
-          </Text>
-          <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant, textAlign: 'center', marginTop: 4, marginBottom: SPACING.lg }]}>
-            {shopName}
-          </Text>
-
-          {/* QR visual placeholder with realistic bordered boxes */}
-          <View style={styles.qrBox}>
-            <View style={styles.qrGrid}>
-              {Array.from({ length: 9 }).map((_, row) =>
-                Array.from({ length: 9 }).map((_, col) => {
-                  const cornerCell =
-                    (row < 3 && col < 3) || (row < 3 && col > 5) || (row > 5 && col < 3);
-                  return (
-                    <View
-                      key={`${row}-${col}`}
-                      style={[
-                        styles.qrCell,
-                        {
-                          backgroundColor: cornerCell
-                            ? COLORS.primary
-                            : Math.random() > 0.45
-                            ? COLORS.onSurface
-                            : 'transparent',
-                        },
-                      ]}
-                    />
-                  );
-                })
-              )}
-            </View>
-            <View style={styles.qrCornerTL} />
-            <View style={styles.qrCornerTR} />
-            <View style={styles.qrCornerBL} />
-            <View style={styles.qrCenterLogo}>
-              <Text style={{ fontSize: 11 }}>🫧</Text>
-            </View>
-          </View>
-
-          <Text style={[TYPO.labelLg, { color: COLORS.primary, textAlign: 'center', marginTop: SPACING.lg, fontWeight: '700' }]}>
-            {qrValue.split('pa=')[1]?.split('&')[0] ?? 'wowexpress@upi'}
-          </Text>
-          <Text style={[TYPO.bodyMd, { color: COLORS.outline, textAlign: 'center', marginTop: 2, marginBottom: SPACING.xl, fontSize: 13 }]}>
-            Scan to pay · Powered by dynamic UPI QR
-          </Text>
-
-          <Button label="Close Scanner" onPress={onClose} variant="outline" fullWidth />
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-// ─── Instructions & Timings Modal ─────────────────────────────────────────────
-const BusinessSettingsModal: React.FC<{
-  visible: boolean;
-  shop: any;
-  onSave: (data: any) => void;
-  onClose: () => void;
-}> = ({ visible, shop, onSave, onClose }) => {
-  const [instructions, setInstructions] = useState('');
-  const [timings, setTimings] = useState<string[]>([]);
-  const [newTiming, setNewTiming] = useState('');
-  const [contactNumber, setContactNumber] = useState('');
-  const [minOrderValue, setMinOrderValue] = useState('');
-  const [taxPercent, setTaxPercent] = useState('');
-  const [deliveryFee, setDeliveryFee] = useState('');
-  const PREDEFINED_SLOTS = [
-    '08:00 AM - 10:00 AM',
-    '10:00 AM - 12:00 PM',
-    '12:00 PM - 02:00 PM',
-    '02:00 PM - 04:00 PM',
-    '04:00 PM - 06:00 PM',
-    '06:00 PM - 08:00 PM',
-    '08:00 PM - 10:00 PM'
-  ];
-
-  useEffect(() => {
-    if (visible && shop) {
-      setInstructions(shop.instructions || '');
-      setTimings(shop.pickupTimings || []);
-      setContactNumber(shop.contactNumber || '');
-      setMinOrderValue(shop.minOrderValue?.toString() || '');
-      setTaxPercent(shop.taxPercent?.toString() || '');
-      setDeliveryFee(shop.deliveryFee?.toString() || '');
-    }
-  }, [visible, shop]);
-
-  const toggleTiming = (t: string) => {
-    if (timings.includes(t)) {
-      setTimings(timings.filter(item => item !== t));
-    } else {
-      setTimings([...timings, t]);
-    }
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={[styles.modalOverlay, { justifyContent: 'flex-end', padding: 0 }]}>
-        <View style={[styles.modalContent, { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, maxHeight: '85%' }]}>
-          <View style={styles.modalHeader}>
-            <Text style={TYPO.headlineSm}>Settings & Info</Text>
-            <TouchableOpacity onPress={onClose}>
-              <XIcon size={24} color={COLORS.onSurfaceVariant} />
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: SPACING.xl }}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Shop Contact Number</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. +91 9876543210"
-                value={contactNumber}
-                onChangeText={setContactNumber}
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: SPACING.md, marginBottom: SPACING.lg }}>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <Text style={styles.inputLabel}>Min Order (₹)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 200"
-                  value={minOrderValue}
-                  onChangeText={setMinOrderValue}
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <Text style={styles.inputLabel}>Tax (%)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 5"
-                  value={taxPercent}
-                  onChangeText={setTaxPercent}
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={[styles.inputGroup, { flex: 1, marginBottom: 0 }]}>
-                <Text style={styles.inputLabel}>Delivery (₹)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 49"
-                  value={deliveryFee}
-                  onChangeText={setDeliveryFee}
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Instructions for Customers</Text>
-              <TextInput
-                style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="e.g. Please separate dark and light clothes before pickup..."
-                value={instructions}
-                onChangeText={setInstructions}
-                multiline
-              />
-            </View>
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Available Pickup Timings</Text>
-              <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant, marginBottom: SPACING.sm }]}>Select the time slots you want to offer to customers.</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {PREDEFINED_SLOTS.map((t, idx) => {
-                  const isSelected = timings.includes(t);
-                  return (
-                    <TouchableOpacity 
-                      key={idx} 
-                      onPress={() => toggleTiming(t)}
-                      style={{ 
-                        flexDirection: 'row', 
-                        alignItems: 'center', 
-                        backgroundColor: isSelected ? COLORS.primary : COLORS.surfaceContainerHigh, 
-                        paddingHorizontal: 12, 
-                        paddingVertical: 8, 
-                        borderRadius: RADIUS.md,
-                        borderWidth: 1,
-                        borderColor: isSelected ? COLORS.primary : COLORS.outlineVariant
-                      }}
-                    >
-                      <Text style={[TYPO.labelSm, { color: isSelected ? COLORS.onPrimary : COLORS.onSurface }]}>{t}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                {/* Render custom timings that aren't in the predefined list */}
-                {timings.filter(t => !PREDEFINED_SLOTS.includes(t)).map((t, idx) => (
-                  <View key={`custom-${idx}`} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.primary }}>
-                    <Text style={[TYPO.labelSm, { color: COLORS.onPrimary, marginRight: 6 }]}>{t}</Text>
-                    <TouchableOpacity onPress={() => toggleTiming(t)}>
-                      <XIcon size={14} color={COLORS.onPrimary} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-
-              <Text style={[TYPO.labelSm, { color: COLORS.onSurfaceVariant, marginTop: SPACING.md, marginBottom: 4 }]}>Or add a custom time range:</Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="e.g. 09:00 AM - 12:00 PM"
-                  value={newTiming}
-                  onChangeText={setNewTiming}
-                />
-                <Button 
-                  label="Add Custom" 
-                  onPress={() => {
-                    if (newTiming.trim() && !timings.includes(newTiming.trim())) {
-                      setTimings([...timings, newTiming.trim()]);
-                      setNewTiming('');
-                    }
-                  }} 
-                  variant="primary" 
-                />
-              </View>
-            </View>
-            
-            <Button
-              label="Save Details"
-              onPress={() => onSave({ 
-                instructions, 
-                pickupTimings: timings, 
-                contactNumber,
-                minOrderValue: minOrderValue ? parseFloat(minOrderValue) : 0,
-                taxPercent: taxPercent ? parseFloat(taxPercent) : 0,
-                deliveryFee: deliveryFee ? parseFloat(deliveryFee) : 0
-              })}
-              variant="primary"
-              style={{ marginTop: SPACING.lg }}
-              fullWidth
-            />
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-
-// ─── Payment/Selection Modals ─────────────────────────────────────────────────────
-const PaymentModal = ({ visible, paymentInfo, onSave, onClose }: any) => {
-  const [upiId, setUpiId] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [accountNo, setAccountNo] = useState('');
-
-  useEffect(() => {
-    if (visible) {
-      setUpiId(paymentInfo?.upiId || '');
-      setBankName(paymentInfo?.bankName || '');
-      setAccountNo(paymentInfo?.accountNo || '');
-    }
-  }, [visible, paymentInfo]);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={TYPO.headlineSm}>Bank & Payment Details</Text>
-            <TouchableOpacity onPress={onClose}>
-              <XIcon size={24} color={COLORS.onSurfaceVariant} />
-            </TouchableOpacity>
-          </View>
-          <Text style={[TYPO.bodyMd, { color: COLORS.outline, marginBottom: SPACING.md }]}>Configure the payment options to receive money directly to your bank account.</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>UPI ID</Text>
-            <TextInput style={styles.input} value={upiId} onChangeText={setUpiId} placeholder="merchant@upi" placeholderTextColor={COLORS.outlineVariant} autoCapitalize="none" />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Bank Name</Text>
-            <TextInput style={styles.input} value={bankName} onChangeText={setBankName} placeholder="e.g. HDFC Bank" placeholderTextColor={COLORS.outlineVariant} />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Account Number</Text>
-            <TextInput style={styles.input} value={accountNo} onChangeText={setAccountNo} placeholder="Enter account number" placeholderTextColor={COLORS.outlineVariant} keyboardType="number-pad" />
-          </View>
-
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => {
-              onSave({
-                upiId,
-                bankName,
-                accountNo,
-                qrValue: upiId ? `upi://pay?pa=${upiId}&pn=WOW%20Laundry&cu=INR` : ''
-              });
-            }}
-          >
-            <Text style={styles.primaryBtnText}>Save Payment Details</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-const ShopSelectionModal = ({ visible, shops, onSelect, onClose }: any) => {
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={[styles.modalOverlay, { justifyContent: 'flex-end', padding: 0 }]}>
-        <View style={[styles.modalContent, { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, maxHeight: '80%' }]}>
-          <View style={styles.modalHeader}>
-            <Text style={TYPO.headlineSm}>Select Shop</Text>
-            <TouchableOpacity onPress={onClose}>
-              <XIcon size={24} color={COLORS.onSurfaceVariant} />
-            </TouchableOpacity>
-          </View>
-          <Text style={[TYPO.bodyMd, { color: COLORS.outline, marginBottom: SPACING.md }]}>Choose a shop to configure its payment settings.</Text>
-          <ScrollView keyboardShouldPersistTaps="handled">
-            {shops.map((shop: any) => (
-              <TouchableOpacity key={shop._id} style={styles.shopSelectRow} onPress={() => onSelect(shop)}>
-                <View style={styles.shopSelectIcon}>
-                  <StoreIcon size={20} color={COLORS.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '600' }]}>{shop.name}</Text>
-                  <Text style={[TYPO.labelSm, { color: COLORS.outline }]}>{shop.branches.join(', ') || 'No branches'}</Text>
-                </View>
-                <ChevronRightIcon size={20} color={COLORS.outline} />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-// ─── Delivery Personnel Modal ─────────────────────────────────────────────────
-const DeliveryModal = ({ visible, shopId, onClose }: any) => {
-  const { users, addDeliveryBoy } = useAppStore();
-  const [email, setEmail] = useState('');
-  
-  const shopDeliveryBoys = users.filter(u => u.role === 'Delivery' && u.shopId === shopId);
-
-  const handleAdd = async () => {
-    if (!email.trim() || !email.includes('@')) return alert('Please enter a valid email');
-    await addDeliveryBoy(email, shopId);
-    setEmail('');
-    alert('Delivery staff added successfully! They can log in using their email and OTP.');
-  };
-
-  const webBlurStyle: any = {
-    backdropFilter: 'blur(25px)',
-    WebkitBackdropFilter: 'blur(25px)',
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={[styles.modalOverlay, { justifyContent: 'flex-end', padding: 0 }]}>
-        <View style={[styles.modalContent, webBlurStyle, { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, maxHeight: '85%' }]}>
-          <View style={styles.modalHeader}>
-            <Text style={TYPO.headlineSm}>Delivery Personnel</Text>
-            <TouchableOpacity onPress={onClose}>
-              <XIcon size={24} color={COLORS.onSurfaceVariant} />
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: SPACING.xl }}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Add New Staff Email</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="delivery.name@example.com"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-            
-            <Button
-              label="Add Delivery Staff"
-              onPress={handleAdd}
-              variant="primary"
-              style={{ marginTop: SPACING.md, marginBottom: SPACING.xl }}
-            />
-
-            <Text style={[TYPO.headlineSm, { color: COLORS.onSurface, marginBottom: SPACING.md, fontWeight: '700' }]}>
-              Current Staff ({shopDeliveryBoys.length})
-            </Text>
-
-            {shopDeliveryBoys.length === 0 ? (
-              <EmptyState icon={TruckIcon} title="No Delivery Staff" subtitle="Add staff members to assign deliveries." />
-            ) : (
-              shopDeliveryBoys.map(staff => (
-                <View key={staff._id} style={[styles.catalogItemCard, { marginBottom: SPACING.sm }]}>
-                  <View style={[styles.catalogItemIcon, { backgroundColor: 'rgba(234, 88, 12, 0.1)' }]}>
-                    <TruckIcon size={20} color="#ea580c" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '600' }]}>{staff.name}</Text>
-                    <Text style={[TYPO.labelSm, { color: COLORS.outline }]}>{staff.email}</Text>
-                  </View>
-                </View>
-              ))
-            )}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-};
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 export const AdminShopScreen: React.FC = () => {
-  const [paymentOpen, setPaymentOpen] = useState(false);
-  const [deliveryOpen, setDeliveryOpen] = useState(false);
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const [washPreferencesOpen, setWashPreferencesOpen] = useState(false);
-  const [shopSelectOpen, setShopSelectOpen] = useState(false);
-  const [selectedShopIdForPayment, setSelectedShopIdForPayment] = useState<string | null>(null);
-  const [shopSelectMode, setShopSelectMode] = useState<'payment' | 'delivery' | 'instructions' | 'wash'>('payment');
+  const {
+    shops,
+    currentTenantId,
+    currentUser,
+    users,
+    setCurrentUser,
+    updateShop,
+    addDeliveryBoy,
+    deleteUser,
+  } = useAppStore();
 
-  const { shops, currentTenantId, currentUser, setCurrentRole, setCurrentUser, updateShop } = useAppStore();
-  const shop = shops.find(s => s._id === currentTenantId);
+  const activeShopId = currentTenantId || currentUser?.shopId || '';
+  const currentShop = shops.find((s) => s._id === activeShopId);
 
-  const handleToggleShopStatus = async () => {
-    if (!shop) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const nextStatus = !(shop.isOpen ?? true);
-    await updateShop(shop._id, { isOpen: nextStatus });
+  // Active Category View
+  const [activeTab, setActiveTab] = useState<'all' | SectionId>('all');
+  const [expandedSections, setExpandedSections] = useState<Record<SectionId, boolean>>({
+    store: true,
+    payment: true,
+    banners: true,
+    addons: true,
+    fleet: true,
+  });
+
+  const [isOpen, setIsOpen] = useState(currentShop?.isOpen ?? true);
+  const [minOrder, setMinOrder] = useState(String(currentShop?.minOrderValue || 0));
+  const [taxPercent, setTaxPercent] = useState(String(currentShop?.taxPercent || 0));
+  const [deliveryFee, setDeliveryFee] = useState(String(currentShop?.deliveryFee || 0));
+  const [upiId, setUpiId] = useState(currentShop?.paymentInfo?.upiId || '');
+  const [bankName, setBankName] = useState(currentShop?.paymentInfo?.bankName || '');
+  const [accountNo, setAccountNo] = useState(currentShop?.paymentInfo?.accountNo || '');
+  const [contactNumber, setContactNumber] = useState(currentShop?.contactNumber || '');
+  const [instructions, setInstructions] = useState(currentShop?.instructions || '');
+
+  // Promo Banners & Wash Preferences
+  const [promoBanners, setPromoBanners] = useState(
+    currentShop?.promoBanners && currentShop.promoBanners.length >= 2
+      ? currentShop.promoBanners
+      : DEFAULT_PROMOS
+  );
+  const [washPreferences, setWashPreferences] = useState(
+    currentShop?.washPreferences && currentShop.washPreferences.length > 0
+      ? currentShop.washPreferences.map((p) => ({ ...p, enabled: p.enabled !== false }))
+      : DEFAULT_WASH_PREFS
+  );
+
+  // Add Delivery Staff Form State
+  const [delivName, setDelivName] = useState('');
+  const [delivPhone, setDelivPhone] = useState('');
+  const [delivEmail, setDelivEmail] = useState('');
+  const [isAddingDeliv, setIsAddingDeliv] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (currentShop) {
+      setIsOpen(currentShop.isOpen ?? true);
+      setMinOrder(String(currentShop.minOrderValue || 0));
+      setTaxPercent(String(currentShop.taxPercent || 0));
+      setDeliveryFee(String(currentShop.deliveryFee || 0));
+      setUpiId(currentShop.paymentInfo?.upiId || '');
+      setBankName(currentShop.paymentInfo?.bankName || '');
+      setAccountNo(currentShop.paymentInfo?.accountNo || '');
+      setContactNumber(currentShop.contactNumber || '');
+      setInstructions(currentShop.instructions || '');
+      setPromoBanners(
+        currentShop.promoBanners && currentShop.promoBanners.length >= 2
+          ? currentShop.promoBanners
+          : DEFAULT_PROMOS
+      );
+      setWashPreferences(
+        currentShop.washPreferences && currentShop.washPreferences.length > 0
+          ? currentShop.washPreferences.map((p) => ({ ...p, enabled: p.enabled !== false }))
+          : DEFAULT_WASH_PREFS
+      );
+    }
+  }, [currentShop]);
+
+  const deliveryBoys = users.filter(
+    (u) => u.role === 'Delivery' && (!activeShopId || !u.shopId || u.shopId === activeShopId)
+  );
+
+  const toggleSection = (id: SectionId) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExpandedSections((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handlePaymentClick = () => {
-    if (!currentTenantId) {
-      setShopSelectMode('payment');
-      setShopSelectOpen(true);
-    } else {
-      setSelectedShopIdForPayment(currentTenantId);
-      setPaymentOpen(true);
+  const handleSelectTab = (tab: 'all' | SectionId) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveTab(tab);
+    if (tab !== 'all') {
+      setExpandedSections((prev) => ({ ...prev, [tab]: true }));
     }
   };
 
-  const handleDeliveryClick = () => {
-    if (!currentTenantId) {
-      setShopSelectMode('delivery');
-      setShopSelectOpen(true);
-    } else {
-      setSelectedShopIdForPayment(currentTenantId);
-      setDeliveryOpen(true);
+  const handleSaveSettings = async () => {
+    if (!currentShop) return;
+    setIsSaving(true);
+    try {
+      await updateShop(currentShop._id, {
+        isOpen,
+        minOrderValue: Number(minOrder) || 0,
+        taxPercent: Number(taxPercent) || 0,
+        deliveryFee: Number(deliveryFee) || 0,
+        contactNumber,
+        instructions,
+        promoBanners,
+        washPreferences,
+        paymentInfo: {
+          upiId,
+          bankName,
+          accountNo,
+          qrValue: upiId ? `upi://pay?pa=${upiId}&pn=${encodeURIComponent(currentShop.name)}&cu=INR` : '',
+        },
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved', 'Shop configuration updated successfully!');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to save settings');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleInstructionsClick = () => {
-    if (!currentTenantId) {
-      setShopSelectMode('instructions');
-      setShopSelectOpen(true);
-    } else {
-      setSelectedShopIdForPayment(currentTenantId);
-      setInstructionsOpen(true);
+  const handleAddWashPref = () => {
+    const newPref = {
+      id: `pref_${Date.now()}`,
+      name: 'New Wash Add-on',
+      description: 'Custom wash preference description',
+      price: 20,
+      enabled: true,
+    };
+    setWashPreferences([...washPreferences, newPref]);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleToggleWashPref = (idx: number) => {
+    const updated = [...washPreferences];
+    updated[idx] = { ...updated[idx], enabled: !updated[idx].enabled };
+    setWashPreferences(updated);
+  };
+
+  const handleDeleteWashPref = (idx: number) => {
+    const updated = washPreferences.filter((_, i) => i !== idx);
+    setWashPreferences(updated);
+  };
+
+  const handleUpdateWashPref = (idx: number, field: string, val: any) => {
+    const updated = [...washPreferences];
+    updated[idx] = { ...updated[idx], [field]: val };
+    setWashPreferences(updated);
+  };
+
+  const handleUpdatePromo = (idx: number, field: string, val: string) => {
+    const updated = [...promoBanners];
+    updated[idx] = { ...updated[idx], [field]: val };
+    setPromoBanners(updated);
+  };
+
+  const handleAddDelivery = async () => {
+    if (!delivEmail || !delivEmail.includes('@')) {
+      Alert.alert('Required', 'Please enter a valid email address');
+      return;
+    }
+    setIsAddingDeliv(true);
+    try {
+      await addDeliveryBoy(delivEmail.trim(), activeShopId, delivName.trim(), delivPhone.trim());
+      setDelivName('');
+      setDelivPhone('');
+      setDelivEmail('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Success', 'Delivery staff added successfully!');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to add delivery staff');
+    } finally {
+      setIsAddingDeliv(false);
     }
   };
 
-  const handleWashPreferencesClick = () => {
-    if (!currentTenantId) {
-      setShopSelectMode('wash');
-      setShopSelectOpen(true);
-    } else {
-      setSelectedShopIdForPayment(currentTenantId);
-      setWashPreferencesOpen(true);
-    }
+  const handleDeleteStaff = (userId: string, name: string) => {
+    Alert.alert('Remove Staff', `Remove "${name}" from delivery fleet?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => deleteUser(userId),
+      },
+    ]);
   };
 
   const handleLogout = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to log out from WOW Laundry?')) {
-        setCurrentUser(null);
-      }
-    } else {
-      Alert.alert('Log Out', 'Are you sure you want to log out from WOW Laundry?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: () => {
-            setCurrentUser(null);
-          },
-        },
-      ]);
-    }
+    Alert.alert('Logout', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: () => setCurrentUser(null),
+      },
+    ]);
   };
 
+  const shouldShowSection = (id: SectionId) => activeTab === 'all' || activeTab === id;
+
   return (
-    <>
-      <ScrollView keyboardShouldPersistTaps="handled"
-        style={styles.root}
+    <View style={styles.root}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.heading}>SHOP SETTINGS</Text>
+          <Text style={styles.subHeading}>Configure operations for {currentShop?.name || 'Branch'}</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.globalSaveBtn, isSaving && { opacity: 0.7 }]}
+          activeOpacity={0.85}
+          onPress={handleSaveSettings}
+          disabled={isSaving}
+        >
+          <Text style={styles.globalSaveBtnText}>{isSaving ? 'SAVING...' : 'SAVE'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* List Type Option Category Selector */}
+      <View style={styles.categoryBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryBarContent}
+        >
+          <TouchableOpacity
+            style={[styles.categoryPill, activeTab === 'all' && styles.categoryPillActive]}
+            activeOpacity={0.8}
+            onPress={() => handleSelectTab('all')}
+          >
+            <Layers size={13} color={activeTab === 'all' ? COLORS.white : COLORS.black} strokeWidth={2.5} />
+            <Text style={[styles.categoryPillText, activeTab === 'all' && styles.categoryPillTextActive]}>
+              All Options
+            </Text>
+          </TouchableOpacity>
+
+          {SETTINGS_SECTIONS.map((sec) => {
+            const isActive = activeTab === sec.id;
+            const Icon = sec.icon;
+            return (
+              <TouchableOpacity
+                key={sec.id}
+                style={[styles.categoryPill, isActive && styles.categoryPillActive]}
+                activeOpacity={0.8}
+                onPress={() => handleSelectTab(sec.id)}
+              >
+                <View
+                  style={[
+                    styles.pillColorDot,
+                    { backgroundColor: sec.color },
+                    isActive && { borderColor: COLORS.white },
+                  ]}
+                />
+                <Text style={[styles.categoryPillText, isActive && styles.categoryPillTextActive]}>
+                  {sec.shortLabel}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Main Settings List */}
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarWrapper}>
-            <View style={styles.avatar}>
-              <LinearGradient
-                colors={['#E6DEFF', '#CABEFF']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <Text style={styles.avatarText}>
-                {currentUser?.name?.charAt(0).toUpperCase() ?? 'A'}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.avatarEdit} activeOpacity={0.8}>
-              <Edit2Icon size={12} color={COLORS.onPrimary} />
+        {/* ─── 1. STORE OPERATIONS ─── */}
+        {shouldShowSection('store') && (
+          <View style={styles.optionCard}>
+            <TouchableOpacity
+              style={styles.optionHeader}
+              activeOpacity={0.85}
+              onPress={() => toggleSection('store')}
+            >
+              <View style={[styles.optionIconBox, { backgroundColor: '#B0FF49' }]}>
+                <Store size={18} color={COLORS.black} strokeWidth={2.5} />
+              </View>
+              <View style={styles.optionHeaderTextWrap}>
+                <Text style={styles.optionTitle}>STORE OPERATIONS</Text>
+                <Text style={styles.optionSubtitle}>Open/close status, min order & taxes</Text>
+              </View>
+              {expandedSections.store ? (
+                <ChevronUp size={20} color={COLORS.black} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={20} color={COLORS.black} strokeWidth={2.5} />
+              )}
             </TouchableOpacity>
-          </View>
-          <Text style={[TYPO.headlineLgMob, { color: COLORS.onSurface, fontWeight: '700', textAlign: 'center' }]}>
-            {currentUser?.name ?? 'Shop Admin'}
-          </Text>
-          <Text style={[TYPO.bodyMd, { color: COLORS.outline, marginTop: 2, textAlign: 'center' }]}>
-            {shop?.name ?? 'WOW Laundry'}
-          </Text>
-          
-          {shop && (
-            <View style={styles.branchPills}>
-              {shop.branches.map((b: string, i: number) => (
-                <View key={i} style={styles.branchPill}>
-                  <MapPinIcon size={10} color={COLORS.primary} style={{ marginRight: 2 }} />
-                  <Text style={[TYPO.labelSm, { color: COLORS.onPrimaryFixed, fontSize: 10, fontWeight: '600' }]}>{b}</Text>
+
+            {expandedSections.store && (
+              <View style={styles.optionBody}>
+                {/* Store status row */}
+                <View style={styles.statusToggleRow}>
+                  <View>
+                    <Text style={styles.inputLabel}>STORE STATUS</Text>
+                    <Text style={styles.statusSubtext}>
+                      {isOpen ? 'Store is open & accepting orders' : 'Store is closed to customers'}
+                    </Text>
+                  </View>
+                  <View style={styles.toggleRow}>
+                    <Text style={[styles.toggleLabel, isOpen ? { color: '#16A34A' } : { color: '#DC2626' }]}>
+                      {isOpen ? 'ONLINE' : 'OFFLINE'}
+                    </Text>
+                    <ToggleSwitch value={isOpen} onToggle={() => setIsOpen(!isOpen)} />
+                  </View>
                 </View>
-              ))}
-            </View>
-          )}
-        </View>
-        {shop && (
-          <GlassCard radius={RADIUS.xl} style={styles.statusCard}>
-            <View style={styles.statusCardInner}>
-              <View style={styles.statusLeft}>
-                <View style={[styles.statusDot, { backgroundColor: (shop.isOpen ?? true) ? '#10B981' : '#EF4444' }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '700' }]}>
-                    Shop Status: {(shop.isOpen ?? true) ? 'OPEN' : 'CLOSED'}
-                  </Text>
-                  <Text style={[TYPO.bodyMd, { color: COLORS.outline, fontSize: 12, marginTop: 2 }]}>
-                    {(shop.isOpen ?? true) ? 'Customers can place orders normally' : 'Orders are temporarily blocked'}
-                  </Text>
+
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>MIN ORDER (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={minOrder}
+                      onChangeText={setMinOrder}
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>TAX (%)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={taxPercent}
+                      onChangeText={setTaxPercent}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>DELIVERY FEE (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={deliveryFee}
+                      onChangeText={setDeliveryFee}
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>CONTACT PHONE</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={contactNumber}
+                      onChangeText={setContactNumber}
+                      placeholder="Support phone"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>STORE INSTRUCTIONS / NOTICE</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={instructions}
+                    onChangeText={setInstructions}
+                    placeholder="e.g. Please leave clothes in laundry bag"
+                    placeholderTextColor="#9CA3AF"
+                  />
                 </View>
               </View>
-              <ToggleSwitch
-                value={shop.isOpen ?? true}
-                onToggle={handleToggleShopStatus}
-              />
-            </View>
-          </GlassCard>
-        )}
-
-        <View style={styles.settingsSection}>
-          <SettingsItem
-            Icon={CreditCard}
-            bg="rgba(8, 104, 120, 0.08)"
-            color={COLORS.secondary}
-            title="Bank & Payment Details"
-            subtitle={!currentTenantId ? "Select a shop to configure" : `UPI: ${shop?.paymentInfo?.upiId ?? 'Not set'}`}
-            onPress={handlePaymentClick}
-          />
-          <View style={{ height: SPACING.md }} />
-          <SettingsItem
-            Icon={ClockIcon}
-            bg="rgba(16, 185, 129, 0.08)"
-            color="#10B981"
-            title="Settings & Info"
-            subtitle="Instructions, Timings & Contact"
-            onPress={handleInstructionsClick}
-          />
-          <View style={{ height: SPACING.md }} />
-          <SettingsItem
-            Icon={DropletsIcon}
-            bg="rgba(59, 130, 246, 0.08)"
-            color="#3b82f6"
-            title="Wash Preferences"
-            subtitle="Configure extra wash options & pricing"
-            onPress={handleWashPreferencesClick}
-          />
-          <View style={{ height: SPACING.md }} />
-          <SettingsItem
-            Icon={TruckIcon}
-            bg="rgba(234, 88, 12, 0.08)"
-            color="#ea580c"
-            title="Delivery Personnel"
-            subtitle="Manage delivery staff"
-            onPress={handleDeliveryClick}
-          />
-        </View>
-
-        {shop && (
-          <View style={styles.statStrip}>
-            <View style={styles.statItem}>
-              <Text style={[TYPO.headlineMd, { color: COLORS.primary, fontWeight: '800' }]}>
-                {shop.branches.length}
-              </Text>
-              <Text style={[TYPO.labelSm, { color: COLORS.outline, fontSize: 11 }]}>Branches</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={[TYPO.headlineMd, { color: (shop.isOpen ?? true) ? '#10B981' : '#EF4444', fontWeight: '800' }]}>
-                {(shop.isOpen ?? true) ? 'Open' : 'Closed'}
-              </Text>
-              <Text style={[TYPO.labelSm, { color: COLORS.outline, fontSize: 11 }]}>Shop Status</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={[TYPO.headlineMd, { color: COLORS.primary, fontWeight: '800' }]}>
-                {shop.paymentInfo?.bankName?.split(' ')[0] ?? 'N/A'}
-              </Text>
-              <Text style={[TYPO.labelSm, { color: COLORS.outline, fontSize: 11 }]}>Channel</Text>
-            </View>
+            )}
           </View>
         )}
 
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn} activeOpacity={0.75}>
-          <LogOutIcon size={16} color={COLORS.error} />
-          <Text style={[TYPO.labelLg, { color: COLORS.error, fontWeight: '700' }]}>Log Out</Text>
+        {/* ─── 2. PAYMENT & BANKING ─── */}
+        {shouldShowSection('payment') && (
+          <View style={styles.optionCard}>
+            <TouchableOpacity
+              style={styles.optionHeader}
+              activeOpacity={0.85}
+              onPress={() => toggleSection('payment')}
+            >
+              <View style={[styles.optionIconBox, { backgroundColor: '#0D8DE3' }]}>
+                <CreditCard size={18} color={COLORS.white} strokeWidth={2.5} />
+              </View>
+              <View style={styles.optionHeaderTextWrap}>
+                <Text style={styles.optionTitle}>PAYMENT & BANKING</Text>
+                <Text style={styles.optionSubtitle}>UPI ID, bank account & settlement info</Text>
+              </View>
+              {expandedSections.payment ? (
+                <ChevronUp size={20} color={COLORS.black} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={20} color={COLORS.black} strokeWidth={2.5} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSections.payment && (
+              <View style={styles.optionBody}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>UPI ID FOR INSTANT PAY</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={upiId}
+                    onChangeText={setUpiId}
+                    placeholder="merchant@upi"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>BANK NAME</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={bankName}
+                      onChangeText={setBankName}
+                      placeholder="e.g. HDFC Bank"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>ACCOUNT NUMBER</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={accountNo}
+                      onChangeText={setAccountNo}
+                      placeholder="0000000000"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── 3. HOME PROMO BANNERS ─── */}
+        {shouldShowSection('banners') && (
+          <View style={styles.optionCard}>
+            <TouchableOpacity
+              style={styles.optionHeader}
+              activeOpacity={0.85}
+              onPress={() => toggleSection('banners')}
+            >
+              <View style={[styles.optionIconBox, { backgroundColor: '#FACC15' }]}>
+                <Sparkles size={18} color={COLORS.black} strokeWidth={2.5} />
+              </View>
+              <View style={styles.optionHeaderTextWrap}>
+                <Text style={styles.optionTitle}>HOME PROMO BANNERS</Text>
+                <Text style={styles.optionSubtitle}>Customer app promotional hero cards</Text>
+              </View>
+              {expandedSections.banners ? (
+                <ChevronUp size={20} color={COLORS.black} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={20} color={COLORS.black} strokeWidth={2.5} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSections.banners && (
+              <View style={styles.optionBody}>
+                {/* Lime Promo Card (Banner 1) */}
+                <View style={styles.limeBannerCard}>
+                  <View style={styles.bannerBadgeLime}>
+                    <Text style={styles.bannerBadgeLimeText}>LIME PROMO CARD (BANNER 1)</Text>
+                  </View>
+
+                  <View style={styles.formRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>BADGE TAG</Text>
+                      <TextInput
+                        style={styles.inputWhite}
+                        value={promoBanners[0]?.badge || 'PROMO'}
+                        onChangeText={(t) => handleUpdatePromo(0, 'badge', t)}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>MAIN TITLE</Text>
+                      <TextInput
+                        style={styles.inputWhite}
+                        value={promoBanners[0]?.title || '50% OFF'}
+                        onChangeText={(t) => handleUpdatePromo(0, 'title', t)}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>SUB TITLE</Text>
+                    <TextInput
+                      style={styles.inputWhite}
+                      value={promoBanners[0]?.subtitle || 'Winter Wear Deep Dryclean'}
+                      onChangeText={(t) => handleUpdatePromo(0, 'subtitle', t)}
+                    />
+                  </View>
+                </View>
+
+                {/* Blue Delivery Card (Banner 2) */}
+                <View style={styles.blueBannerCard}>
+                  <View style={styles.bannerBadgeBlue}>
+                    <Text style={styles.bannerBadgeBlueText}>BLUE DELIVERY CARD (BANNER 2)</Text>
+                  </View>
+
+                  <View style={styles.formRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>BADGE TAG</Text>
+                      <TextInput
+                        style={styles.inputWhite}
+                        value={promoBanners[1]?.badge || 'EXPRESS'}
+                        onChangeText={(t) => handleUpdatePromo(1, 'badge', t)}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>MAIN TITLE</Text>
+                      <TextInput
+                        style={styles.inputWhite}
+                        value={promoBanners[1]?.title || 'EXPRESS DOORSTEP'}
+                        onChangeText={(t) => handleUpdatePromo(1, 'title', t)}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>SUB TITLE</Text>
+                    <TextInput
+                      style={styles.inputWhite}
+                      value={promoBanners[1]?.subtitle || 'Fast scheduled pickup & delivery'}
+                      onChangeText={(t) => handleUpdatePromo(1, 'subtitle', t)}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── 4. WASH ADD-ONS & PREFERENCES ─── */}
+        {shouldShowSection('addons') && (
+          <View style={styles.optionCard}>
+            <TouchableOpacity
+              style={styles.optionHeader}
+              activeOpacity={0.85}
+              onPress={() => toggleSection('addons')}
+            >
+              <View style={[styles.optionIconBox, { backgroundColor: '#C084FC' }]}>
+                <Droplets size={18} color={COLORS.black} strokeWidth={2.5} />
+              </View>
+              <View style={styles.optionHeaderTextWrap}>
+                <Text style={styles.optionTitle}>WASH ADD-ONS & PREFS</Text>
+                <Text style={styles.optionSubtitle}>Checkout wash customizations & pricing</Text>
+              </View>
+              {expandedSections.addons ? (
+                <ChevronUp size={20} color={COLORS.black} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={20} color={COLORS.black} strokeWidth={2.5} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSections.addons && (
+              <View style={styles.optionBody}>
+                <View style={styles.addPrefHeaderRow}>
+                  <Text style={styles.listSectionCount}>
+                    {washPreferences.length} CUSTOMIZATIONS CONFIGURED
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.addPrefBtn}
+                    activeOpacity={0.85}
+                    onPress={handleAddWashPref}
+                  >
+                    <Plus size={14} color={COLORS.black} strokeWidth={3} />
+                    <Text style={styles.addPrefBtnText}>ADD ADD-ON</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {washPreferences.map((pref, idx) => (
+                  <View key={pref.id || idx} style={styles.prefCard}>
+                    <View style={styles.prefCardTopRow}>
+                      <View style={styles.toggleRow}>
+                        <ToggleSwitch
+                          value={pref.enabled}
+                          onToggle={() => handleToggleWashPref(idx)}
+                        />
+                        <Text
+                          style={[
+                            styles.toggleLabel,
+                            pref.enabled ? { color: '#16A34A' } : { color: '#6B7280' },
+                          ]}
+                        >
+                          {pref.enabled ? 'ACTIVE' : 'DISABLED'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.trashBtn}
+                        onPress={() => handleDeleteWashPref(idx)}
+                        activeOpacity={0.8}
+                      >
+                        <Trash2 size={15} color="#DC2626" strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.formRow}>
+                      <View style={{ flex: 2 }}>
+                        <Text style={styles.inputLabel}>PREFERENCE NAME</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={pref.name}
+                          onChangeText={(t) => handleUpdateWashPref(idx, 'name', t)}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.inputLabel}>PRICE (₹)</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={String(pref.price ?? 0)}
+                          onChangeText={(t) => handleUpdateWashPref(idx, 'price', Number(t) || 0)}
+                          keyboardType="numeric"
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>SHORT DESCRIPTION</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={pref.description || ''}
+                        onChangeText={(t) => handleUpdateWashPref(idx, 'description', t)}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── 5. DELIVERY FLEET & STAFF ─── */}
+        {shouldShowSection('fleet') && (
+          <View style={styles.optionCard}>
+            <TouchableOpacity
+              style={styles.optionHeader}
+              activeOpacity={0.85}
+              onPress={() => toggleSection('fleet')}
+            >
+              <View style={[styles.optionIconBox, { backgroundColor: '#FB923C' }]}>
+                <Truck size={18} color={COLORS.black} strokeWidth={2.5} />
+              </View>
+              <View style={styles.optionHeaderTextWrap}>
+                <Text style={styles.optionTitle}>DELIVERY FLEET ({deliveryBoys.length})</Text>
+                <Text style={styles.optionSubtitle}>Add & manage delivery personnel</Text>
+              </View>
+              {expandedSections.fleet ? (
+                <ChevronUp size={20} color={COLORS.black} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={20} color={COLORS.black} strokeWidth={2.5} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSections.fleet && (
+              <View style={styles.optionBody}>
+                {/* Add Fleet Form */}
+                <View style={styles.addFleetBox}>
+                  <Text style={styles.addFleetBoxTitle}>+ ADD NEW DELIVERY STAFF</Text>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>STAFF NAME</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. Rahul Sharma"
+                      placeholderTextColor="#9CA3AF"
+                      value={delivName}
+                      onChangeText={setDelivName}
+                    />
+                  </View>
+
+                  <View style={styles.formRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>PHONE NUMBER</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="9876543210"
+                        placeholderTextColor="#9CA3AF"
+                        value={delivPhone}
+                        onChangeText={setDelivPhone}
+                        keyboardType="phone-pad"
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="staff@wow.com"
+                        placeholderTextColor="#9CA3AF"
+                        value={delivEmail}
+                        onChangeText={setDelivEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.addFleetBtn}
+                    activeOpacity={0.85}
+                    onPress={handleAddDelivery}
+                    disabled={isAddingDeliv}
+                  >
+                    <Plus size={16} color={COLORS.black} strokeWidth={3} />
+                    <Text style={styles.addFleetBtnText}>
+                      {isAddingDeliv ? 'ADDING...' : 'ADD DELIVERY STAFF'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Existing Fleet List */}
+                <Text style={styles.fleetListTitle}>ACTIVE FLEET PERSONNEL</Text>
+
+                {deliveryBoys.map((boy) => (
+                  <View key={boy._id} style={styles.fleetRow}>
+                    <View style={styles.fleetAvatar}>
+                      <Truck size={16} color={COLORS.black} strokeWidth={2.5} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.fleetName}>{boy.name}</Text>
+                      <Text style={styles.fleetDetails}>{boy.phone || boy.email}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.removeFleetBtn}
+                      onPress={() => handleDeleteStaff(boy._id, boy.name)}
+                    >
+                      <Trash2 size={15} color="#DC2626" strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {deliveryBoys.length === 0 && (
+                  <View style={styles.emptyFleetBox}>
+                    <Text style={styles.emptyFleetText}>No delivery staff assigned yet.</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Global Save Button at Bottom */}
+        <TouchableOpacity
+          style={[styles.bottomSaveBtn, isSaving && { opacity: 0.7 }]}
+          activeOpacity={0.85}
+          onPress={handleSaveSettings}
+          disabled={isSaving}
+        >
+          <Text style={styles.bottomSaveBtnText}>
+            {isSaving ? 'SAVING CHANGES...' : 'SAVE ALL CONFIGURATIONS'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Logout Button */}
+        <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
+          <LogOut size={16} color={COLORS.white} strokeWidth={3} />
+          <Text style={styles.logoutBtnText}>LOGOUT OF ADMIN PANEL</Text>
         </TouchableOpacity>
       </ScrollView>
-
-      <PaymentModal
-        visible={paymentOpen}
-        paymentInfo={shops.find((s: any) => s._id === selectedShopIdForPayment)?.paymentInfo}
-        onSave={(info: any) => { 
-          if (selectedShopIdForPayment) {
-            updateShop(selectedShopIdForPayment, { paymentInfo: info }); 
-          }
-          setPaymentOpen(false); 
-        }}
-        onClose={() => setPaymentOpen(false)}
-      />
-
-      <DeliveryModal
-        visible={deliveryOpen}
-        shopId={selectedShopIdForPayment}
-        onClose={() => setDeliveryOpen(false)}
-      />
-
-      <BusinessSettingsModal
-        visible={instructionsOpen}
-        shop={shops.find((s: any) => s._id === selectedShopIdForPayment)}
-        onSave={(data: any) => { 
-          if (selectedShopIdForPayment) {
-            updateShop(selectedShopIdForPayment, data); 
-          }
-          setInstructionsOpen(false); 
-        }}
-        onClose={() => setInstructionsOpen(false)}
-      />
-
-      <WashPreferencesModal
-        visible={washPreferencesOpen}
-        shop={shops.find((s: any) => s._id === selectedShopIdForPayment)}
-        onSave={(prefs: any) => {
-          if (selectedShopIdForPayment) {
-            updateShop(selectedShopIdForPayment, { washPreferences: prefs });
-          }
-          setWashPreferencesOpen(false);
-        }}
-        onClose={() => setWashPreferencesOpen(false)}
-      />
-
-      <ShopSelectionModal
-        visible={shopSelectOpen}
-        shops={shops}
-        onSelect={(selectedShop: any) => {
-          setSelectedShopIdForPayment(selectedShop._id);
-          setShopSelectOpen(false);
-          setTimeout(() => {
-            if (shopSelectMode === 'payment') setPaymentOpen(true);
-            else if (shopSelectMode === 'delivery') setDeliveryOpen(true);
-            else if (shopSelectMode === 'instructions') setInstructionsOpen(true);
-            else if (shopSelectMode === 'wash') setWashPreferencesOpen(true);
-          }, 300);
-        }}
-        onClose={() => setShopSelectOpen(false)}
-      />
-    </>
+    </View>
   );
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#F8FAFC',
   },
-  scrollContent: {
-    paddingTop: SPACING.xl,
-    paddingBottom: 140,
-  },
-  profileHeader: {
-    alignItems: 'center',
-    paddingBottom: SPACING.xl,
-    paddingHorizontal: SPACING.mobile,
-  },
-  avatarWrapper: {
-    position: 'relative',
-    marginBottom: SPACING.md,
-  },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 4,
-    borderColor: COLORS.surfaceContainerLowest,
-    overflow: 'hidden',
-    position: 'relative',
-    ...SHADOW.ambient,
-  },
-  avatarText: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: COLORS.primary,
-    zIndex: 1,
-  } as any,
-  avatarEdit: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: COLORS.surfaceContainerLowest,
-    ...SHADOW.ambient,
-  },
-  catalogItemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    ...SHADOW.ambient,
-  },
-  catalogItemIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: SPACING.md,
-  },
-  sectionHeader: {
-    marginBottom: SPACING.sm,
-  },
-  branchPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.xs,
-    marginTop: SPACING.md,
-    justifyContent: 'center',
-  },
-  branchPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(96, 74, 192, 0.06)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: 'rgba(96, 74, 192, 0.1)',
-  },
-  settingsSection: {
-    paddingHorizontal: SPACING.mobile,
-    gap: SPACING.sm,
-    marginBottom: SPACING.xl,
-  },
-  settingsCard: {
-    padding: 0,
-  },
-  settingsCardInner: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: SPACING.lg,
+    paddingHorizontal: SPACING.mobile,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.xs,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#E2E8F0',
   },
-  settingsLeft: {
+  heading: {
+    fontSize: 20,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.2,
+  },
+  subHeading: {
+    fontSize: 10,
+    fontFamily: 'Outfit_700Bold',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    marginTop: 1,
+    letterSpacing: 0.3,
+  },
+  globalSaveBtn: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    ...NEO_SHADOW.box2,
+  },
+  globalSaveBtnText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.4,
+  },
+  categoryBar: {
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#E2E8F0',
+    paddingVertical: 8,
+  },
+  categoryBarContent: {
+    paddingHorizontal: SPACING.mobile,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 8,
+  },
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    ...NEO_SHADOW.box2,
+  },
+  categoryPillActive: {
+    backgroundColor: COLORS.black,
+  },
+  pillColorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+  },
+  categoryPillText: {
+    fontSize: 11,
+    fontFamily: 'Outfit_700Bold',
+    color: COLORS.black,
+  },
+  categoryPillTextActive: {
+    color: COLORS.white,
+    fontFamily: 'Outfit_800ExtraBold',
+  },
+  scrollContent: {
+    padding: SPACING.mobile,
+    paddingBottom: 100,
+    gap: SPACING.md,
+  },
+  optionCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    overflow: 'hidden',
+    ...NEO_SHADOW.box4,
+  },
+  optionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.md,
+    backgroundColor: COLORS.white,
+    gap: 12,
+  },
+  optionIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...NEO_SHADOW.box2,
+  },
+  optionHeaderTextWrap: {
     flex: 1,
   },
-  settingsIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.full,
+  optionTitle: {
+    fontSize: 14,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  optionSubtitle: {
+    fontSize: 10,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  optionBody: {
+    padding: SPACING.md,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1.5,
+    borderTopColor: '#F1F5F9',
+    backgroundColor: '#FAFAFA',
+  },
+  statusToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  statusSubtext: {
+    fontSize: 10,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  toggleLabel: {
+    fontSize: 10,
+    fontFamily: 'Outfit_800ExtraBold',
+    letterSpacing: 0.2,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: SPACING.sm,
+  },
+  inputGroup: {
+    marginBottom: SPACING.sm,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontFamily: 'Outfit_700Bold',
+    color: '#1E293B',
+    marginBottom: 4,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  input: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    fontFamily: 'Outfit_600SemiBold',
+    color: COLORS.black,
+  },
+  inputWhite: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    fontFamily: 'Outfit_600SemiBold',
+    color: COLORS.black,
+  },
+  limeBannerCard: {
+    backgroundColor: '#F2FCE2',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+    ...NEO_SHADOW.box2,
+  },
+  bannerBadgeLime: {
+    backgroundColor: '#B0FF49',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+    alignSelf: 'flex-start',
+    marginBottom: SPACING.sm,
+  },
+  bannerBadgeLimeText: {
+    fontSize: 10,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  blueBannerCard: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+    ...NEO_SHADOW.box2,
+  },
+  bannerBadgeBlue: {
+    backgroundColor: '#0D8DE3',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+    alignSelf: 'flex-start',
+    marginBottom: SPACING.sm,
+  },
+  bannerBadgeBlueText: {
+    fontSize: 10,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.white,
+    letterSpacing: 0.3,
+  },
+  addPrefHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    gap: 8,
+  },
+  listSectionCount: {
+    fontSize: 10,
+    fontFamily: 'Outfit_700Bold',
+    color: '#64748B',
+    letterSpacing: 0.3,
+  },
+  addPrefBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#B0FF49',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.md,
+    ...NEO_SHADOW.box2,
+  },
+  addPrefBtnText: {
+    fontSize: 10,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  prefCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+    ...NEO_SHADOW.box2,
+  },
+  prefCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  trashBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statStrip: {
-    marginHorizontal: SPACING.mobile,
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderRadius: RADIUS.xl,
+  addFleetBox: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  addFleetBoxTitle: {
+    fontSize: 11,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: SPACING.xs,
+    letterSpacing: 0.3,
+  },
+  addFleetBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-evenly',
-    paddingVertical: SPACING.md + 2,
-    marginBottom: SPACING.xl,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    ...SHADOW.ambient,
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingVertical: 10,
+    marginTop: 4,
+    ...NEO_SHADOW.box2,
   },
-  statItem: {
+  addFleetBtnText: {
+    fontSize: 11,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  fleetListTitle: {
+    fontSize: 11,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  fleetRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 10,
+    marginBottom: 6,
   },
-  statDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: COLORS.surfaceContainerHigh,
+  fleetAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fleetName: {
+    fontSize: 13,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  fleetDetails: {
+    fontSize: 10,
+    fontFamily: 'Outfit_500Medium',
+    color: '#64748B',
+  },
+  removeFleetBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyFleetBox: {
+    padding: SPACING.md,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#94A3B8',
+    borderRadius: RADIUS.md,
+  },
+  emptyFleetText: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#64748B',
+  },
+  bottomSaveBtn: {
+    backgroundColor: COLORS.black,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    paddingVertical: 14,
+    alignItems: 'center',
+    ...NEO_SHADOW.box4,
+  },
+  bottomSaveBtnText: {
+    fontSize: 13,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.white,
+    letterSpacing: 0.5,
   },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: RADIUS.full,
-    alignSelf: 'center',
-  },
-  qrOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-  },
-  qrSheet: {
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderTopLeftRadius: RADIUS.xxl,
-    borderTopRightRadius: RADIUS.xxl,
-    padding: SPACING.lg,
-    paddingBottom: 48,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  branchSheet: {
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderTopLeftRadius: RADIUS.xxl,
-    borderTopRightRadius: RADIUS.xxl,
-    padding: SPACING.lg,
-    paddingBottom: 44,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-    width: '100%',
-  },
-  closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  branchScroll: {
-    width: '100%',
-    maxHeight: 200,
-    marginBottom: SPACING.md,
-  },
-  branchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.md,
-    backgroundColor: COLORS.surfaceContainerLow,
-    borderRadius: RADIUS.lg,
-    marginBottom: SPACING.xs,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-  },
-  branchActiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-  },
-  addBranchForm: {
-    width: '100%',
-  },
-  qrBox: {
-    width: 210,
-    height: 210,
-    borderRadius: RADIUS.xl,
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderWidth: 3,
-    borderColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING.md,
-    position: 'relative',
-    overflow: 'hidden',
-    ...SHADOW.ambient,
-  },
-  qrGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    width: 154,
-    height: 154,
-    gap: 3,
-  },
-  qrCell: {
-    width: 14,
-    height: 14,
-    borderRadius: 1.5,
-  },
-  qrCornerTL: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
-    width: 48,
-    height: 48,
-    borderWidth: 5,
-    borderColor: COLORS.primary,
-    borderRadius: 6,
-  },
-  qrCornerTR: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    width: 48,
-    height: 48,
-    borderWidth: 5,
-    borderColor: COLORS.primary,
-    borderRadius: 6,
-  },
-  qrCornerBL: {
-    position: 'absolute',
-    bottom: 14,
-    left: 14,
-    width: 48,
-    height: 48,
-    borderWidth: 5,
-    borderColor: COLORS.primary,
-    borderRadius: 6,
-  },
-  qrCenterLogo: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    backgroundColor: COLORS.surfaceContainerLowest,
+    backgroundColor: '#DC2626',
     borderWidth: 2,
-    borderColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.outlineVariant,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: SPACING.lg,
-  },
-  sheetInput: {
-    backgroundColor: COLORS.surfaceContainerLow,
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md - 2,
-    ...TYPO.bodyLg,
-    color: COLORS.onSurface,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    outlineWidth: 0,
-  } as any,
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: SPACING.mobile,
-  },
-  modalContent: {
-    backgroundColor: COLORS.surfaceContainerLowest,
+    borderColor: COLORS.black,
     borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
-    ...SHADOW.ambient,
+    paddingVertical: 13,
+    ...NEO_SHADOW.box4,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.sm,
-  },
-  inputGroup: {
-    marginBottom: SPACING.md,
-  },
-  inputLabel: {
-    ...TYPO.labelSm,
-    color: COLORS.onSurface,
-    marginBottom: 4,
-    fontWeight: '600',
-  },
-  input: {
-    backgroundColor: COLORS.surfaceContainerLow,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md - 2,
-    ...TYPO.bodyLg,
-    color: COLORS.onSurface,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    outlineWidth: 0,
-  } as any,
-  primaryBtn: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    marginTop: SPACING.sm,
-  },
-  primaryBtnText: {
-    ...TYPO.labelLg,
-    color: COLORS.onPrimary,
-    fontWeight: '700',
-  },
-  shopSelectRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceContainer,
-  },
-  shopSelectIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.full,
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: SPACING.md,
-  },
-  statusCard: {
-    marginHorizontal: SPACING.mobile,
-    marginBottom: SPACING.lg,
-    padding: SPACING.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 168, 232, 0.15)',
-    ...SHADOW.ambient,
-  },
-  statusCardInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.md,
-  },
-  statusLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  logoutBtnText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.white,
+    letterSpacing: 0.5,
   },
 });
-
-// ─── Wash Preferences Modal ─────────────────────────────────────
-const WashPreferencesModal: React.FC<{
-  visible: boolean;
-  shop: any;
-  onSave: (prefs: any) => void;
-  onClose: () => void;
-}> = ({ visible, shop, onSave, onClose }) => {
-  const [prefs, setPrefs] = useState<any[]>([]);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
-
-  React.useEffect(() => {
-    if (visible && shop?.washPreferences) {
-      setPrefs([...shop.washPreferences]);
-    } else if (visible) {
-      setPrefs([]);
-    }
-  }, [visible, shop]);
-
-  const handleAdd = () => {
-    if (!name.trim() || !price.trim()) return alert('Name and Price are required');
-    const newPref = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: name.trim(),
-      description: description.trim(),
-      price: parseFloat(price)
-    };
-    setPrefs([...prefs, newPref]);
-    setName('');
-    setDescription('');
-    setPrice('');
-  };
-
-  const handleRemove = (id: string) => {
-    setPrefs(prefs.filter(p => p.id !== id));
-  };
-
-  return (
-    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={[TYPO.titleLg, { color: COLORS.onSurface, marginBottom: SPACING.md }]}>Wash Preferences</Text>
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 200, marginBottom: SPACING.md }}>
-            {prefs.map(p => (
-              <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderColor: COLORS.surfaceContainer }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>{p.name}</Text>
-                  <Text style={[TYPO.labelSm, { color: COLORS.outline }]}>{p.description}</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={[TYPO.labelLg, { color: COLORS.primary, marginRight: SPACING.md }]}>₹{p.price}</Text>
-                  <TouchableOpacity onPress={() => handleRemove(p.id)}>
-                    <Text style={{ color: COLORS.error, fontWeight: 'bold' }}>Remove</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-
-          <View style={{ backgroundColor: COLORS.surfaceContainerLowest, padding: SPACING.md, borderRadius: RADIUS.md, marginBottom: SPACING.lg }}>
-            <Text style={[TYPO.labelMd, { color: COLORS.outline, marginBottom: SPACING.sm }]}>Add New Preference</Text>
-            <TextInput style={[styles.input, { marginBottom: SPACING.sm }]} placeholder="Name (e.g. Fabric Softener)" value={name} onChangeText={setName} />
-            <TextInput style={[styles.input, { marginBottom: SPACING.sm }]} placeholder="Description" value={description} onChangeText={setDescription} />
-            <TextInput style={[styles.input, { marginBottom: SPACING.sm }]} placeholder="Extra Price (e.g. 20)" value={price} onChangeText={setPrice} keyboardType="numeric" />
-            <TouchableOpacity onPress={handleAdd} style={{ backgroundColor: COLORS.secondary, padding: 10, borderRadius: RADIUS.md, alignItems: 'center' }}>
-              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Add to List</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-            <TouchableOpacity onPress={onClose} style={[{ padding: 12, borderRadius: RADIUS.md, alignItems: 'center' }, { backgroundColor: COLORS.surfaceContainer, marginRight: SPACING.sm }]}>
-              <Text style={[TYPO.labelLg, { color: COLORS.onSurfaceVariant }]}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onSave(prefs)} style={[{ padding: 12, borderRadius: RADIUS.md, alignItems: 'center' }, { backgroundColor: COLORS.primary }]}>
-              <Text style={[TYPO.labelLg, { color: COLORS.onPrimary }]}>Save Preferences</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-};

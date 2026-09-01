@@ -6,13 +6,8 @@ const router = Router();
 
 // Ensure Cloudinary uses the URL from .env explicitly
 if (process.env.CLOUDINARY_URL) {
-  const url = process.env.CLOUDINARY_URL.replace('cloudinary://', '');
-  const [apiKey, rest] = url.split(':');
-  const [apiSecret, cloudName] = rest.split('@');
   cloudinary.config({
-    cloud_name: cloudName,
-    api_key: apiKey,
-    api_secret: apiSecret,
+    cloudinary_url: process.env.CLOUDINARY_URL.trim(),
     secure: true,
   });
 }

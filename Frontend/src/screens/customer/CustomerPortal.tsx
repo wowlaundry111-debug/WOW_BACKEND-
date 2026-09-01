@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ImageBackground } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Home, ListOrdered, User } from 'lucide-react-native';
-import { COLORS, SPACING, RADIUS, TYPO, SHADOW } from '../../components/Theme';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { CustomerHomeScreen } from './CustomerHome';
 import { CustomerOrdersScreen } from './CustomerOrders';
 import { CustomerShopScreen } from './CustomerShop';
@@ -38,80 +37,73 @@ export const CustomerPortal = () => {
   };
 
   return (
-    <ImageBackground source={require('../../../assets/bg.png')} style={styles.bgImage} resizeMode="cover">
-      <View style={styles.root}>
-        <View style={styles.content}>
-          {renderScreen()}
-        </View>
-        {currentTenantId && (
-          <View style={styles.tabBar}>
-            <TabButton
-              icon={Home}
-              label="Home"
-              isActive={activeTab === 'HOME'}
-              onPress={() => setActiveTab('HOME')}
-            />
-            <TabButton
-              icon={ListOrdered}
-              label="Orders"
-              isActive={activeTab === 'ORDERS'}
-              onPress={() => setActiveTab('ORDERS')}
-            />
-            <TabButton
-              icon={User}
-              label="Profile"
-              isActive={activeTab === 'PROFILE'}
-              onPress={() => setActiveTab('PROFILE')}
-            />
-          </View>
-        )}
+    <View style={styles.root}>
+      <View style={styles.content}>
+        {renderScreen()}
       </View>
-    </ImageBackground>
+      {currentTenantId && activeTab !== 'CART' && (
+        <View style={styles.tabBar}>
+          <TabButton
+            icon={Home}
+            label="Home"
+            isActive={activeTab === 'HOME'}
+            onPress={() => setActiveTab('HOME')}
+          />
+          <TabButton
+            icon={ListOrdered}
+            label="Orders"
+            isActive={activeTab === 'ORDERS'}
+            onPress={() => setActiveTab('ORDERS')}
+          />
+          <TabButton
+            icon={User}
+            label="Profile"
+            isActive={activeTab === 'PROFILE'}
+            onPress={() => setActiveTab('PROFILE')}
+          />
+        </View>
+      )}
+    </View>
   );
 };
 
 const TabButton = ({ icon: Icon, label, isActive, onPress }: any) => (
   <TouchableOpacity
-    activeOpacity={0.85}
+    activeOpacity={0.8}
     onPress={onPress}
     style={styles.tabButton}
   >
     <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
       <Icon 
-        size={22} 
-        color={isActive ? COLORS.primary : COLORS.outline} 
-        fill={isActive ? COLORS.primary + '20' : 'none'} 
+        size={20} 
+        color={isActive ? COLORS.black : '#6B7280'} 
+        strokeWidth={isActive ? 3 : 2.2}
       />
+      <Text style={[styles.tabLabel, { color: isActive ? COLORS.black : '#6B7280' }]}>
+        {label}
+      </Text>
     </View>
-    <Text style={[TYPO.labelSm, { color: isActive ? COLORS.primary : COLORS.outline, marginTop: 4, fontWeight: isActive ? '800' : '600' }]}>
-      {label}
-    </Text>
   </TouchableOpacity>
 );
 
 const styles = StyleSheet.create({
-  bgImage: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
   root: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: COLORS.white,
   },
   content: {
     flex: 1,
   },
   tabBar: {
     flexDirection: 'row',
-    height: 72,
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.outlineVariant,
-    paddingBottom: 8,
+    height: 68,
+    backgroundColor: COLORS.white,
+    borderTopWidth: 2,
+    borderTopColor: COLORS.black,
+    paddingBottom: 4,
     paddingHorizontal: SPACING.md,
-    ...SHADOW.ambient,
-    elevation: 8,
+    alignItems: 'center',
+    justifyContent: 'space-around',
   },
   tabButton: {
     flex: 1,
@@ -119,15 +111,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconContainer: {
-    paddingHorizontal: 18,
-    paddingVertical: 5,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: RADIUS.md,
   },
   iconContainerActive: {
-    backgroundColor: 'rgba(0, 168, 232, 0.06)',
-    borderColor: 'rgba(0, 168, 232, 0.12)',
-    ...SHADOW.glow(COLORS.primary),
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    ...NEO_SHADOW.box2,
+  },
+  tabLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

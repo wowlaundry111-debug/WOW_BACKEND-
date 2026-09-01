@@ -103,6 +103,7 @@ const SwitcherModal: React.FC<SwitcherModalProps> = ({ visible, onClose }) => {
 
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 import { useNotificationStore } from './src/store/useNotificationStore';
+import { SocketManager } from './src/components/SocketManager';
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
@@ -148,6 +149,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <SocketManager />
       <View style={styles.root}>
         <ExpoStatusBar style="dark" />
         {renderCurrentPortal()}

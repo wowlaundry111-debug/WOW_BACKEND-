@@ -1,464 +1,517 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Animated, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+} from 'react-native';
 import { useAppStore } from '../../store/useAppStore';
-import { COLORS, SPACING, RADIUS, TYPO } from '../../components/Theme';
-import { Building2, IndianRupee, Users, ChevronRight, Plus, X, Trash2 } from 'lucide-react-native';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
+import { Building2, Users, ChevronRight, Plus, X, Trash2, Store } from 'lucide-react-native';
 import { SuperAdminShopDetail } from './SuperAdminShopDetail';
 
 export const SuperAdminDashboard: React.FC = () => {
-  const { shops, orders, users, createShop, deleteShop } = useAppStore();
-  const [isCreating, setIsCreating] = useState(false);
+  const { shops, orders, users, createShop, deleteShop, setCurrentTenantId, initializeAppData, fetchOrders, fetchUsers, fetchCatalog } = useAppStore();
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
-  
-  const formHeight = useRef(new Animated.Value(0)).current;
-  const formOpacity = useRef(new Animated.Value(0)).current;
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    initializeAppData();
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await initializeAppData();
+    setRefreshing(false);
+  }, [initializeAppData]);
 
   // Form State
-  const [shopName, setShopName] = useState('');
+  const [name, setName] = useState('');
   const [branchLocation, setBranchLocation] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
   const [upiId, setUpiId] = useState('');
   const [bankName, setBankName] = useState('');
   const [accountNo, setAccountNo] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+  const totalCustomers = users.filter((u) => u.role === 'Customer').length;
+  const totalBranches = shops.reduce((sum, s) => sum + (s.branches?.length || 1), 0);
+  const activeOrders = orders.filter((o) => o.status !== 'DELIVERED').length;
 
-  const totalCustomers = users.filter(u => u.role === 'Customer').length;
-  const totalBranches = shops.reduce((sum, shop) => sum + (shop.branches?.length || 1), 0);
-
-  const toggleForm = (show: boolean) => {
-    setIsCreating(show);
-    Animated.parallel([
-      Animated.timing(formHeight, {
-        toValue: show ? 1 : 0,
-        duration: 250,
-        useNativeDriver: false,
-      }),
-      Animated.timing(formOpacity, {
-        toValue: show ? 1 : 0,
-        duration: 200,
-        useNativeDriver: false,
-      })
-    ]).start();
-  };
-
-  const handleCreateShop = async () => {
-    if (!shopName || !branchLocation || !adminEmail) {
-      Alert.alert('Required Fields', 'Please enter a shop name, location, and admin email.');
+  const handleCreate = async () => {
+    if (!name.trim() || !branchLocation.trim() || !adminEmail.trim()) {
+      Alert.alert('Required', 'Shop name, branch location, and admin email are required');
       return;
     }
-    await createShop(shopName, [branchLocation], upiId, bankName, accountNo, adminEmail);
-    toggleForm(false);
-    setShopName('');
-    setBranchLocation('');
-    setUpiId('');
-    setBankName('');
-    setAccountNo('');
-    setAdminEmail('');
+
+    setIsSubmitting(true);
+    try {
+      await createShop(
+        name.trim(),
+        [branchLocation.trim()],
+        upiId.trim(),
+        bankName.trim(),
+        accountNo.trim(),
+        adminEmail.trim()
+      );
+      setName('');
+      setBranchLocation('');
+      setAdminEmail('');
+      setUpiId('');
+      setBankName('');
+      setAccountNo('');
+      setIsAddModalOpen(false);
+      Alert.alert('Success', `Branch "${name}" created successfully!`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to create branch');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDeleteShop = (shopId: string, shopName: string) => {
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm(`Are you sure you want to permanently delete "${shopName}"? This action cannot be undone.`);
-      if (confirmed) {
-        deleteShop(shopId);
-      }
-    } else {
-      Alert.alert(
-        'Delete Branch',
-        `Are you sure you want to permanently delete "${shopName}"? This action cannot be undone.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: () => deleteShop(shopId) }
-        ]
-      );
-    }
+  const handleDelete = (shopId: string, shopName: string) => {
+    Alert.alert('Delete Branch', `Are you sure you want to permanently delete "${shopName}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => deleteShop(shopId),
+      },
+    ]);
   };
 
   if (selectedShopId) {
-    return <SuperAdminShopDetail shopId={selectedShopId} onBack={() => setSelectedShopId(null)} />;
+    return (
+      <SuperAdminShopDetail
+        shopId={selectedShopId}
+        onBack={() => setSelectedShopId(null)}
+      />
+    );
   }
 
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.scrollContent}>
-      
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      style={styles.root}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Overview</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.heading}>SUPER ADMIN</Text>
+          <Text style={styles.subHeading}>Enterprise monitoring across all branches</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.addBtn}
+          activeOpacity={0.85}
+          onPress={() => setIsAddModalOpen(true)}
+        >
+          <Plus size={16} color={COLORS.black} strokeWidth={3} />
+          <Text style={styles.addBtnText}>ADD BRANCH</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Stats Section */}
-      <View style={styles.statsContainer}>
-        {/* Highlighted Revenue Card */}
-        <View style={[styles.statCard, styles.revenueCard]}>
-          <View style={styles.statHeader}>
-            <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.9)' }]}>Gross Revenue</Text>
-            <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: 6, borderRadius: RADIUS.full }}>
-              <IndianRupee size={16} color="#FFFFFF" />
-            </View>
-          </View>
-          <Text style={[styles.statValue, { color: '#FFFFFF', fontSize: 36, letterSpacing: -1, marginTop: 4 }]} numberOfLines={1} adjustsFontSizeToFit>
-            ₹{totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+      {/* Global Bento Grid */}
+      <View style={styles.bentoGrid}>
+        <View style={[styles.bentoCard, { backgroundColor: COLORS.secondary }]}>
+          <Text style={styles.bentoLabel}>GROSS REVENUE</Text>
+          <Text style={styles.bentoValue}>
+            ₹{totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
           </Text>
+          <Text style={styles.bentoTag}>Across {shops.length} shops</Text>
         </View>
 
-        <View style={styles.rowStats}>
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <Text style={styles.statLabel}>Total Branches</Text>
-              <View style={{ backgroundColor: COLORS.surfaceContainer, padding: 6, borderRadius: RADIUS.full }}>
-                <Building2 size={16} color={COLORS.primary} />
-              </View>
-            </View>
-            <Text style={styles.statValue}>{totalBranches}</Text>
-          </View>
+        <View style={[styles.bentoCard, { backgroundColor: COLORS.primary }]}>
+          <Text style={[styles.bentoLabel, { color: COLORS.white }]}>ACTIVE ORDERS</Text>
+          <Text style={[styles.bentoValue, { color: COLORS.white }]}>{activeOrders}</Text>
+          <Text style={[styles.bentoTag, { color: COLORS.white }]}>In processing</Text>
+        </View>
 
-          <View style={styles.statCard}>
-            <View style={styles.statHeader}>
-              <Text style={styles.statLabel}>Total Customers</Text>
-              <View style={{ backgroundColor: COLORS.surfaceContainer, padding: 6, borderRadius: RADIUS.full }}>
-                <Users size={16} color={COLORS.secondary} />
-              </View>
-            </View>
-            <Text style={styles.statValue}>{totalCustomers.toLocaleString()}</Text>
-          </View>
+        <View style={styles.bentoCard}>
+          <Text style={styles.bentoLabel}>TOTAL CUSTOMERS</Text>
+          <Text style={styles.bentoValue}>{totalCustomers}</Text>
+          <Text style={styles.bentoTag}>Registered users</Text>
+        </View>
+
+        <View style={styles.bentoCard}>
+          <Text style={styles.bentoLabel}>TOTAL BRANCHES</Text>
+          <Text style={styles.bentoValue}>{totalBranches}</Text>
+          <Text style={styles.bentoTag}>Active outlets</Text>
         </View>
       </View>
 
-      {/* Branches Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Branches</Text>
-          {!isCreating && (
-            <TouchableOpacity onPress={() => toggleForm(true)} style={styles.actionBtn}>
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.actionBtnText}>New Branch</Text>
+      {/* Branches List */}
+      <Text style={styles.sectionHeading}>ALL BRANCHES ({shops.length})</Text>
+
+      {shops.map((shop) => {
+        const shopOrders = orders.filter((o) => o.shopId === shop._id);
+        const shopRevenue = shopOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+        const isOpen = shop.isOpen ?? true;
+
+        return (
+          <TouchableOpacity
+            key={shop._id}
+            style={styles.shopCard}
+            activeOpacity={0.85}
+            onPress={() => setSelectedShopId(shop._id)}
+          >
+            <View style={styles.shopIconBox}>
+              <Store size={22} color={COLORS.black} strokeWidth={2.5} />
+            </View>
+
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Text style={styles.shopName}>{shop.name}</Text>
+                <View
+                  style={[
+                    styles.openBadge,
+                    { backgroundColor: isOpen ? COLORS.secondary : '#FEE2E2' },
+                  ]}
+                >
+                  <Text style={[styles.openBadgeText, { color: isOpen ? COLORS.black : '#DC2626' }]}>
+                    {isOpen ? 'OPEN' : 'CLOSED'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.shopBranches} numberOfLines={1}>
+                {shop.branches?.join(' · ') || 'Main Branch'}
+              </Text>
+
+              <Text style={styles.shopRevenue}>
+                ₹{shopRevenue.toLocaleString('en-IN')} · {shopOrders.length} orders
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.deleteShopBtn}
+              onPress={() => handleDelete(shop._id, shop.name)}
+            >
+              <Trash2 size={16} color="#DC2626" strokeWidth={2.5} />
             </TouchableOpacity>
-          )}
-        </View>
+          </TouchableOpacity>
+        );
+      })}
 
-        {/* Inline Create Form */}
-        <Animated.View style={[
-          styles.formWrapper,
-          { 
-            maxHeight: formHeight.interpolate({ inputRange: [0, 1], outputRange: [0, 600] }),
-            opacity: formOpacity,
-            overflow: 'hidden',
-          }
-        ]}>
-          <View style={styles.formContainer}>
-            <View style={styles.formHeader}>
-              <Text style={styles.formTitle}>Add a new branch</Text>
-              <TouchableOpacity onPress={() => toggleForm(false)}>
-                <X size={20} color="#71717A" />
+      {/* Add Branch Modal */}
+      <Modal visible={isAddModalOpen} transparent animationType="slide">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalHeading}>CREATE NEW BRANCH</Text>
+              <TouchableOpacity onPress={() => setIsAddModalOpen(false)}>
+                <X size={22} color={COLORS.black} strokeWidth={3} />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.formContent}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Shop Name</Text>
-                <TextInput style={styles.input} value={shopName} onChangeText={setShopName} placeholder="WOW Laundry (Downtown)" placeholderTextColor="#A1A1AA" />
-              </View>
 
+            <ScrollView style={{ maxHeight: 400 }}>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Location / Address</Text>
-                <TextInput style={styles.input} value={branchLocation} onChangeText={setBranchLocation} placeholder="123 Main St, City" placeholderTextColor="#A1A1AA" />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Shop Admin Email (OTP Bypass)</Text>
-                <TextInput style={styles.input} value={adminEmail} onChangeText={setAdminEmail} placeholder="admin@shop.com" placeholderTextColor="#A1A1AA" autoCapitalize="none" keyboardType="email-address" />
-              </View>
-
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>UPI ID</Text>
-                  <TextInput style={styles.input} value={upiId} onChangeText={setUpiId} placeholder="shop@upi" placeholderTextColor="#A1A1AA" />
-                </View>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Bank Name</Text>
-                  <TextInput style={styles.input} value={bankName} onChangeText={setBankName} placeholder="HDFC" placeholderTextColor="#A1A1AA" />
-                </View>
+                <Text style={styles.inputLabel}>BRANCH NAME</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. WOW Laundry Sector 14"
+                  placeholderTextColor="#6B7280"
+                  value={name}
+                  onChangeText={setName}
+                />
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Account Number</Text>
-                <TextInput style={styles.input} value={accountNo} onChangeText={setAccountNo} placeholder="0000 0000 0000" placeholderTextColor="#A1A1AA" keyboardType="number-pad" />
+                <Text style={styles.inputLabel}>LOCATION / AREA</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Sector 14, Gurugram"
+                  placeholderTextColor="#6B7280"
+                  value={branchLocation}
+                  onChangeText={setBranchLocation}
+                />
               </View>
-            </View>
 
-            <View style={styles.formFooter}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => toggleForm(false)}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={handleCreateShop}>
-                <Text style={styles.submitBtnText}>Create Branch</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>ADMIN EMAIL</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="admin.sector14@wow.com"
+                  placeholderTextColor="#6B7280"
+                  value={adminEmail}
+                  onChangeText={setAdminEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>UPI ID</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="sector14@upi"
+                  placeholderTextColor="#6B7280"
+                  value={upiId}
+                  onChangeText={setUpiId}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>BANK NAME</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. HDFC Bank"
+                  placeholderTextColor="#6B7280"
+                  value={bankName}
+                  onChangeText={setBankName}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>ACCOUNT NUMBER</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0000000000"
+                  placeholderTextColor="#6B7280"
+                  value={accountNo}
+                  onChangeText={setAccountNo}
+                />
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.createBtn}
+              onPress={handleCreate}
+              disabled={isSubmitting}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.createBtnText}>
+                {isSubmitting ? 'CREATING...' : 'CREATE BRANCH'}
+              </Text>
+            </TouchableOpacity>
           </View>
-        </Animated.View>
-
-        {/* Branch List */}
-        <View style={styles.listContainer}>
-          {shops.map((shop, index) => {
-            const shortId = shop._id.includes('_') ? shop._id.split('_').pop() : shop._id.slice(-6).toUpperCase();
-            return (
-            <TouchableOpacity key={shop._id} style={styles.branchCard} onPress={() => setSelectedShopId(shop._id)}>
-              <View style={styles.branchIconBox}>
-                <Building2 size={24} color={COLORS.primary} />
-              </View>
-              <View style={styles.branchInfo}>
-                <Text style={styles.branchTitle} numberOfLines={1}>{shop.name}</Text>
-                <Text style={styles.branchSubtitle} numberOfLines={1}>{shop.branches.join(', ')}</Text>
-              </View>
-              <View style={styles.branchActions}>
-                <View style={styles.branchIdBadge}>
-                  <Text style={styles.branchIdText}>{shortId}</Text>
-                </View>
-                <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleDeleteShop(shop._id, shop.name); }} style={styles.deleteBtn}>
-                  <Trash2 size={18} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-            );
-          })}
-        </View>
-
-      </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: COLORS.white,
   },
   scrollContent: {
-    padding: 24,
+    padding: SPACING.mobile,
     paddingBottom: 100,
+    gap: SPACING.md,
   },
   header: {
-    marginBottom: 32,
-    marginTop: 8,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontFamily: 'Outfit_600SemiBold',
-    color: '#18181B',
-    letterSpacing: -0.5,
-  },
-  statsContainer: {
-    gap: 16,
-    marginBottom: 36,
-  },
-  rowStats: {
     flexDirection: 'row',
-    gap: 16,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E4E4E7',
-    borderRadius: RADIUS.xl,
-    padding: 20,
-    boxShadow: '0px 2px 8px rgba(0,0,0,0.03)' as any,
-  },
-  revenueCard: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-    boxShadow: '0px 8px 24px rgba(124, 58, 237, 0.25)' as any,
-  },
-  statHeader: {
-    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: SPACING.xs,
   },
-  statLabel: {
-    fontSize: 14,
-    fontFamily: 'Outfit_500Medium',
-    color: '#71717A',
+  heading: {
+    fontSize: 22,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
   },
-  statValue: {
-    fontSize: 28,
-    fontFamily: 'Outfit_700Bold',
-    color: '#18181B',
-    letterSpacing: -0.5,
+  subHeading: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    marginTop: 2,
   },
-  section: {
-    marginBottom: 32,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Outfit_600SemiBold',
-    color: '#18181B',
-  },
-  actionBtn: {
+  addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B', // Solid black for primary actions
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
     gap: 6,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    ...NEO_SHADOW.box2,
   },
-  actionBtnText: {
+  addBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  bentoGrid: {
+    gap: SPACING.sm,
+  },
+  bentoCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
+    ...NEO_SHADOW.box4,
+  },
+  bentoLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.8,
+  },
+  bentoValue: {
+    fontSize: 28,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginVertical: 4,
+  },
+  bentoTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  sectionHeading: {
     fontSize: 14,
-    fontFamily: 'Outfit_500Medium',
-    color: '#FFFFFF',
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.8,
+    marginTop: SPACING.sm,
   },
-  formWrapper: {
-    marginBottom: 16,
+  shopCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
+    ...NEO_SHADOW.box4,
   },
-  formContainer: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E4E4E7',
-    borderRadius: 8,
-    overflow: 'hidden',
+  shopIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.md,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  formHeader: {
+  shopName: {
+    fontSize: 15,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  openBadge: {
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xs,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  openBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+  },
+  shopBranches: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4B5563',
+    marginTop: 2,
+  },
+  shopRevenue: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.primary,
+    marginTop: 2,
+  },
+  deleteShopBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: RADIUS.xxl,
+    borderTopRightRadius: RADIUS.xxl,
+    borderTopWidth: 3,
+    borderColor: COLORS.black,
+    padding: SPACING.lg,
+    paddingBottom: 40,
+  },
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F4F4F5',
+    marginBottom: SPACING.md,
   },
-  formTitle: {
-    fontSize: 16,
-    fontFamily: 'Outfit_600SemiBold',
-    color: '#18181B',
-  },
-  formContent: {
-    padding: 20,
+  modalHeading: {
+    fontSize: 18,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: SPACING.sm,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  label: {
-    fontSize: 13,
-    fontFamily: 'Outfit_500Medium',
-    color: '#3F3F46',
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E4E4E7',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    fontFamily: 'Outfit_400Regular',
-    color: '#18181B',
-    backgroundColor: '#FFFFFF',
-    outlineStyle: 'none',
-  } as any,
-  formFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 16,
-    backgroundColor: '#FAFAFA',
-    borderTopWidth: 1,
-    borderTopColor: '#F4F4F5',
-    gap: 12,
-  },
-  cancelBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E4E4E7',
-  },
-  cancelBtnText: {
-    fontSize: 14,
-    fontFamily: 'Outfit_500Medium',
-    color: '#3F3F46',
-  },
-  submitBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#18181B',
-  },
-  submitBtnText: {
-    fontSize: 14,
-    fontFamily: 'Outfit_500Medium',
-    color: '#FFFFFF',
-  },
-  listContainer: {
-    gap: 12,
-  },
-  branchCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.xl,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E4E4E7',
-    boxShadow: '0px 2px 8px rgba(0,0,0,0.02)' as any,
-  },
-  branchIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.lg,
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  branchInfo: {
-    flex: 1,
-  },
-  branchTitle: {
-    fontSize: 16,
-    fontFamily: 'Outfit_600SemiBold',
-    color: '#18181B',
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
     marginBottom: 4,
   },
-  branchSubtitle: {
-    fontSize: 13,
-    fontFamily: 'Outfit_400Regular',
-    color: '#71717A',
-  },
-  branchActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  branchIdBadge: {
-    backgroundColor: '#F4F4F5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  branchIdText: {
-    fontSize: 12,
-    fontFamily: 'Outfit_600SemiBold',
-    color: '#71717A',
-    textTransform: 'uppercase',
-  },
-  deleteBtn: {
-    width: 36,
-    height: 36,
+  input: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
     borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    padding: 10,
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  createBtn: {
+    backgroundColor: COLORS.black,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    paddingVertical: 14,
     alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: SPACING.sm,
+    ...NEO_SHADOW.box4,
+  },
+  createBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.white,
+    letterSpacing: 0.8,
   },
 });

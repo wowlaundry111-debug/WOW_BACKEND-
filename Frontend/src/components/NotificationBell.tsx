@@ -5,7 +5,12 @@ import { useNotificationStore } from '../store/useNotificationStore';
 import { COLORS, TYPO, SPACING, RADIUS, SHADOW } from './Theme';
 import { NotificationsModal } from './NotificationsModal';
 
-export const NotificationBell = () => {
+interface NotificationBellProps {
+  color?: string;
+  buttonStyle?: any;
+}
+
+export const NotificationBell: React.FC<NotificationBellProps> = ({ color = COLORS.onSurface, buttonStyle }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const notifications = useNotificationStore((state) => state.notifications);
   
@@ -14,10 +19,10 @@ export const NotificationBell = () => {
   return (
     <>
       <TouchableOpacity 
-        style={styles.container} 
+        style={[styles.container, buttonStyle]} 
         onPress={() => setModalVisible(true)}
       >
-        <Bell color={COLORS.onSurface} size={24} />
+        <Bell color={color} size={22} strokeWidth={2.5} />
         {unreadCount > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>
@@ -37,18 +42,18 @@ export const NotificationBell = () => {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
-    marginRight: 8,
   },
   badge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
+    top: -3,
+    right: -5,
     backgroundColor: COLORS.error,
     borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    minWidth: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
@@ -56,7 +61,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     color: COLORS.onError,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
     fontFamily: 'Outfit_700Bold',
   },

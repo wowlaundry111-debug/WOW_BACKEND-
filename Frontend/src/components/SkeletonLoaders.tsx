@@ -1,6 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Animated, StyleSheet, Easing } from 'react-native';
-import { COLORS, RADIUS, SPACING, SHADOW } from './Theme';
+import { View, Animated, StyleSheet, Easing, Dimensions } from 'react-native';
+import { COLORS, RADIUS, SPACING, NEO_SHADOW } from './Theme';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const AnimatedView = Animated.View as any;
 
 interface SkeletonProps {
   width?: number | string;
@@ -9,147 +12,175 @@ interface SkeletonProps {
   style?: any;
 }
 
-/** Base shimmer block — pulses with a smooth opacity wave */
+/** Base shimmer block with smooth opacity pulse */
 export const Skeleton: React.FC<SkeletonProps> = ({ width, height, borderRadius = RADIUS.sm, style }) => {
   const shimmer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(shimmer, {
           toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
+          duration: 800,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: false,
         }),
         Animated.timing(shimmer, {
           toValue: 0,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
+          duration: 800,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: false,
         }),
       ])
-    ).start();
+    );
+    loop.start();
+    return () => loop.stop();
   }, [shimmer]);
 
   const bg = shimmer.interpolate({
     inputRange: [0, 1],
-    outputRange: [COLORS.surfaceContainer, COLORS.surfaceContainerHigh],
+    outputRange: ['#E5E7EB', '#F3F4F6'],
   });
 
   return (
-    <Animated.View
+    <AnimatedView
       style={[{ width, height, borderRadius, backgroundColor: bg }, style]}
     />
   );
 };
 
-/** Category card skeleton — 3-per-row grid */
+/** Category card skeleton — matches 2-column Neo-Brutalist grid */
 export const CategorySkeleton = () => (
   <View style={styles.catSkeletonCard}>
-    <Skeleton width={56} height={56} borderRadius={RADIUS.md} />
-    <Skeleton width={80} height={14} borderRadius={4} style={{ marginTop: SPACING.md }} />
+    {/* Badge placeholder */}
+    <Skeleton width={50} height={18} borderRadius={RADIUS.xs} style={{ alignSelf: 'flex-start', marginBottom: 8 }} />
+    {/* Image illustration placeholder */}
+    <Skeleton width={70} height={70} borderRadius={RADIUS.md} style={{ marginVertical: 6 }} />
+    {/* Divider */}
+    <View style={styles.skeletonDivider} />
+    {/* Category name placeholder */}
+    <Skeleton width="80%" height={14} borderRadius={4} style={{ marginTop: 6 }} />
   </View>
 );
 
-/** Service/item row skeleton */
+/** Item row skeleton for Shop / Cart screen */
 export const ItemSkeleton = () => (
   <View style={styles.itemSkeletonCard}>
-    <Skeleton width={64} height={64} borderRadius={RADIUS.md} style={{ marginRight: SPACING.md }} />
+    <Skeleton width={68} height={68} borderRadius={RADIUS.md} style={{ marginRight: SPACING.md }} />
     <View style={{ flex: 1, justifyContent: 'center' }}>
-      <Skeleton width="70%" height={18} borderRadius={4} style={{ marginBottom: 8 }} />
-      <Skeleton width="40%" height={14} borderRadius={4} style={{ marginBottom: 8 }} />
-      <Skeleton width={60} height={14} borderRadius={4} />
+      <Skeleton width="75%" height={16} borderRadius={4} style={{ marginBottom: 8 }} />
+      <Skeleton width="45%" height={13} borderRadius={4} style={{ marginBottom: 6 }} />
+      <Skeleton width="30%" height={14} borderRadius={4} />
     </View>
-    <View style={{ width: 80, alignItems: 'center' }}>
-      <Skeleton width={60} height={36} borderRadius={RADIUS.md} />
+    <View style={{ width: 72, alignItems: 'center' }}>
+      <Skeleton width={64} height={32} borderRadius={RADIUS.md} />
     </View>
   </View>
 );
 
-/** Order card skeleton */
+/** Order card skeleton for Orders screen */
 export const OrderSkeleton = () => (
   <View style={styles.orderSkeletonCard}>
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-      <Skeleton width={120} height={16} borderRadius={4} />
-      <Skeleton width={72} height={22} borderRadius={RADIUS.full} />
+    <View style={styles.skeletonHeaderRow}>
+      <Skeleton width={110} height={18} borderRadius={RADIUS.xs} />
+      <Skeleton width={80} height={20} borderRadius={RADIUS.xs} />
     </View>
-    <Skeleton width="100%" height={1} borderRadius={1} style={{ marginBottom: 12 }} />
-    <Skeleton width="60%" height={14} borderRadius={4} style={{ marginBottom: 8 }} />
-    <Skeleton width="40%" height={14} borderRadius={4} />
+    <View style={styles.skeletonDivider} />
+    <Skeleton width="65%" height={14} borderRadius={4} style={{ marginBottom: 8 }} />
+    <Skeleton width="45%" height={12} borderRadius={4} style={{ marginBottom: 12 }} />
+    <View style={styles.skeletonFooterRow}>
+      <Skeleton width={90} height={16} borderRadius={4} />
+      <Skeleton width={75} height={28} borderRadius={RADIUS.md} />
+    </View>
   </View>
 );
 
-/** Promo banner skeleton */
+/** Delivery task skeleton for Delivery Partner screens */
+export const DeliveryTaskSkeleton = () => (
+  <View style={styles.deliverySkeletonCard}>
+    <View style={styles.skeletonHeaderRow}>
+      <Skeleton width={100} height={20} borderRadius={RADIUS.xs} />
+      <Skeleton width={60} height={20} borderRadius={RADIUS.xs} />
+    </View>
+    <View style={styles.skeletonDivider} />
+    <Skeleton width="85%" height={14} borderRadius={4} style={{ marginBottom: 6 }} />
+    <Skeleton width="60%" height={12} borderRadius={4} style={{ marginBottom: 12 }} />
+    <Skeleton width="100%" height={40} borderRadius={RADIUS.md} />
+  </View>
+);
+
+/** Banner carousel skeleton */
 export const BannerSkeleton = () => (
-  <Skeleton width={280} height={100} borderRadius={RADIUS.xl} style={{ marginRight: SPACING.md }} />
-);
-
-/** Profile header skeleton */
-export const ProfileSkeleton = () => (
-  <View style={styles.profileSkeletonWrap}>
-    <Skeleton width={72} height={72} borderRadius={36} style={{ marginBottom: 12 }} />
-    <Skeleton width={140} height={20} borderRadius={4} style={{ marginBottom: 8 }} />
-    <Skeleton width={100} height={14} borderRadius={4} />
-  </View>
-);
-
-/** Admin stat card skeleton */
-export const StatCardSkeleton = () => (
-  <View style={styles.statSkeletonCard}>
-    <Skeleton width={36} height={36} borderRadius={18} style={{ marginBottom: 10 }} />
-    <Skeleton width={60} height={24} borderRadius={4} style={{ marginBottom: 6 }} />
-    <Skeleton width={80} height={12} borderRadius={4} />
+  <View style={styles.bannerSkeletonCard}>
+    <Skeleton width="100%" height={110} borderRadius={RADIUS.xl} />
   </View>
 );
 
 const styles = StyleSheet.create({
   catSkeletonCard: {
-    width: '31%',
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.sm,
+    width: (SCREEN_WIDTH - 32 - 12) / 2,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
     alignItems: 'center',
-    marginBottom: SPACING.sm,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    ...SHADOW.ambient,
+    marginBottom: SPACING.md,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    ...NEO_SHADOW.box4,
   },
   itemSkeletonCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surfaceContainerLowest,
+    backgroundColor: COLORS.white,
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     marginBottom: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    ...SHADOW.ambient,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    ...NEO_SHADOW.box4,
   },
   orderSkeletonCard: {
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.xl,
     padding: SPACING.md,
     marginBottom: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    ...SHADOW.ambient,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    ...NEO_SHADOW.box4,
   },
-  profileSkeletonWrap: {
-    alignItems: 'center',
-    paddingVertical: SPACING.xl,
-  },
-  statSkeletonCard: {
-    flex: 1,
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderRadius: RADIUS.lg,
+  deliverySkeletonCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.xl,
     padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    ...NEO_SHADOW.box4,
+  },
+  bannerSkeletonCard: {
+    width: SCREEN_WIDTH - 32,
+    borderRadius: RADIUS.xl,
+    marginBottom: SPACING.md,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    overflow: 'hidden',
+    ...NEO_SHADOW.box4,
+  },
+  skeletonHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    minHeight: 100,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    ...SHADOW.ambient,
+    marginBottom: 8,
+  },
+  skeletonFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  skeletonDivider: {
+    height: 1.5,
+    backgroundColor: '#E5E7EB',
+    width: '100%',
+    marginVertical: 6,
   },
 });
-
-

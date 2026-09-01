@@ -24,6 +24,14 @@ export interface IWashPreference {
   price: number;
 }
 
+export interface IPromoBanner {
+  id: string;
+  badge: string;
+  title: string;
+  subtitle: string;
+  type?: 'promo' | 'free';
+}
+
 export interface IShop {
   _id: string;
   name: string;
@@ -40,9 +48,12 @@ export interface IShop {
   pickupTimings?: string[];
   contactNumber?: string;
   washPreferences?: IWashPreference[];
+  promoBanners?: IPromoBanner[];
   minOrderValue?: number;
   taxPercent?: number;
   deliveryFee?: number;
+  androidAppUrl?: string;
+  iosAppUrl?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -94,12 +105,14 @@ export interface IOrder {
     quantity: number;
     unit?: string;
     price: number;
+    kgWeight?: number; // set by delivery agent after weighing
   }[];
   washPreferences?: {
     name: string;
     price: number;
   }[];
   totalAmount: number;
+  kgPriceUpdated?: boolean; // true once delivery agent has weighed and finalized KG item prices
   taxAmount?: number;
   deliveryFee?: number;
   discountAmount?: number;

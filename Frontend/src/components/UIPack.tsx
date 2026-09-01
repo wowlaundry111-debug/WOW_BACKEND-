@@ -1,6 +1,5 @@
 /**
- * WOW Laundry — Core UI Component Pack
- * Industry-level components with micro-animations, glassmorphism, and MD3 precision.
+ * WOW Laundry — Neo-Brutalist Core UI Pack (Matching Website)
  */
 import React, { useRef, useCallback } from 'react';
 import {
@@ -13,12 +12,13 @@ import {
   TextStyle,
   Switch,
   ActivityIndicator,
+  TextInput,
+  TextInputProps,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, GRADIENTS, GLASS, SHADOW, SPACING, RADIUS, TYPO, ORDER_STATUS } from './Theme';
+import { COLORS, NEO_SHADOW, SPACING, RADIUS, TYPO, ORDER_STATUS } from './Theme';
 import type { OrderStatus } from './Theme';
 
-// ─── PressableScale — spring press animation wrapper ────────────────────────
+// ─── PressableScale — tactile spring press ─────────────────────────────────
 interface PressableScaleProps {
   onPress?: () => void;
   style?: ViewStyle | ViewStyle[];
@@ -27,11 +27,13 @@ interface PressableScaleProps {
   disabled?: boolean;
 }
 
+const AnimatedView: any = Animated.View;
+
 export const PressableScale: React.FC<PressableScaleProps> = ({
   onPress,
   style,
   children,
-  scaleTo = 0.96,
+  scaleTo = 0.97,
   disabled,
 }) => {
   const scale = useRef(new Animated.Value(1)).current;
@@ -39,99 +41,90 @@ export const PressableScale: React.FC<PressableScaleProps> = ({
   const onPressIn = useCallback(() => {
     Animated.spring(scale, {
       toValue: scaleTo,
-      useNativeDriver: false,
+      useNativeDriver: true,
       speed: 60,
-      bounciness: 8,
+      bounciness: 6,
     }).start();
   }, [scale, scaleTo]);
 
   const onPressOut = useCallback(() => {
     Animated.spring(scale, {
       toValue: 1,
-      useNativeDriver: false,
+      useNativeDriver: true,
       speed: 40,
       bounciness: 4,
     }).start();
   }, [scale]);
 
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+    <AnimatedView style={[{ transform: [{ scale }] }, style]}>
       <TouchableOpacity
         onPress={onPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
-        activeOpacity={1}
+        activeOpacity={0.9}
         disabled={disabled}
         style={{ flex: 1 }}
       >
         {children}
       </TouchableOpacity>
-    </Animated.View>
+    </AnimatedView>
   );
 };
 
-// ─── GlassCard — frosted glass surface card with real backdrop blur ─────────
-interface GlassCardProps {
+// ─── NeoCard — Solid Neo-Brutalist Card ─────────────────────────────────────
+interface NeoCardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: ViewStyle | ViewStyle[];
+  bg?: string;
+  shadow?: keyof typeof NEO_SHADOW;
   radius?: number;
   onPress?: () => void;
 }
 
-export const GlassCard: React.FC<GlassCardProps> = ({ children, style, radius = RADIUS.xxl, onPress }) => {
-  const webBlurStyle: any = {
-    backdropFilter: 'blur(30px) saturate(150%)',
-    WebkitBackdropFilter: 'blur(30px) saturate(150%)',
+export const NeoCard: React.FC<NeoCardProps> = ({
+  children,
+  style,
+  bg = COLORS.white,
+  shadow = 'box4',
+  radius = RADIUS.lg,
+  onPress,
+}) => {
+  const cardStyle: ViewStyle = {
+    backgroundColor: bg,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: radius,
+    ...NEO_SHADOW[shadow],
   };
 
   if (onPress) {
     return (
-      <PressableScale
-        onPress={onPress}
-        style={[styles.glassCard, { borderRadius: radius }, webBlurStyle, ...(style ? [style] : [])]}
-      >
-        <View style={{ flex: 1 }}>{children}</View>
+      <PressableScale onPress={onPress} style={[cardStyle, style as any]}>
+        {children}
       </PressableScale>
     );
   }
-  return (
-    <View style={[styles.glassCard, { borderRadius: radius }, webBlurStyle, ...(style ? [style] : [])]}>
-      {children}
-    </View>
-  );
+
+  return <View style={[cardStyle, style]}>{children}</View>;
 };
 
-// ─── SurfaceCard — clean flat surface card ───────────────────────────────────
-interface SurfaceCardProps {
-  children: React.ReactNode;
-  style?: ViewStyle;
-  radius?: number;
-  onPress?: () => void;
-}
+// Alias for compatibility
+export const GlassCard = NeoCard;
+export const SurfaceCard = NeoCard;
 
-export const SurfaceCard: React.FC<SurfaceCardProps> = ({ children, style, radius = RADIUS.xl, onPress }) => {
-  const inner = (
-    <View style={[styles.surfaceCard, { borderRadius: radius }, style]}>
-      {children}
-    </View>
-  );
-  if (onPress) {
-    return <PressableScale onPress={onPress}>{inner}</PressableScale>;
-  }
-  return inner;
-};
-
-// ─── Button — linear gradient CTA with modern micro-shadows ──────────────────
+// ─── NeoButton — High-Contrast Brutalist Button ─────────────────────────────
 interface ButtonProps {
   label: string;
   onPress?: () => void;
-  variant?: 'primary' | 'outline' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'black' | 'outline' | 'danger';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   disabled?: boolean;
   icon?: React.ReactNode;
   style?: ViewStyle;
   fullWidth?: boolean;
+  shadow?: keyof typeof NEO_SHADOW;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -144,114 +137,161 @@ export const Button: React.FC<ButtonProps> = ({
   icon,
   style,
   fullWidth,
+  shadow = 'box4',
 }) => {
   const SIZE_STYLES: Record<'sm' | 'md' | 'lg', ViewStyle> = {
-    sm: { paddingHorizontal: 16, paddingVertical: 8 },
-    md: { paddingHorizontal: 24, paddingVertical: 12 },
-    lg: { paddingHorizontal: 24, paddingVertical: 14 },
+    sm: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.md },
+    md: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: RADIUS.lg },
+    lg: { paddingHorizontal: 24, paddingVertical: 15, borderRadius: RADIUS.xl },
   };
 
   const TEXT_SIZE_STYLES: Record<'sm' | 'md' | 'lg', TextStyle> = {
-    sm: { fontSize: 13, fontWeight: '600' as const },
-    md: { ...TYPO.labelLg },
-    lg: { ...TYPO.labelLg, fontSize: 15 },
+    sm: { fontSize: 13, fontWeight: '800' as const, textTransform: 'uppercase', letterSpacing: 0.5 },
+    md: { fontSize: 15, fontWeight: '800' as const, textTransform: 'uppercase', letterSpacing: 0.8 },
+    lg: { fontSize: 17, fontWeight: '800' as const, textTransform: 'uppercase', letterSpacing: 1 },
   };
 
-  const sizeStyle = SIZE_STYLES[size];
-  const textSizeStyle = TEXT_SIZE_STYLES[size];
-
-  const fullWidthStyle: ViewStyle | undefined = fullWidth ? { width: '100%', justifyContent: 'center' } : undefined;
-
-  const renderContent = (textColor: string) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-      {loading ? <ActivityIndicator size="small" color={textColor} /> : icon}
-      <Text style={[styles.buttonText, textSizeStyle, { color: textColor }]}>{label}</Text>
-    </View>
-  );
-
-  if (variant === 'primary') {
-    const gradientColors = disabled ? ['#D1D5DB', '#9CA3AF'] : (GRADIENTS.primary as any);
-    return (
-      <PressableScale
-        onPress={onPress}
-        disabled={disabled || loading}
-        style={[
-          styles.buttonBase,
-          sizeStyle,
-          !disabled && {
-            boxShadow: `0px 16px 32px -8px ${COLORS.primary}60, 0px 8px 16px -6px ${COLORS.primary}40`
-          } as any,
-          ...(fullWidthStyle ? [fullWidthStyle] : []),
-          ...(style ? [style] : []),
-        ]}
-      >
-        <LinearGradient
-          colors={gradientColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: RADIUS.full }]}
-        />
-        {renderContent(COLORS.onPrimary)}
-      </PressableScale>
-    );
-  }
-
-  // Outline, Ghost, Danger styling
-  const VARIANT_STYLES: Record<'outline' | 'ghost' | 'danger', { container: ViewStyle; text: TextStyle }> = {
-    outline: {
-      container: { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.outlineVariant },
-      text: { color: COLORS.onSurfaceVariant },
-    },
-    ghost: {
-      container: { backgroundColor: 'transparent' },
-      text: { color: COLORS.primary },
-    },
-    danger: {
-      container: { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.error },
-      text: { color: COLORS.error },
-    },
+  const getVariantStyles = () => {
+    if (disabled) {
+      return {
+        bg: '#E5E7EB',
+        border: '#9CA3AF',
+        text: '#6B7280',
+        shadow: undefined,
+      };
+    }
+    switch (variant) {
+      case 'primary': // Electric Blue
+        return { bg: COLORS.primary, border: COLORS.black, text: COLORS.white, shadow: NEO_SHADOW[shadow] };
+      case 'secondary': // Neon Lime Green
+        return { bg: COLORS.secondary, border: COLORS.black, text: COLORS.black, shadow: NEO_SHADOW[shadow] };
+      case 'black': // Pitch Black
+        return { bg: COLORS.black, border: COLORS.black, text: COLORS.white, shadow: NEO_SHADOW.boxLime4 };
+      case 'danger':
+        return { bg: COLORS.error, border: COLORS.black, text: COLORS.white, shadow: NEO_SHADOW[shadow] };
+      case 'outline':
+      default:
+        return { bg: COLORS.white, border: COLORS.black, text: COLORS.black, shadow: NEO_SHADOW[shadow] };
+    }
   };
 
-  const currentStyles = VARIANT_STYLES[variant];
+  const config = getVariantStyles();
 
   return (
-    <PressableScale
+    <TouchableOpacity
       onPress={onPress}
       disabled={disabled || loading}
+      activeOpacity={0.8}
       style={[
         styles.buttonBase,
-        sizeStyle,
-        currentStyles.container,
-        ...(fullWidthStyle ? [fullWidthStyle] : []),
-        ...(style ? [style] : []),
+        SIZE_STYLES[size],
+        { backgroundColor: config.bg, borderColor: config.border },
+        config.shadow,
+        fullWidth ? { width: '100%' } : undefined,
+        style,
       ]}
     >
-      {renderContent(currentStyles.text.color as string)}
-    </PressableScale>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        {loading ? <ActivityIndicator size="small" color={config.text} /> : icon}
+        <Text style={[TEXT_SIZE_STYLES[size], { color: config.text, fontFamily: 'Outfit_800ExtraBold' }]}>
+          {label}
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 };
 
-// ─── StatusBadge — order status pill ─────────────────────────────────────────
+// ─── StatusBadge — Neo-Brutalist Order Badge ───────────────────────────────
 interface StatusBadgeProps {
   status: OrderStatus;
   showDot?: boolean;
 }
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, showDot }) => {
-  const cfg = ORDER_STATUS[status];
+  const cfg = ORDER_STATUS[status] || { label: status, color: '#000', bg: '#E5E7EB', border: '#000' };
   return (
-    <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
+    <View style={[styles.badge, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
       {showDot && (
         <View style={[styles.badgeDot, { backgroundColor: cfg.color }]} />
       )}
-      <Text style={[TYPO.labelXs, { color: cfg.color, textTransform: 'uppercase', letterSpacing: 0.5 }]}>
+      <Text style={[styles.badgeText, { color: cfg.color }]}>
         {cfg.label}
       </Text>
     </View>
   );
 };
 
-// ─── ToggleSwitch — custom branded switch ────────────────────────────────────
+// ─── QuantityStepper — Neo-Brutalist Counter (- / +) ───────────────────────
+interface QuantityStepperProps {
+  quantity: number;
+  onIncrement: () => void;
+  onDecrement: () => void;
+  size?: 'sm' | 'md';
+}
+
+export const QuantityStepper: React.FC<QuantityStepperProps> = ({
+  quantity,
+  onIncrement,
+  onDecrement,
+  size = 'md',
+}) => {
+  const btnSize = size === 'sm' ? 28 : 34;
+  return (
+    <View style={[styles.stepperContainer, { height: btnSize + 6 }]}>
+      <TouchableOpacity
+        onPress={onDecrement}
+        activeOpacity={0.7}
+        style={[styles.stepperBtn, { width: btnSize, height: btnSize }]}
+      >
+        <Text style={styles.stepperBtnText}>-</Text>
+      </TouchableOpacity>
+      <Text style={[styles.stepperQtyText, size === 'sm' && { fontSize: 14 }]}>
+        {quantity}
+      </Text>
+      <TouchableOpacity
+        onPress={onIncrement}
+        activeOpacity={0.7}
+        style={[styles.stepperBtn, { width: btnSize, height: btnSize, backgroundColor: COLORS.secondary }]}
+      >
+        <Text style={[styles.stepperBtnText, { color: COLORS.black }]}>+</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// ─── NeoInput — Brutalist Form Field ───────────────────────────────────────
+interface NeoInputProps extends TextInputProps {
+  label?: string;
+  icon?: React.ReactNode;
+  rightAction?: React.ReactNode;
+  containerStyle?: ViewStyle;
+}
+
+export const NeoInput: React.FC<NeoInputProps> = ({
+  label,
+  icon,
+  rightAction,
+  containerStyle,
+  style,
+  ...rest
+}) => (
+  <View style={[{ marginBottom: SPACING.md }, containerStyle]}>
+    {label && (
+      <Text style={styles.inputLabel}>{label}</Text>
+    )}
+    <View style={styles.inputWrapper}>
+      {icon && <View style={{ marginRight: 10 }}>{icon}</View>}
+      <TextInput
+        style={[styles.inputField, style]}
+        placeholderTextColor="#6B7280"
+        {...rest}
+      />
+      {rightAction}
+    </View>
+  </View>
+);
+
+// ─── ToggleSwitch ──────────────────────────────────────────────────────────
 interface ToggleSwitchProps {
   value: boolean;
   onToggle: (val: boolean) => void;
@@ -261,13 +301,13 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ value, onToggle }) =
   <Switch
     value={value}
     onValueChange={onToggle}
-    trackColor={{ false: COLORS.surfaceVariant, true: COLORS.primary }}
-    thumbColor={COLORS.onPrimary}
-    ios_backgroundColor={COLORS.surfaceVariant}
+    trackColor={{ false: '#E5E7EB', true: COLORS.secondary }}
+    thumbColor={COLORS.black}
+    ios_backgroundColor="#E5E7EB"
   />
 );
 
-// ─── SectionHeader ───────────────────────────────────────────────────────────
+// ─── SectionHeader ─────────────────────────────────────────────────────────
 interface SectionHeaderProps {
   label: string;
   caption?: string;
@@ -278,26 +318,27 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({ label, caption, ac
   <View style={styles.sectionHeader}>
     <View style={{ flex: 1 }}>
       {caption && (
-        <Text style={[TYPO.labelSm, { color: COLORS.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }]}>
-          {caption}
-        </Text>
+        <Text style={styles.sectionCaption}>{caption}</Text>
       )}
-      <Text style={[TYPO.headlineLgMob, { color: COLORS.onSurface }]}>{label}</Text>
+      <Text style={styles.sectionTitle}>{label}</Text>
     </View>
     {action && (
-      <TouchableOpacity onPress={action.onPress} style={styles.sectionAction}>
-        <Text style={[TYPO.labelSm, { color: COLORS.primary }]}>{action.label}</Text>
+      <TouchableOpacity
+        onPress={action.onPress}
+        style={styles.sectionActionBtn}
+      >
+        <Text style={styles.sectionActionText}>{action.label}</Text>
       </TouchableOpacity>
     )}
   </View>
 );
 
-// ─── Divider ─────────────────────────────────────────────────────────────────
-export const Divider = () => (
-  <View style={{ height: 1, backgroundColor: COLORS.surfaceContainerHighest }} />
+// ─── Divider ───────────────────────────────────────────────────────────────
+export const Divider = ({ style }: { style?: ViewStyle }) => (
+  <View style={[{ height: 2, backgroundColor: COLORS.black, marginVertical: SPACING.md }, style]} />
 );
 
-// ─── MetricCard — bento stats card with modern orbital gradients ─────────────
+// ─── MetricCard ───────────────────────────────────────────────────────────
 interface MetricCardProps {
   title: string;
   value: string;
@@ -315,182 +356,164 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   style,
   fullWidth,
 }) => {
-  const isPrimary = variant === 'primary';
-  const isSecondary = variant === 'secondary';
-
-  const textColor = variant === 'surface' ? COLORS.onSurface : COLORS.onPrimary;
-  const subColor = variant === 'surface' ? COLORS.outline : 'rgba(255,255,255,0.75)';
-
-  const cardStyle = [
-    styles.metricCard,
-    isPrimary && SHADOW.glow(COLORS.primary),
-    isSecondary && SHADOW.glow(COLORS.secondary),
-    fullWidth && { flex: 1 },
-    style,
-  ];
-
-  if (variant === 'surface') {
-    return (
-      <View style={[cardStyle, { backgroundColor: COLORS.surfaceContainer }]}>
-        <Text style={[TYPO.labelLg, { color: subColor, marginBottom: 4, zIndex: 1 }]}>{title}</Text>
-        <Text style={[TYPO.headlineLgMob, { color: textColor, fontWeight: '700', zIndex: 1 }]}>{value}</Text>
-        {sub && <Text style={[TYPO.labelSm, { color: subColor, marginTop: 2, zIndex: 1 }]}>{sub}</Text>}
-      </View>
-    );
-  }
-
-  const gradientColors = isPrimary ? GRADIENTS.primary : GRADIENTS.secondary;
+  const bg = variant === 'primary' ? COLORS.primary : variant === 'secondary' ? COLORS.secondary : COLORS.white;
+  const textColor = variant === 'primary' ? COLORS.white : COLORS.black;
 
   return (
-    <View style={cardStyle}>
-      <LinearGradient
-        colors={gradientColors as any}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {/* Premium glowing decorative circles */}
-      <View style={styles.glowCircle1} />
-      <View style={styles.glowCircle2} />
-
-      <Text style={[TYPO.labelLg, { color: subColor, marginBottom: 4, zIndex: 1 }]}>{title}</Text>
-      <Text style={[TYPO.headlineLgMob, { color: textColor, fontWeight: '700', zIndex: 1 }]}>{value}</Text>
-      {sub && <Text style={[TYPO.labelSm, { color: subColor, marginTop: 2, zIndex: 1 }]}>{sub}</Text>}
-    </View>
+    <NeoCard bg={bg} style={[styles.metricCard, fullWidth && { flex: 1 }, style]}>
+      <Text style={[styles.metricTitle, { color: textColor }]}>{title}</Text>
+      <Text style={[styles.metricValue, { color: textColor }]}>{value}</Text>
+      {sub && <Text style={[styles.metricSub, { color: textColor }]}>{sub}</Text>}
+    </NeoCard>
   );
 };
 
-// ─── SettingsRow — glass settings nav item ───────────────────────────────────
-interface SettingsRowProps {
-  icon: React.ReactNode;
-  iconBg: string;
-  title: string;
-  subtitle?: string;
-  onPress: () => void;
-}
-
-export const SettingsRow: React.FC<SettingsRowProps> = ({
-  icon,
-  iconBg,
-  title,
-  subtitle,
-  onPress,
-}) => (
-  <GlassCard onPress={onPress} radius={RADIUS.xxl} style={styles.settingsRow}>
-    <View style={styles.settingsRowInner}>
-      <View style={styles.settingsRowLeft}>
-        <View style={[styles.settingsIcon, { backgroundColor: iconBg }]}>
-          {icon}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>{title}</Text>
-          {subtitle && (
-            <Text style={[TYPO.bodyMd, { color: COLORS.outline, marginTop: 1 }]}>{subtitle}</Text>
-          )}
-        </View>
-      </View>
-      <Text style={{ fontSize: 20, color: COLORS.outlineVariant }}>›</Text>
-    </View>
-  </GlassCard>
-);
-
-// ─── Stylesheet ───────────────────────────────────────────────────────────────
+// ─── Stylesheet ───────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  glassCard: {
-    backgroundColor: GLASS.background,
-    borderWidth: 1,
-    borderColor: GLASS.border,
-    ...GLASS.shadow,
-  },
-  surfaceCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-    boxShadow: '0px 24px 48px -12px rgba(124, 58, 237, 0.08), 0px 12px 24px -8px rgba(124, 58, 237, 0.04)' as any,
-  },
   buttonBase: {
-    borderRadius: RADIUS.full,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  buttonText: {
-    ...TYPO.labelLg,
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    gap: 5,
+    borderRadius: RADIUS.md,
+    borderWidth: 2,
+    ...NEO_SHADOW.box2,
+    gap: 4,
   },
   badgeDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 2,
+    ...NEO_SHADOW.box2,
+  },
+  stepperBtn: {
+    backgroundColor: COLORS.surfaceContainer,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.black,
+    lineHeight: 18,
+  },
+  stepperQtyText: {
+    minWidth: 28,
+    textAlign: 'center',
+    fontWeight: '800',
+    fontSize: 15,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    ...NEO_SHADOW.box4,
+  },
+  inputField: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: 'Outfit_700Bold',
+    color: COLORS.black,
+  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    justifyContent: 'space-between',
     marginBottom: SPACING.md,
   },
-  sectionAction: {
-    paddingHorizontal: 8,
+  sectionCaption: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  sectionActionBtn: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: RADIUS.full,
+    borderRadius: RADIUS.md,
+    ...NEO_SHADOW.box2,
+  },
+  sectionActionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    textTransform: 'uppercase',
   },
   metricCard: {
-    padding: SPACING.lg,
-    borderRadius: RADIUS.xl,
-    minHeight: 120,
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
-    boxShadow: '0px 32px 64px -16px rgba(124, 58, 237, 0.2)' as any,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    padding: SPACING.md,
   },
-  glowCircle1: {
-    position: 'absolute',
-    top: -60,
-    right: -60,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  metricTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
   },
-  glowCircle2: {
-    position: 'absolute',
-    bottom: -40,
-    left: -30,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+  metricValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
   },
-  settingsRow: {
-    padding: 0,
-  },
-  settingsRowInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: SPACING.lg,
-  },
-  settingsRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    flex: 1,
-  },
-  settingsIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.full,
-    alignItems: 'center',
-    justifyContent: 'center',
+  metricSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
   },
 });

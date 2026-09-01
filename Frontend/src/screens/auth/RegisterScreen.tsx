@@ -1,13 +1,22 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, User, Phone, Mail } from 'lucide-react-native';
+import { ArrowRight, ArrowLeft, User, Phone, Mail } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { WowLogo } from '../../components/WowLogo';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { useAppStore } from '../../store/useAppStore';
+import { WowLogo } from '../../components/WowLogo';
 
 interface RegisterScreenProps {
   onBack: () => void;
@@ -22,21 +31,17 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
   const [loading, setLoading] = useState(false);
 
   const isValid = name.trim().length >= 2 && phone.length === 10 && email.includes('@');
-
   const { register } = useAppStore();
 
   const handleRegister = async () => {
     if (!isValid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setLoading(true);
-    
+
     const res = await register(name, phone, email);
     setLoading(false);
-    
+
     if (res.success) {
-      if (res.message.includes('mockOtp')) {
-         // Optionally handle dev mode alert here if we parsed it from response, but store returns generic message
-      }
       onRegisterSuccess(email);
     } else {
       alert(res.message);
@@ -49,47 +54,47 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top > 0 ? insets.top + 16 : 24 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: (insets.top > 0 ? insets.top : 44) + 16 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Back button */}
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
-          <Text style={styles.backArrow}>←</Text>
+          <ArrowLeft size={22} color={COLORS.black} strokeWidth={3} />
         </TouchableOpacity>
 
         {/* Logo */}
         <View style={styles.logoWrap}>
-          <WowLogo width={340} height={136} />
+          <WowLogo width={260} height={95} />
         </View>
 
-        {/* Card */}
+        {/* Neo-Brutalist Registration Card */}
         <View style={styles.card}>
+          <Text style={styles.cardTitle}>CREATE ACCOUNT</Text>
+          <Text style={styles.cardSubtitle}>Sign up to start your laundry orders</Text>
 
           {/* Full Name */}
-          <Text style={styles.label}>Full Name</Text>
-          <View style={styles.inputRow}>
-            <User size={16} color="#9CA3AF" />
+          <Text style={styles.inputLabel}>FULL NAME</Text>
+          <View style={styles.inputWrap}>
+            <User size={18} color={COLORS.black} strokeWidth={2.5} />
             <TextInput
               style={styles.input}
-              placeholder="Enter your full name"
-              placeholderTextColor="#9CA3AF"
+              placeholder="John Doe"
+              placeholderTextColor="#6B7280"
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
             />
           </View>
 
-          {/* Mobile Number */}
-          <Text style={styles.label}>Mobile Number</Text>
-          <View style={styles.inputRow}>
+          {/* Phone */}
+          <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
+          <View style={styles.inputWrap}>
             <Text style={styles.countryCode}>+91</Text>
-            <Text style={styles.chevron}>▾</Text>
             <View style={styles.vDivider} />
             <TextInput
               style={styles.input}
-              placeholder="Enter mobile number"
-              placeholderTextColor="#9CA3AF"
+              placeholder="9876543210"
+              placeholderTextColor="#6B7280"
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
@@ -97,14 +102,14 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
             />
           </View>
 
-          {/* Email Address */}
-          <Text style={styles.label}>Email Address</Text>
-          <View style={styles.inputRow}>
-            <Mail size={16} color="#9CA3AF" />
+          {/* Email */}
+          <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+          <View style={styles.inputWrap}>
+            <Mail size={18} color={COLORS.black} strokeWidth={2.5} />
             <TextInput
               style={styles.input}
-              placeholder="Enter your email address"
-              placeholderTextColor="#9CA3AF"
+              placeholder="name@example.com"
+              placeholderTextColor="#6B7280"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -112,196 +117,172 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
             />
           </View>
 
-          {/* Register Button */}
+          {/* Submit */}
           <TouchableOpacity
             style={[styles.btn, !isValid && styles.btnDisabled]}
             onPress={handleRegister}
             disabled={!isValid || loading}
             activeOpacity={0.85}
           >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <Text style={styles.btnText}>Register</Text>
-                  <ArrowRight size={18} color="#fff" />
-                </>
-            }
+            {loading ? (
+              <ActivityIndicator color={COLORS.black} />
+            ) : (
+              <View style={styles.btnContent}>
+                <Text style={styles.btnText}>REGISTER & CONTINUE</Text>
+                <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
+              </View>
+            )}
           </TouchableOpacity>
 
-          {/* Already have account */}
           <View style={styles.loginRow}>
             <Text style={styles.loginText}>Already have an account?</Text>
-            <TouchableOpacity onPress={onBack} activeOpacity={0.7}>
-              <Text style={styles.loginLink}> Login</Text>
+            <TouchableOpacity onPress={onBack}>
+              <Text style={styles.loginLink}> SIGN IN</Text>
             </TouchableOpacity>
           </View>
-
         </View>
-
-        <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  bgImage: {
+  kav: {
     flex: 1,
-    width: '100%',
-    height: (Platform.OS === 'web' ? '100vh' : '100%') as any,
-    position: (Platform.OS === 'web' ? 'fixed' : 'relative') as any,
-    top: 0,
-    left: 0,
-    overflow: 'hidden',
+    backgroundColor: '#F0FDF4',
   },
-  kav: { flex: 1 },
   scrollContent: {
-    flexGrow: 1,
-    padding: 24,
-    justifyContent: 'flex-start',
+    padding: SPACING.mobile,
+    alignItems: 'center',
+    paddingBottom: 40,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
     alignSelf: 'flex-start',
-  },
-  backArrow: {
-    fontSize: 18,
-    color: '#374151',
-    fontWeight: '600',
+    marginBottom: SPACING.md,
+    ...NEO_SHADOW.box4,
   },
   logoWrap: {
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: SPACING.lg,
   },
-  pageTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
-    fontFamily: 'Outfit_800ExtraBold',
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  pageSub: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontFamily: 'Outfit_400Regular',
-    textAlign: 'center',
-    marginBottom: 18,
+  logoImg: {
+    width: 220,
+    height: 90,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 22,
     width: '100%',
-    maxWidth: 420,
-    alignSelf: 'center',
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 6px 16px rgba(0,0,0,0.06)',
-      },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.06,
-        shadowRadius: 16,
-      }
-    }),
-    elevation: 4,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    ...NEO_SHADOW.box8,
   },
-  label: {
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  cardSubtitle: {
     fontSize: 13,
-    color: '#374151',
-    fontWeight: '600',
-    fontFamily: 'Outfit_600SemiBold',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#4B5563',
+    marginTop: 4,
+    marginBottom: SPACING.lg,
   },
-  inputRow: {
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 50,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#F3F4F6',
-    gap: 8,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: SPACING.md,
+    ...NEO_SHADOW.box4,
   },
   countryCode: {
     fontSize: 14,
-    color: '#111827',
-    fontWeight: '700',
-    fontFamily: 'Outfit_600SemiBold',
-  },
-  chevron: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    marginTop: 1,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
   },
   vDivider: {
-    width: 1,
+    width: 2,
     height: 18,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: COLORS.black,
+    marginHorizontal: 8,
   },
   input: {
     flex: 1,
+    marginLeft: 6,
     fontSize: 14,
-    color: '#111827',
-    fontFamily: 'Outfit_500Medium',
-    outlineStyle: 'none',
-    outlineWidth: 0,
-    borderWidth: 0,
-    backgroundColor: 'transparent',
-  } as any,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
   btn: {
-    backgroundColor: '#0D8DE3',
-    height: 52,
-    borderRadius: 12,
-    flexDirection: 'row',
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: SPACING.sm,
+    ...NEO_SHADOW.box6,
+  },
+  btnDisabled: {
+    backgroundColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
+  },
+  btnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 4,
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 4px 8px rgba(13, 141, 227, 0.3)',
-      },
-      default: {
-        shadowColor: '#0D8DE3',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      }
-    }),
-  } as any,
-  btnDisabled: { opacity: 0.4 },
+  },
   btnText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontFamily: 'Outfit_600SemiBold',
+    fontSize: 15,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.8,
   },
   loginRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    alignItems: 'center',
+    marginTop: SPACING.lg,
   },
   loginText: {
     fontSize: 13,
-    color: '#6B7280',
-    fontFamily: 'Outfit_400Regular',
+    fontWeight: '700',
+    color: '#4B5563',
   },
   loginLink: {
     fontSize: 13,
-    color: '#0D8DE3',
-    fontWeight: '700',
-    fontFamily: 'Outfit_700Bold',
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.primary,
+    letterSpacing: 0.5,
   },
 });

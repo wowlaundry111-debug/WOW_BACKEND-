@@ -17,8 +17,15 @@ import { AdminTab, COLORS, TYPO, SPACING, RADIUS } from '../../components/Theme'
 
 export const AdminPortal: React.FC = () => {
   const { currentUser, shops, currentTenantId, orders, setCurrentTenantId } = useAppStore();
-  const [activeTab, setActiveTab] = useState<AdminTab>(currentUser?.role === 'SuperAdmin' ? 'global' : 'dashboard');
+  const isSuperAdmin = currentUser?.role === 'SuperAdmin';
+  const [activeTab, setActiveTab] = useState<AdminTab>(isSuperAdmin && !currentTenantId ? 'global' : (isSuperAdmin ? 'global' : 'dashboard'));
   const [showShopSwitcher, setShowShopSwitcher] = useState(false);
+
+  React.useEffect(() => {
+    if (isSuperAdmin && !currentTenantId) {
+      setActiveTab('global');
+    }
+  }, [isSuperAdmin, currentTenantId]);
 
   const shop = shops.find(s => s._id === currentTenantId);
   const newOrdersCount = orders.filter(
@@ -34,7 +41,7 @@ export const AdminPortal: React.FC = () => {
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'global':    return (currentUser?.role === 'SuperAdmin' && currentTenantId) ? <AdminDashboardScreen /> : <SuperAdminDashboard />;
+      case 'global':    return (isSuperAdmin && currentTenantId) ? <AdminDashboardScreen /> : <SuperAdminDashboard />;
       case 'dashboard': return <AdminDashboardScreen />;
       case 'catalog':   return <AdminCatalogScreen />;
       case 'orders':    return <AdminOrdersScreen />;
@@ -42,17 +49,17 @@ export const AdminPortal: React.FC = () => {
     }
   };
 
-  const allowedTabs: AdminTab[] = currentUser?.role === 'SuperAdmin' 
+  const allowedTabs: AdminTab[] = isSuperAdmin 
     ? ['global', 'catalog', 'orders', 'shop']
     : ['dashboard', 'catalog', 'orders', 'shop'];
 
   return (
     <View style={styles.root}>
       <AdminTopBar
-        shopName={shop?.name ?? 'WOW Laundry'}
+        shopName={isSuperAdmin && !currentTenantId ? '👑 Super Admin (All Shops)' : (shop?.name ?? 'WOW Laundry')}
         adminInitials={initials}
         onAvatarPress={() => setActiveTab('shop')}
-        onShopPress={() => currentUser?.role === 'SuperAdmin' ? setShowShopSwitcher(true) : null}
+        onShopPress={() => isSuperAdmin ? setShowShopSwitcher(true) : null}
       />
       
       {showShopSwitcher && (

@@ -1,29 +1,30 @@
-// WOW Laundry — Design System
-// Exact Material Design 3 color palette extracted from Stitch mockups.
-// Font: Plus Jakarta Sans (matches Stitch screens)
-
+// WOW Laundry — Neo-Brutalist Design System (Matching Website)
 import type { ViewStyle, TextStyle } from 'react-native';
 import type { OrderStatus } from '../types';
 
-// Re-export canonical types so screens can import from either Theme or types directly
 export type { Role, OrderStatus } from '../types';
 
-
-// ─── MD3 Color Tokens (Zepto/Blinkit High Contrast Vibe) ───────────────────
+// ─── Neo-Brutalist Brand Palette ──────────────────────────────────────────
 export const COLORS = {
-  primary:                '#00A8E8', // Vibrant Cyan
+  primary:                '#0D8DE3', // Electric Blue
   onPrimary:              '#FFFFFF',
-  primaryContainer:       '#E0F7FA',
-  onPrimaryContainer:     '#006064',
+  secondary:              '#B0FF49', // Neon Lime Green
+  onSecondary:            '#000000',
+  
+  accentLime:             '#B0FF49',
+  accentBlue:             '#0D8DE3',
+  black:                  '#000000',
+  white:                  '#FFFFFF',
+  
+  primaryContainer:       '#E0F2FE',
+  onPrimaryContainer:     '#0369A1',
   primaryFixed:           '#B2EBF2',
   primaryFixedDim:        '#80DEEA',
   onPrimaryFixed:         '#004D40',
   onPrimaryFixedVariant:  '#00838F',
 
-  secondary:              '#8CC63F', // Lime Green
-  onSecondary:            '#FFFFFF',
-  secondaryContainer:     '#F1F8E9',
-  onSecondaryContainer:   '#33691E',
+  secondaryContainer:     '#F0FDF4',
+  onSecondaryContainer:   '#15803D',
   secondaryFixed:         '#DCEDC8',
   secondaryFixedDim:      '#C5E1A5',
   onSecondaryFixed:       '#1B5E20',
@@ -33,22 +34,19 @@ export const COLORS = {
   onTertiary:             '#FFFFFF',
   tertiaryContainer:      '#F3F4F6',
   onTertiaryContainer:    '#1F2937',
-  tertiaryFixed:          '#F9FAFB',
-  tertiaryFixedDim:       '#E5E7EB',
-  onTertiaryFixed:        '#030712',
-  onTertiaryFixedVariant: '#374151',
 
   error:                  '#DC2626',
   onError:                '#FFFFFF',
   errorContainer:         '#FEE2E2',
   onErrorContainer:       '#7F1D1D',
 
-  background:             '#F3F4F6', // Lighter grey for contrast
-  onBackground:           '#111827',
-  surface:                '#FFFFFF', // Pure white cards
+  background:             '#FFFFFF',
+  bgMint:                 '#F0FDF4',
+  onBackground:           '#000000',
+  surface:                '#FFFFFF',
   surfaceBright:          '#FFFFFF',
-  surfaceDim:             '#E5E7EB',
-  surfaceTint:            '#00A8E8',
+  surfaceDim:             '#F3F4F6',
+  surfaceTint:            '#0D8DE3',
 
   surfaceContainerLowest: '#FFFFFF',
   surfaceContainerLow:    '#F9FAFB',
@@ -56,47 +54,97 @@ export const COLORS = {
   surfaceContainerHigh:   '#E5E7EB',
   surfaceContainerHighest:'#D1D5DB',
 
-  onSurface:              '#111827',
-  onSurfaceVariant:       '#4B5563',
-  outline:                '#D1D5DB',
+  onSurface:              '#000000',
+  onSurfaceVariant:       '#374151',
+  outline:                '#000000',
   outlineVariant:         '#E5E7EB',
-  surfaceVariant:         '#F3F4F6',
+  surfaceVariant:         '#F9FAFB',
 
-  inverseSurface:         '#1F2937',
-  inverseOnSurface:       '#F9FAFB',
-  inversePrimary:         '#80DEEA',
+  inverseSurface:         '#000000',
+  inverseOnSurface:       '#FFFFFF',
+  inversePrimary:         '#B0FF49',
 };
 
-// ─── Glowing HSL Gradients (world-class modern palette) ──────────────────────
-export const GRADIENTS = {
-  primary:   ['#00A8E8', '#4DD0E1'] as const,   // Cyan Glow
-  secondary: ['#8CC63F', '#AED581'] as const,   // Lime Glow
-  tertiary:  ['#4B5563', '#9CA3AF'] as const,   // Charcoal Metallic
-  error:     ['#DC2626', '#F87171'] as const,   // Electric Red
-  surface:   ['#FFFFFF', '#F3F4F6'] as const,   // Frosted Pearl
-  chartBar:  ['#00A8E8', '#80DEEA'] as const,   // Chart Bar Fill
+// ─── Neo-Brutalist Hard Drop Shadows ──────────────────────────────────────
+export const NEO_SHADOW = {
+  box2: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  } as ViewStyle,
+  box4: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 4,
+  } as ViewStyle,
+  box6: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 6, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 6,
+  } as ViewStyle,
+  box8: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 8, height: 8 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 8,
+  } as ViewStyle,
+  boxLime4: {
+    shadowColor: '#B0FF49',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 4,
+  } as ViewStyle,
+  boxLime6: {
+    shadowColor: '#B0FF49',
+    shadowOffset: { width: 6, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 6,
+  } as ViewStyle,
+  boxBlue4: {
+    shadowColor: '#0D8DE3',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 4,
+  } as ViewStyle,
 };
 
-// ─── Glass Card Style (Web-compatible Backdrop-Blur CSS spec) ────────────────
-export const GLASS = {
-  background: 'rgba(255, 255, 255, 0.65)',
-  border: 'rgba(255, 255, 255, 0.40)',
-  shadow: {
-    boxShadow: '0px 8px 24px rgba(96, 74, 192, 0.05)',
-  } as object,
-};
-
-// ─── Ambient Shadow (glowing micro-shadowing) ───────────────────────────────
+// Backward-compatible SHADOW export
 export const SHADOW = {
-  ambient: {
-    boxShadow: '0px 6px 20px rgba(0, 168, 232, 0.08)',
-  } as object,
+  ambient: NEO_SHADOW.box4,
   glow: (color: string) => ({
-    boxShadow: `0px 8px 18px ${color}38`,
-  } as object),
+    shadowColor: color,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 4,
+  } as ViewStyle),
 };
 
-// ─── Spacing Tokens ──────────────────────────────────────────────────────────
+export const GLASS = {
+  background: '#FFFFFF',
+  border: '#000000',
+  shadow: NEO_SHADOW.box4,
+};
+
+export const GRADIENTS = {
+  primary:   ['#0D8DE3', '#38BDF8'] as const,
+  secondary: ['#B0FF49', '#CCFF66'] as const,
+  tertiary:  ['#111827', '#374151'] as const,
+  error:     ['#DC2626', '#EF4444'] as const,
+  surface:   ['#FFFFFF', '#FFFFFF'] as const,
+  chartBar:  ['#0D8DE3', '#B0FF49'] as const,
+};
+
 export const SPACING = {
   base:   4,
   xs:     8,
@@ -104,49 +152,55 @@ export const SPACING = {
   md:     16,
   lg:     24,
   xl:     32,
-  mobile: 16,   // Dense padding for quick-commerce apps
-  gutter: 12,   // Tighter gaps
+  mobile: 16,
+  gutter: 12,
 };
 
-// ─── Border Radius Tokens ────────────────────────────────────────────────────
+export const spacing = SPACING;
+
 export const RADIUS = {
-  sm:     12,
-  md:     16,
-  lg:     24,
-  xl:     32,
-  xxl:    40,
+  xs:     6,
+  sm:     10,
+  md:     14,
+  lg:     18,
+  xl:     24,
+  xxl:    32,
   full:   9999,
 };
 
-// ─── Typography Scale (Outfit layout) ─────────────────────────────
+export const radius = RADIUS;
+
+export const colors = COLORS;
+
 export const TYPO = {
-  displaySm:      { fontSize: 36, lineHeight: 44, fontWeight: '800' as const, letterSpacing: -1, fontFamily: 'Outfit_800ExtraBold' },
-  headlineLg:     { fontSize: 32, lineHeight: 40, fontWeight: '800' as const, letterSpacing: -0.5, fontFamily: 'Outfit_800ExtraBold' },
-  headlineLgMob:  { fontSize: 28, lineHeight: 36, fontWeight: '800' as const, letterSpacing: -0.5, fontFamily: 'Outfit_800ExtraBold' },
-  headlineMd:     { fontSize: 24, lineHeight: 32, fontWeight: '700' as const, letterSpacing: -0.5, fontFamily: 'Outfit_700Bold' },
-  headlineSm:     { fontSize: 20, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.2, fontFamily: 'Outfit_700Bold' },
-  titleLg:        { fontSize: 18, lineHeight: 24, fontWeight: '600' as const, letterSpacing: 0, fontFamily: 'Outfit_600SemiBold' },
-  labelLg:        { fontSize: 15, lineHeight: 20, fontWeight: '600' as const, letterSpacing: 0.2, fontFamily: 'Outfit_600SemiBold' },
-  labelMd:        { fontSize: 13, lineHeight: 18, fontWeight: '500' as const, letterSpacing: 0.2, fontFamily: 'Outfit_500Medium' },
-  labelSm:        { fontSize: 12, lineHeight: 16, fontWeight: '500' as const, letterSpacing: 0.5, fontFamily: 'Outfit_500Medium' },
-  labelXs:        { fontSize: 10, lineHeight: 14, fontWeight: '600' as const, letterSpacing: 0, fontFamily: 'Outfit_600SemiBold' },
-  bodyLg:         { fontSize: 16, lineHeight: 24, fontWeight: '400' as const, letterSpacing: 0.1, fontFamily: 'Outfit_400Regular' },
-  bodyMd:         { fontSize: 14, lineHeight: 20, fontWeight: '400' as const, letterSpacing: 0.2, fontFamily: 'Outfit_400Regular' },
+  displaySm:      { fontSize: 34, lineHeight: 42, fontWeight: '800' as const, letterSpacing: -0.5, fontFamily: 'Outfit_800ExtraBold' },
+  headlineLg:     { fontSize: 30, lineHeight: 38, fontWeight: '800' as const, letterSpacing: -0.5, fontFamily: 'Outfit_800ExtraBold' },
+  headlineLgMob:  { fontSize: 26, lineHeight: 34, fontWeight: '800' as const, letterSpacing: -0.5, fontFamily: 'Outfit_800ExtraBold' },
+  headlineMd:     { fontSize: 22, lineHeight: 30, fontWeight: '800' as const, letterSpacing: -0.3, fontFamily: 'Outfit_800ExtraBold' },
+  headlineSm:     { fontSize: 19, lineHeight: 26, fontWeight: '800' as const, letterSpacing: -0.2, fontFamily: 'Outfit_700Bold' },
+  titleLg:        { fontSize: 17, lineHeight: 23, fontWeight: '700' as const, letterSpacing: 0, fontFamily: 'Outfit_700Bold' },
+  labelLg:        { fontSize: 15, lineHeight: 20, fontWeight: '700' as const, letterSpacing: 0.2, fontFamily: 'Outfit_700Bold' },
+  labelMd:        { fontSize: 13, lineHeight: 18, fontWeight: '700' as const, letterSpacing: 0.3, fontFamily: 'Outfit_600SemiBold' },
+  labelSm:        { fontSize: 12, lineHeight: 16, fontWeight: '700' as const, letterSpacing: 0.5, fontFamily: 'Outfit_600SemiBold' },
+  labelXs:        { fontSize: 10, lineHeight: 14, fontWeight: '800' as const, letterSpacing: 0.5, fontFamily: 'Outfit_700Bold' },
+  bodyLg:         { fontSize: 16, lineHeight: 24, fontWeight: '500' as const, letterSpacing: 0.1, fontFamily: 'Outfit_500Medium' },
+  bodyMd:         { fontSize: 14, lineHeight: 20, fontWeight: '500' as const, letterSpacing: 0.2, fontFamily: 'Outfit_500Medium' },
 };
 
-// ─── Order Status Config ─────────────────────────────────────────────────────
-export const ORDER_STATUS: Record<OrderStatus, { label: string; color: string; bg: string }> = {
-  PLACED:           { label: 'Order Placed',       color: '#EF4444', bg: 'rgba(239,68,68,0.08)' },
-  ACCEPTED:         { label: 'Accepted',            color: COLORS.primary, bg: 'rgba(96,74,192,0.08)' },
-  PICKUP_ASSIGNED:  { label: 'Driver Assigned',     color: COLORS.secondary, bg: 'rgba(8,104,120,0.08)' },
-  PICKED_UP:        { label: 'Picked Up',           color: '#06B6D4', bg: 'rgba(6,182,212,0.08)' },
-  WASHING:          { label: 'In Wash Cycle',       color: '#3B82F6', bg: 'rgba(59,130,246,0.08)' },
-  IRONING:          { label: 'Steam Pressing',      color: '#EC4899', bg: 'rgba(236,72,153,0.08)' },
-  OUT_FOR_DELIVERY: { label: 'Out for Delivery',    color: '#10B981', bg: 'rgba(16,185,129,0.08)' },
-  DELIVERED:        { label: 'Delivered',           color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
+export const typo = TYPO;
+
+// ─── Order Status Config Matching Website ─────────────────────────────────
+export const ORDER_STATUS: Record<OrderStatus, { label: string; color: string; bg: string; border: string }> = {
+  PLACED:           { label: 'Pending',           color: '#000000', bg: '#FACC15', border: '#000000' },
+  ACCEPTED:         { label: 'Accepted',          color: '#FFFFFF', bg: '#0D8DE3', border: '#000000' },
+  PICKUP_ASSIGNED:  { label: 'Out for Pickup',    color: '#000000', bg: '#C084FC', border: '#000000' },
+  PICKED_UP:        { label: 'Picked Up',         color: '#000000', bg: '#2DD4BF', border: '#000000' },
+  WASHING:          { label: 'In Processing',     color: '#000000', bg: '#F472B6', border: '#000000' },
+  IRONING:          { label: 'Pressing',          color: '#000000', bg: '#FB923C', border: '#000000' },
+  OUT_FOR_DELIVERY: { label: 'Out for Delivery',  color: '#000000', bg: '#FB923C', border: '#000000' },
+  DELIVERED:        { label: 'Delivered',         color: '#000000', bg: '#B0FF49', border: '#000000' },
 };
 
-// ─── Bottom Nav Tabs per Role ────────────────────────────────────────────────
 export const ADMIN_TABS = [
   { key: 'global',    label: 'Global' },
   { key: 'dashboard', label: 'Dashboard' },

@@ -40,11 +40,21 @@ const ShopSchema = new Schema<IShop>({
     id: { type: String },
     name: { type: String },
     description: { type: String },
-    price: { type: Number }
+    price: { type: Number },
+    enabled: { type: Boolean, default: true }
+  }],
+  promoBanners: [{
+    id: { type: String },
+    badge: { type: String },
+    title: { type: String },
+    subtitle: { type: String },
+    type: { type: String, default: 'promo' }
   }],
   minOrderValue: { type: Number },
   taxPercent: { type: Number },
   deliveryFee: { type: Number },
+  androidAppUrl: { type: String },
+  iosAppUrl: { type: String },
 }, { timestamps: true });
 
 const CategorySchema = new Schema<ICategory>({
@@ -112,13 +122,15 @@ const OrderSchema = new Schema<IOrder>({
     name: { type: String },
     quantity: { type: Number, required: true },
     unit: { type: String },
-    price: { type: Number, required: true }
+    price: { type: Number, required: true },
+    kgWeight: { type: Number }, // set by delivery agent after weighing
   }],
   washPreferences: [{
     name: { type: String },
     price: { type: Number }
   }],
   totalAmount: { type: Number, required: true },
+  kgPriceUpdated: { type: Boolean, default: false },
   taxAmount: { type: Number },
   deliveryFee: { type: Number },
   discountAmount: { type: Number, default: 0 },
@@ -144,6 +156,7 @@ const OrderSchema = new Schema<IOrder>({
 // -- Order indexes --
 // Most critical: shop order listing with sort (fires on every admin/delivery page load)
 OrderSchema.index({ shopId: 1, createdAt: -1 });
+OrderSchema.index({ shopId: 1, isArchived: 1, createdAt: -1 });
 // Status filtering for admin dashboard views
 OrderSchema.index({ shopId: 1, status: 1 });
 // Customer order history

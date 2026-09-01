@@ -55,15 +55,17 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
     });
   }, []);
 
+  const AnimatedView: any = Animated.View;
+
   return (
-    <Animated.View style={[styles.root, { opacity: screenOpacity }]}>
+    <AnimatedView style={[styles.root, { opacity: screenOpacity }]}>
       <ImageBackground
         source={require('../../../assets/bg.png')}
         style={styles.bgImage}
         resizeMode="stretch"
       />
       {/* Centered logo with scale + fade animation */}
-      <Animated.View
+      <AnimatedView
         style={[
           styles.logoWrap,
           {
@@ -72,23 +74,24 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
           },
         ]}
       >
-        <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
+        <AnimatedView style={{ transform: [{ scale: pulseScale }] }}>
           <WowLogo width={280} height={186} />
-        </Animated.View>
-      </Animated.View>
+        </AnimatedView>
+      </AnimatedView>
 
       {/* Subtle loading dots at the bottom */}
-      <Animated.View style={[styles.dotsRow, { opacity: logoOpacity }]}>
+      <AnimatedView style={[styles.dotsRow, { opacity: logoOpacity }]}>
         <LoadingDot delay={0} />
         <LoadingDot delay={200} />
         <LoadingDot delay={400} />
-      </Animated.View>
-    </Animated.View>
+      </AnimatedView>
+    </AnimatedView>
   );
 };
 
 const LoadingDot: React.FC<{ delay: number }> = ({ delay }) => {
   const opacity = useRef(new Animated.Value(0.3)).current;
+  const AnimatedView: any = Animated.View;
 
   useEffect(() => {
     setTimeout(() => {
@@ -102,7 +105,7 @@ const LoadingDot: React.FC<{ delay: number }> = ({ delay }) => {
   }, []);
 
   return (
-    <Animated.View
+    <AnimatedView
       style={[styles.dot, { opacity, backgroundColor: '#008CE5' }]}
     />
   );

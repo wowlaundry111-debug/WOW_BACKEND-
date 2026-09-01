@@ -1,13 +1,4 @@
-/**
- * WOW Laundry — Admin Manage Categories (Catalog) Screen
- * Premium UI/UX design:
- *  • Focus-ring active Search bar
- *  • 2-col bento category grid with low-opacity soft colors & vector icons
- *  • Dash-bordered premium CTA card
- *  • Glowing violet FAB (spring active rotate animation)
- *  • Glass-frosted bottom sheet for catalog additions
- */
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -15,121 +6,73 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Animated,
   Modal,
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Image,
+  RefreshControl,
 } from 'react-native';
-import { Shirt, Sparkles, Snowflake, Bed, Home, Leaf, Package, Search, Plus, X, Image as ImageIcon, Store, ArrowLeft } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { Search, Plus, X, ArrowLeft, Image as ImageIcon, Sparkles, Package } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS, TYPO, SHADOW, GLASS } from '../../components/Theme';
-import { ToggleSwitch, Button } from '../../components/UIPack';
-import { Skeleton } from '../../components/SkeletonLoaders';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
+import { ToggleSwitch } from '../../components/UIPack';
 import { useAppStore } from '../../store/useAppStore';
 import { CategoryDetailsModal } from './CategoryDetailsModal';
+import { CategoryVectorIllustration } from '../../components/CategoryVectors';
+import { VectorPickerModal } from '../../components/VectorPickerModal';
 
-const XIcon = X as any;
-const PlusIcon = Plus as any;
-const SearchIcon = Search as any;
+export const AdminCatalogScreen: React.FC = () => {
+  const { categories, items, currentTenantId, currentUser, fetchCatalog, addCategory, updateCategory } = useAppStore();
 
+  const [search, setSearch] = useState('');
+  const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
+  const [isAddCatVisible, setAddCatVisible] = useState(false);
+  const [isVectorPickerOpen, setVectorPickerOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatImage, setNewCatImage] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-// Map of category names to beautiful vector icons & custom HSL colors
-const CATEGORY_STYLES: Record<string, { Icon: any; bg: string; color: string; gradient: string[]; border: string }> = {
-  'Men Wear':          { Icon: Shirt as any,     bg: 'rgba(59, 130, 246, 0.08)',  color: '#0284C7', gradient: ['#EFF6FF', '#DBEAFE'], border: 'rgba(59, 130, 246, 0.15)' },
-  'Women Wear':        { Icon: Sparkles as any,  bg: 'rgba(236, 72, 153, 0.08)', color: '#DB2777', gradient: ['#FDF2F8', '#FCE7F3'], border: 'rgba(236, 72, 153, 0.15)' },
-  'Winter Wear':       { Icon: Snowflake as any, bg: 'rgba(249, 115, 22, 0.08)',  color: '#D97706', gradient: ['#FFF7ED', '#FFEDD5'], border: 'rgba(249, 115, 22, 0.15)' },
-  'Bedsheets & Linen': { Icon: Bed as any,       bg: 'rgba(16, 185, 129, 0.08)',  color: '#059669', gradient: ['#ECFDF5', '#D1FAE5'], border: 'rgba(16, 185, 129, 0.15)' },
-  'Apparel Dryclean':  { Icon: Package as any,   bg: 'rgba(75, 85, 99, 0.08)',    color: '#4B5563', gradient: ['#EEF2F6', '#E2E8F0'], border: 'rgba(75, 85, 99, 0.15)' },
-  'Home & Curtains':   { Icon: Home as any,      bg: 'rgba(124, 58, 237, 0.08)',  color: '#7C3AED', gradient: ['#F5F3FF', '#EDE9FE'], border: 'rgba(124, 58, 237, 0.15)' },
-  'Eco Wash & Fold':   { Icon: Leaf as any,      bg: 'rgba(34, 197, 94, 0.08)',   color: '#16A34A', gradient: ['#F0FDF4', '#DCFCE7'], border: 'rgba(34, 197, 94, 0.15)' },
-};
+  const activeShopId = currentTenantId || currentUser?.shopId || '';
+  const tenantCategories = activeShopId
+    ? categories.filter((c) => c.shopId === activeShopId)
+    : categories;
 
-const getCategoryStyle = (name: string) =>
-  CATEGORY_STYLES[name] ?? {
-    Icon: Package as any,
-    bg: 'rgba(0, 168, 232, 0.08)',
-    color: COLORS.primary,
-    gradient: ['#F3F4F6', '#E5E7EB'],
-    border: 'rgba(0, 168, 232, 0.15)'
+  const filteredCategories = tenantCategories.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    await fetchCatalog(activeShopId);
+    setRefreshing(false);
+  }, [fetchCatalog, activeShopId]);
+
+  const handleToggleCategory = async (catId: string, currentVal: boolean) => {
+    try {
+      await updateCategory(catId, { isActive: !currentVal });
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to update category');
+    }
   };
 
-// ─── Category Card ────────────────────────────────────────────────────────────
-interface CategoryCardProps {
-  id: string;
-  name: string;
-  image?: string;
-  itemCount: number;
-  enabled: boolean;
-  onToggle: (val: boolean) => void;
-  onPress: () => void;
-}
-
-const CategoryCard: React.FC<CategoryCardProps> = ({ name, image, itemCount, enabled, onToggle, onPress }) => {
-  const style = getCategoryStyle(name);
-  const IconComponent = style.Icon;
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={onPress}
-      style={[
-        styles.catCard,
-        { backgroundColor: style.gradient[0], borderColor: style.border },
-        !enabled && { opacity: 0.55 }
-      ]}
-    >
-      {/* Icon + Toggle header */}
-      <View style={styles.catCardHeader}>
-        {image ? (
-          <Image source={{ uri: image }} style={styles.catIconBox} />
-        ) : (
-          <View style={[styles.catIconBox, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: style.border }]}>
-            <IconComponent size={22} color={style.color} />
-          </View>
-        )}
-        <ToggleSwitch value={enabled} onToggle={onToggle} />
-      </View>
-
-      {/* Name + count badge */}
-      <View style={{ marginTop: SPACING.md }}>
-        <Text style={[TYPO.labelLg, { color: COLORS.onSurface, marginBottom: 6 }]}>{name}</Text>
-        <View style={styles.countBadge}>
-          <Text style={[TYPO.labelSm, { color: COLORS.onSurfaceVariant, fontSize: 11 }]}>{itemCount} Services</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-// ─── Add Category Sheet (Glass bottom sheet modal) ───────────────────────────
-interface AddCatSheetProps {
-  visible: boolean;
-  onClose: () => void;
-  onConfirm: (name: string, image?: string) => void;
-}
-
-const AddCatSheet: React.FC<AddCatSheetProps> = ({ visible, onClose, onConfirm }) => {
-  const [name, setName] = useState('');
-  const [image, setImage] = useState('');
-  const slideAnim = useRef(new Animated.Value(300)).current;
-
-  React.useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: visible ? 0 : 300,
-      useNativeDriver: Platform.OS !== 'web',
-      speed: 20,
-      bounciness: 6,
-    }).start();
-  }, [visible]);
-
-  const handleConfirm = () => {
-    if (!name.trim()) { Alert.alert('Required', 'Please enter a category name'); return; }
-    onConfirm(name.trim(), image.trim() || undefined);
-    setName('');
-    setImage('');
-    onClose();
+  const handleCreateCategory = async () => {
+    if (!newCatName.trim()) {
+      Alert.alert('Required', 'Please enter category name');
+      return;
+    }
+    setIsCreating(true);
+    try {
+      await addCategory(newCatName.trim(), newCatImage.trim() || undefined, activeShopId);
+      setNewCatName('');
+      setNewCatImage('');
+      setAddCatVisible(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to create category');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const pickImage = async () => {
@@ -140,394 +83,478 @@ const AddCatSheet: React.FC<AddCatSheetProps> = ({ visible, onClose, onConfirm }
       quality: 0.8,
     });
     if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      setNewCatImage(result.assets[0].uri);
     }
   };
 
-  const webBlurStyle: any = {
-    backdropFilter: 'blur(25px)',
-    WebkitBackdropFilter: 'blur(25px)',
-  };
+  const selectedCategory = categories.find((c) => c._id === selectedCatId) || null;
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={[styles.sheetWrapper, { pointerEvents: 'box-none' as any }]}
-      >
-        <Animated.View style={[styles.sheet, webBlurStyle, { transform: [{ translateY: slideAnim }] }]}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <Text style={[TYPO.headlineMd, { color: COLORS.onSurface }]}>Add New Category</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <XIcon size={18} color={COLORS.outline} />
-            </TouchableOpacity>
-          </View>
+    <View style={styles.root}>
+      {/* Header Bar */}
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.heading}>CATALOG MANAGER</Text>
+          <Text style={styles.subHeading}>Manage services & pricing for your branch</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.addBtn}
+          activeOpacity={0.85}
+          onPress={() => setAddCatVisible(true)}
+        >
+          <Plus size={18} color={COLORS.black} strokeWidth={3} />
+          <Text style={styles.addBtnText}>ADD CATEGORY</Text>
+        </TouchableOpacity>
+      </View>
 
-          <TextInput
-            style={styles.sheetInput}
-            placeholder="e.g. Bed Linen & Sheets"
-            placeholderTextColor={COLORS.outline}
-            value={name}
-            onChangeText={setName}
-            autoFocus
-          />
-          <TextInput
-            style={[styles.sheetInput, { marginTop: SPACING.md }]}
-            placeholder="Category Image URL (Optional)"
-            placeholderTextColor={COLORS.outline}
-            value={image}
-            onChangeText={setImage}
-          />
-          <TouchableOpacity onPress={pickImage} style={styles.pickImageBtn}>
-            <ImageIcon size={16} color={COLORS.primary} />
-            <Text style={[TYPO.labelLg, { color: COLORS.primary }]}>Upload from Device</Text>
+      {/* Search Input */}
+      <View style={styles.searchWrap}>
+        <Search size={18} color={COLORS.black} strokeWidth={2.5} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search categories..."
+          placeholderTextColor="#6B7280"
+          value={search}
+          onChangeText={setSearch}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <X size={18} color={COLORS.black} strokeWidth={2.5} />
           </TouchableOpacity>
-          <View style={{ flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg }}>
-            <Button label="Cancel" onPress={onClose} variant="outline" style={{ flex: 1 }} />
-            <Button label="Add Category" onPress={handleConfirm} style={{ flex: 1 }} />
-          </View>
-        </Animated.View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-};
+        )}
+      </View>
 
-// ─── FAB with Rotate Micro-Animation ──────────────────────────────────────────
-const FloatingAddBtn: React.FC<{ onPress: () => void }> = ({ onPress }) => {
-  const rot = useRef(new Animated.Value(0)).current;
-  const [open, setOpen] = useState(false);
-
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    Animated.spring(rot, { toValue: next ? 1 : 0, useNativeDriver: Platform.OS !== 'web', speed: 20, bounciness: 8 }).start();
-    onPress();
-  };
-
-  const rotate = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
-
-  return (
-    <TouchableOpacity style={styles.fab} onPress={toggle} activeOpacity={0.85}>
-      <Animated.View style={{ transform: [{ rotate }] }}>
-        <PlusIcon size={24} color={COLORS.onPrimary} />
-      </Animated.View>
-    </TouchableOpacity>
-  );
-};
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
-export const AdminCatalogScreen: React.FC = () => {
-  const [query, setQuery] = useState('');
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-  const [disabledCats, setDisabledCats] = useState<Set<string>>(new Set());
-  const [searchFocused, setSearchFocused] = useState(false);
-
-  const [inspectedShopId, setInspectedShopId] = useState<string | null>(null);
-
-  const { categories, items, currentTenantId, setCurrentTenantId, addCategory, fetchCatalog, isLoading, shops, currentUser } = useAppStore();
-  
-  const activeShopId = (currentUser?.role === 'SuperAdmin' && !currentTenantId) ? inspectedShopId : currentTenantId;
-  const isGlobalSuperAdmin = currentUser?.role === 'SuperAdmin' && !currentTenantId && !inspectedShopId;
-  const inspectedShop = shops.find(s => s._id === inspectedShopId);
-
-  const tenantCats = categories.filter(c => c.shopId === activeShopId);
-  const tenantItems = items.filter(i => i.shopId === activeShopId);
-
-  const handleShopSelect = async (shopId: string) => {
-    setInspectedShopId(shopId);
-    await fetchCatalog(shopId);
-  };
-
-  const filtered = tenantCats.filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
-
-  const itemCount = (catId: string) => tenantItems.filter(i => i.categoryId === catId).length;
-
-  const toggleCat = (id: string, val: boolean) => {
-    setDisabledCats(prev => {
-      const next = new Set(prev);
-      val ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  return (
-    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      {/* Categories Grid */}
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
       >
-        {/* Header Title block */}
-        <View style={styles.headerBlock}>
-          {inspectedShopId && (
-            <TouchableOpacity onPress={() => setInspectedShopId(null)} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.md }}>
-              <ArrowLeft size={20} color={COLORS.primary} style={{ marginRight: 6 }} />
-              <Text style={[TYPO.labelLg, { color: COLORS.primary }]}>Back to Branches</Text>
-            </TouchableOpacity>
-          )}
-          <Text style={[TYPO.headlineLg, { color: COLORS.onSurface }]}>
-            {isGlobalSuperAdmin 
-              ? 'Select Branch' 
-              : inspectedShop 
-                ? `${inspectedShop.name} Catalog`
-                : 'Category Catalog'}
-          </Text>
-          <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant, marginTop: 4 }]}>
-            {isGlobalSuperAdmin 
-              ? 'Choose a branch below to manage its specific services and catalog.'
-              : inspectedShop 
-                ? `Managing services and pricing for ${inspectedShop.name}.`
-                : 'Configure services, active channels, and catalog listings.'}
-          </Text>
-        </View>
-
-        {/* Search bar with glowing focus border */}
-        <View style={[styles.searchBar, searchFocused && styles.searchBarFocused]}>
-          <SearchIcon size={18} color={searchFocused ? COLORS.primary : COLORS.outline} />
-          <TextInput
-            placeholder="Search categories..."
-            placeholderTextColor={COLORS.outline}
-            value={query}
-            onChangeText={setQuery}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            style={styles.searchInput}
-          />
-        </View>
-
-        {/* Bento Grid */}
         <View style={styles.grid}>
-          {isLoading ? (
-            <>
-              <View style={styles.gridItem}>
-                <Skeleton width="100%" height={165} borderRadius={RADIUS.lg} />
-              </View>
-              <View style={styles.gridItem}>
-                <Skeleton width="100%" height={165} borderRadius={RADIUS.lg} />
-              </View>
-            </>
-          ) : isGlobalSuperAdmin ? (
-            shops.map(shop => (
-              <View key={shop._id} style={styles.gridItem}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => handleShopSelect(shop._id)}
-                  style={[styles.catCard, { justifyContent: 'center', alignItems: 'center' }]}
-                >
-                  <View style={[styles.catIconBox, { backgroundColor: 'rgba(124, 58, 237, 0.08)', marginBottom: SPACING.md }]}>
-                    <Store size={26} color={COLORS.primary} />
+          {filteredCategories.map((cat) => {
+            const catItems = items.filter((i) => i.categoryId === cat._id);
+            const isEnabled = cat.isActive ?? true;
+
+            return (
+              <TouchableOpacity
+                key={cat._id}
+                style={[styles.catCard, !isEnabled && { opacity: 0.55 }]}
+                activeOpacity={0.85}
+                onPress={() => setSelectedCatId(cat._id)}
+              >
+                {/* Header: Illustration + Toggle */}
+                <View style={styles.catCardTop}>
+                  <View style={styles.catImgBox}>
+                    <CategoryVectorIllustration
+                      categoryName={cat.name}
+                      customImage={cat.image}
+                      size={44}
+                    />
                   </View>
-                  <Text style={[TYPO.labelLg, { color: COLORS.onSurface, textAlign: 'center' }]}>{shop.name}</Text>
-                  <Text style={[TYPO.labelSm, { color: COLORS.outline, marginTop: 4, textAlign: 'center' }]}>{shop.branches.join(', ')}</Text>
-                </TouchableOpacity>
-              </View>
-            ))
-          ) : (
-            <>
-              {filtered.map(cat => (
-                <View key={cat._id} style={styles.gridItem}>
-                  <CategoryCard
-                    id={cat._id}
-                    name={cat.name}
-                    image={cat.image}
-                    itemCount={itemCount(cat._id)}
-                    enabled={!disabledCats.has(cat._id)}
-                    onToggle={(val) => toggleCat(cat._id, val)}
-                    onPress={() => setActiveCategoryId(cat._id)}
+                  <ToggleSwitch
+                    value={isEnabled}
+                    onToggle={() => handleToggleCategory(cat._id, isEnabled)}
                   />
                 </View>
-              ))}
-            </>
-          )}
+
+                {/* Title and Services Count */}
+                <View style={styles.catCardBottom}>
+                  <Text style={styles.catName} numberOfLines={2}>
+                    {cat.name}
+                  </Text>
+                  <View style={styles.servicesBadge}>
+                    <Text style={styles.servicesBadgeText}>
+                      {catItems.length} SERVICE{catItems.length === 1 ? '' : 'S'}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {filteredCategories.length === 0 && (
+          <View style={styles.emptyState}>
+            <Package size={40} color={COLORS.black} strokeWidth={2} style={{ marginBottom: 8 }} />
+            <Text style={styles.emptyTitle}>NO CATEGORIES FOUND</Text>
+            <Text style={styles.emptySub}>Tap "Add Category" above to create your first category.</Text>
+          </View>
+        )}
       </ScrollView>
 
-      {/* FAB */}
-      {!isGlobalSuperAdmin && <FloatingAddBtn onPress={() => setSheetOpen(true)} />}
+      {/* Category Details Modal */}
+      {selectedCategory && (
+        <CategoryDetailsModal
+          visible={!!selectedCategory}
+          category={selectedCategory}
+          onClose={() => setSelectedCatId(null)}
+        />
+      )}
 
-      {/* Slide Modal */}
-      <AddCatSheet
-        visible={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        onConfirm={(name, image) => addCategory(name, image, inspectedShopId || undefined)}
-      />
+      {/* Add Category Modal */}
+      <Modal visible={isAddCatVisible} transparent animationType="slide">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalHeading}>CREATE NEW CATEGORY</Text>
 
-      <CategoryDetailsModal
-        visible={!!activeCategoryId}
-        categoryId={activeCategoryId}
-        onClose={() => setActiveCategoryId(null)}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>CATEGORY NAME</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. Suits & Formals"
+                placeholderTextColor="#6B7280"
+                value={newCatName}
+                onChangeText={setNewCatName}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>CATEGORY ICON / ILLUSTRATION</Text>
+              
+              {newCatImage ? (
+                <View style={styles.selectedImgPreview}>
+                  <Image
+                    source={{ uri: newCatImage }}
+                    style={{ width: 44, height: 44 }}
+                    contentFit="contain"
+                  />
+                  <Text style={styles.selectedImgText} numberOfLines={1}>
+                    Selected Icon Active
+                  </Text>
+                  <TouchableOpacity onPress={() => setNewCatImage('')}>
+                    <X size={16} color={COLORS.black} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <TouchableOpacity
+                  style={[styles.imagePickerBtn, { flex: 1, backgroundColor: COLORS.secondary }]}
+                  activeOpacity={0.8}
+                  onPress={() => setVectorPickerOpen(true)}
+                >
+                  <Sparkles size={16} color={COLORS.black} strokeWidth={2.5} />
+                  <Text style={styles.imagePickerText}>Pick Vector</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.imagePickerBtn, { flex: 1 }]}
+                  activeOpacity={0.8}
+                  onPress={pickImage}
+                >
+                  <ImageIcon size={16} color={COLORS.black} strokeWidth={2.5} />
+                  <Text style={styles.imagePickerText}>Upload File</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setAddCatVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalCancelText}>CANCEL</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                onPress={handleCreateCategory}
+                disabled={isCreating}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalSaveText}>
+                  {isCreating ? 'CREATING...' : 'CREATE CATEGORY'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Vector Picker Gallery Sheet */}
+      <VectorPickerModal
+        visible={isVectorPickerOpen}
+        selectedUrl={newCatImage}
+        onSelect={(url) => setNewCatImage(url)}
+        onClose={() => setVectorPickerOpen(false)}
       />
     </View>
   );
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  scrollContent: {
-    padding: SPACING.mobile,
-    paddingTop: SPACING.lg,
-    paddingBottom: 140,
+  root: {
+    flex: 1,
+    backgroundColor: COLORS.white,
   },
-  headerBlock: {
-    marginBottom: SPACING.lg,
-  },
-  searchBar: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surfaceContainer,
-    borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm - 2,
-    marginBottom: SPACING.lg,
-    gap: SPACING.xs,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    ...SHADOW.ambient,
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.mobile,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
   },
-  searchBarFocused: {
-    borderColor: COLORS.primaryContainer,
-    backgroundColor: COLORS.surfaceContainerLowest,
+  heading: {
+    fontSize: 22,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  subHeading: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    ...NEO_SHADOW.box2,
+  },
+  addBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    marginHorizontal: SPACING.mobile,
+    marginVertical: SPACING.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    ...NEO_SHADOW.box4,
   },
   searchInput: {
     flex: 1,
-    ...TYPO.bodyLg,
+    marginLeft: 8,
     fontSize: 14,
-    color: COLORS.onSurface,
-    borderWidth: 0,
-    outlineWidth: 0, // Web support to remove default input outline
-  } as any,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  scrollContent: {
+    padding: SPACING.mobile,
+    paddingBottom: 100,
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING.gutter,
-  },
-  gridItem: {
-    width: '47%',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
   },
   catCard: {
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md + 2,
-    minHeight: 165,
+    width: '47.5%',
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
     justifyContent: 'space-between',
-    ...SHADOW.ambient,
+    minHeight: 175,
+    ...NEO_SHADOW.box4,
   },
-  catCardHeader: {
+  catCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
-  catIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  countBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: COLORS.surfaceContainerLow,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: RADIUS.sm,
-  },
-  addCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.40)',
-    borderWidth: 2,
-    borderColor: COLORS.outlineVariant,
-    borderStyle: 'dashed',
+  catImgBox: {
+    width: 60,
+    height: 60,
     borderRadius: RADIUS.lg,
-    minHeight: 165,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: SPACING.md,
+    overflow: 'hidden',
   },
-  addIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surfaceContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
+  catImg: {
+    width: 48,
+    height: 48,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 110,
-    right: SPACING.mobile,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
+  catCardBottom: {
+    marginTop: SPACING.md,
+  },
+  catName: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  servicesBadge: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xs,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  servicesBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  emptyState: {
     alignItems: 'center',
-    justifyContent: 'center',
-    ...SHADOW.glow(COLORS.primary),
+    padding: SPACING.xl,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    marginTop: 20,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  emptySub: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 4,
   },
   modalOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(9, 9, 11, 0.50)',
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
   },
-  sheetWrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  sheet: {
-    backgroundColor: '#FFFFFF',
+  modalContent: {
+    backgroundColor: COLORS.white,
     borderTopLeftRadius: RADIUS.xxl,
     borderTopRightRadius: RADIUS.xxl,
+    borderTopWidth: 3,
+    borderColor: COLORS.black,
     padding: SPACING.lg,
-    paddingTop: SPACING.md,
-    paddingBottom: 44,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    paddingBottom: 40,
   },
-  sheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  modalHeading: {
+    fontSize: 20,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: SPACING.lg,
+  },
+  inputGroup: {
     marginBottom: SPACING.md,
   },
-  closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.8,
+    marginBottom: 4,
   },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.outlineVariant,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: SPACING.md,
-  },
-  sheetInput: {
-    backgroundColor: COLORS.surfaceContainerLow,
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md - 2,
-    ...TYPO.bodyLg,
-    color: COLORS.onSurface,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    outlineWidth: 0,
-  } as any,
-  pickImageBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    padding: SPACING.sm,
-    marginTop: SPACING.sm,
+  modalInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: COLORS.black,
     borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
+    padding: 12,
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  imagePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 12,
+  },
+  imagePickerText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  selectedImgPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 8,
+    marginVertical: 4,
+  },
+  selectedImgText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: SPACING.md,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+  },
+  modalCancelText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  modalSaveBtn: {
+    flex: 1.5,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    ...NEO_SHADOW.box2,
+  },
+  modalSaveText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
   },
 });

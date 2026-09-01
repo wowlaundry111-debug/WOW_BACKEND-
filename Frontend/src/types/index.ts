@@ -21,6 +21,15 @@ export interface WashPreference {
   name: string;
   description: string;
   price: number;
+  enabled?: boolean;
+}
+
+export interface PromoBanner {
+  id: string;
+  badge: string;
+  title: string;
+  subtitle: string;
+  type?: 'promo' | 'free';
 }
 
 export interface Shop {
@@ -39,6 +48,7 @@ export interface Shop {
   pickupTimings?: string[];
   contactNumber?: string;
   washPreferences?: WashPreference[];
+  promoBanners?: PromoBanner[];
   minOrderValue?: number;
   taxPercent?: number;
   deliveryFee?: number;

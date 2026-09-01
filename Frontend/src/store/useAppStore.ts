@@ -86,7 +86,7 @@ interface AppState {
   createShop: (name: string, branches: string[], upiId: string, bankName: string, accountNo: string, adminEmail: string) => Promise<void>;
   updateShop: (shopId: string, data: Partial<Shop>) => Promise<void>;
   deleteShop: (shopId: string) => Promise<void>;
-  addDeliveryBoy: (email: string, targetShopId?: string) => Promise<void>;
+  addDeliveryBoy: (email: string, targetShopId?: string, name?: string, phone?: string) => Promise<any>;
   updateUser: (userId: string, data: Partial<User>) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   toggleUserSuspension: (userId: string) => Promise<void>;
@@ -138,31 +138,66 @@ export const useAppStore = create<AppState>()(
       },
 
       setCurrentTenantId: (shopId) => {
-        set({ currentTenantId: shopId });
-        if (get().currentRole !== 'SuperAdmin' && get().currentRole !== 'Customer') {
-          get().autoSelectUserForRole(get().currentRole, shopId);
-        } else if (shopId) {
-          get().fetchCatalog();
+        set({ 
+          currentTenantId: shopId,
+          cart: [], 
+          activeCoupon: null 
+        });
+        if (shopId) {
+          get().fetchCatalog(shopId);
+          get().fetchOrders(1);
+          if (['SuperAdmin', 'ShopAdmin'].includes(get().currentUser?.role || '')) {
+            get().fetchUsers();
+          }
         } else {
-          set({ categories: [], items: [] });
+          get().fetchOrders(1);
+          if (['SuperAdmin', 'ShopAdmin'].includes(get().currentUser?.role || '')) {
+            get().fetchUsers();
+          }
         }
-        set({ cart: [], activeCoupon: null });
       },
 
       setCurrentUser: (user) => {
         if (user) {
+          const effectiveShop = user.role === 'SuperAdmin' ? '' : (user.shopId || get().currentTenantId || '');
           set({
             currentUser: user,
             currentRole: user.role,
-            currentTenantId: user.role === 'SuperAdmin' ? '' : (user.role === 'Customer' && !user.shopId ? '' : (user.shopId || get().currentTenantId)),
+            currentTenantId: effectiveShop,
           });
-          get().fetchCatalog();
+          if (effectiveShop) {
+            get().fetchCatalog(effectiveShop);
+          }
+          get().fetchOrders(1);
+          if (['SuperAdmin', 'ShopAdmin'].includes(user.role)) {
+            get().fetchUsers();
+          }
         } else {
-          set({ currentUser: null });
+          // Logout — clear ALL state so next login sees a clean slate
+          setAuthToken(null);
+          set({
+            currentUser: null,
+            currentRole: 'Customer',
+            currentTenantId: '',
+            shops: [],
+            users: [],
+            categories: [],
+            items: [],
+            offers: [],
+            orders: [],
+            cart: [],
+            activeCoupon: null,
+            shopsLastFetched: 0,
+            offersLastFetched: 0,
+            catalogLastFetched: 0,
+            orderTotal: 0,
+            orderPage: 1,
+          });
         }
       },
 
       autoSelectUserForRole: async (role, shopId) => {
+        if (!__DEV__) return; // This function is only for dev role switching
         const targetShopId = shopId || get().currentTenantId;
         if (role === 'SuperAdmin') {
           const superUser = get().users.find(u => u.role === 'SuperAdmin') || null;
@@ -185,7 +220,7 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      // App initialization — lean startup: shops + offers only, no all-users dump
+      // App initialization — shops + catalog + orders + users for active role
       initializeAppData: async () => {
         const GLOBAL_TTL = 5 * 60_000; // 5 minutes
         const now = Date.now();
@@ -194,44 +229,47 @@ export const useAppStore = create<AppState>()(
         // Skip re-fetch if shops/offers data is still fresh and we already have data
         const isShopsFresh = shops.length > 0 && (now - shopsLastFetched) < GLOBAL_TTL;
         const isOffersFresh = (now - offersLastFetched) < GLOBAL_TTL;
+        const isSuper = get().currentUser?.role === 'SuperAdmin';
 
         if (isShopsFresh && isOffersFresh) {
-          if (get().currentUser) {
-            const promises: Promise<any>[] = [get().fetchCatalog(), get().fetchOrders()];
-            if (['SuperAdmin', 'ShopAdmin'].includes(get().currentUser!.role)) {
-              promises.push(get().fetchUsers());
-            }
-            await Promise.all(promises);
+          let activeShopId = isSuper ? get().currentTenantId : (get().currentTenantId || (shops[0]?._id || ''));
+          if (!get().currentTenantId && activeShopId && !isSuper) {
+            set({ currentTenantId: activeShopId });
           }
+          const promises: Promise<any>[] = [get().fetchCatalog(activeShopId), get().fetchOrders()];
+          if (get().currentUser && ['SuperAdmin', 'ShopAdmin'].includes(get().currentUser!.role)) {
+            promises.push(get().fetchUsers());
+          }
+          await Promise.all(promises);
           return;
         }
 
         set({ isLoading: true, error: null });
         try {
-          const shopId = get().currentTenantId;
-          const offersUrl = shopId ? `/catalog/offers?shopId=${shopId}` : '/catalog/offers';
+          const fetchedShops = (await api.get('/catalog/shops')).data || [];
+          let activeShopId = isSuper ? get().currentTenantId : (get().currentTenantId || (fetchedShops[0]?._id || ''));
 
-          const [shopsRes, offersRes] = await Promise.all([
-            api.get('/catalog/shops'),
-            api.get(offersUrl),
-          ]);
+          const offersUrl = activeShopId ? `/catalog/offers?shopId=${activeShopId}` : '/catalog/offers';
+          const offersRes = await api.get(offersUrl);
 
           set({
-            shops: shopsRes.data,
-            offers: offersRes.data,
+            shops: fetchedShops,
+            offers: offersRes.data || [],
+            currentTenantId: isSuper ? get().currentTenantId : activeShopId,
             shopsLastFetched: Date.now(),
             offersLastFetched: Date.now(),
             isLoading: false,
           });
 
-          // If logged in, fetch their specific data
-          if (get().currentUser) {
-            const promises: Promise<any>[] = [get().fetchCatalog(), get().fetchOrders()];
-            if (['SuperAdmin', 'ShopAdmin'].includes(get().currentUser!.role)) {
-              promises.push(get().fetchUsers());
-            }
-            await Promise.all(promises);
+          // Fetch catalog, orders, and users for active role
+          const promises: Promise<any>[] = [
+            get().fetchCatalog(activeShopId),
+            get().fetchOrders()
+          ];
+          if (get().currentUser && ['SuperAdmin', 'ShopAdmin'].includes(get().currentUser!.role)) {
+            promises.push(get().fetchUsers());
           }
+          await Promise.all(promises);
         } catch (err: any) {
           set({ error: err.message || 'Failed to load app data', isLoading: false });
         }
@@ -245,18 +283,24 @@ export const useAppStore = create<AppState>()(
 
           setAuthToken(token);
 
+          const defaultShop = get().shops[0]?._id || '';
+          const effectiveShop = user.role === 'SuperAdmin'
+            ? ''
+            : (user.shopId || get().currentTenantId || defaultShop);
+
+          // Reset TTLs so initializeAppData always re-fetches shops/offers on login
           set({
             currentUser: user,
             currentRole: user.role,
-            currentTenantId: user.role === 'SuperAdmin' ? '' : (user.role === 'Customer' && !user.shopId ? '' : (user.shopId || get().currentTenantId)),
+            currentTenantId: effectiveShop,
+            shopsLastFetched: 0,
+            offersLastFetched: 0,
+            catalogLastFetched: 0,
             isLoading: false,
           });
 
-          get().fetchCatalog();
-          get().fetchOrders();
-          if (['SuperAdmin', 'ShopAdmin'].includes(user.role)) {
-            get().fetchUsers();
-          }
+          // initializeAppData ensures shops + fresh data all loaded in one shot
+          await get().initializeAppData();
           return { success: true, message: 'Logged in successfully' };
         } catch (err: any) {
           const msg = err.response?.data?.error || 'Login failed';
@@ -290,9 +334,6 @@ export const useAppStore = create<AppState>()(
           set({ isLoading: false });
 
           let message = response.data.message || 'OTP sent successfully!';
-          if (response.data.mockOtp) {
-            message += ` [Dev OTP: ${response.data.mockOtp}]`;
-          }
           return { success: true, message };
         } catch (err: any) {
           const msg = err.response?.data?.error || 'Registration failed';
@@ -303,12 +344,15 @@ export const useAppStore = create<AppState>()(
 
       // Catalog fetch with deduplication + TTL cache
       fetchCatalog: async (overrideShopId?: string) => {
-        const shopId = overrideShopId || get().currentTenantId;
+        let shopId = overrideShopId || get().currentTenantId || get().currentUser?.shopId;
+        if (!shopId && get().shops.length > 0) {
+          shopId = get().shops[0]._id;
+        }
         if (!shopId) return;
 
         // TTL: skip if same-shop data is fresh within 60 seconds (explicit override always refetches)
         const CATALOG_TTL = 60_000;
-        if (!overrideShopId && (Date.now() - get().catalogLastFetched) < CATALOG_TTL) return;
+        if (!overrideShopId && (Date.now() - get().catalogLastFetched) < CATALOG_TTL && get().categories.length > 0) return;
 
         if (catalogFetchInFlight) return catalogFetchInFlight;
 
@@ -318,8 +362,8 @@ export const useAppStore = create<AppState>()(
             // Use combined endpoint — 1 round-trip instead of 2
             const res = await api.get(`/catalog/shops/${shopId}/catalog`);
             set({
-              categories: res.data.categories,
-              items: res.data.items,
+              categories: res.data.categories || [],
+              items: res.data.items || [],
               catalogLastFetched: Date.now(),
               isCatalogLoading: false,
             });
@@ -333,24 +377,32 @@ export const useAppStore = create<AppState>()(
         return catalogFetchInFlight;
       },
 
-      // Paginated orders fetch
+      // Paginated orders fetch with strict shop partitioning
       fetchOrders: async (page = 1) => {
         set({ isOrdersLoading: true, error: null });
         try {
-          const res = await api.get(`/orders?page=${page}&limit=20`);
+          const shopId = get().currentTenantId || get().currentUser?.shopId;
+          const url = shopId ? `/orders?page=${page}&limit=50&shopId=${shopId}` : `/orders?page=${page}&limit=50`;
+          const res = await api.get(url);
           const { orders, total } = res.data;
 
           if (page === 1) {
-            // First page — replace
-            set({ orders, orderTotal: total, orderPage: 1, isOrdersLoading: false });
+            // First page — replace and deduplicate
+            const map = new Map<string, Order>();
+            orders.forEach((o: Order) => map.set(o._id, o));
+            set({ orders: Array.from(map.values()), orderTotal: total, orderPage: 1, isOrdersLoading: false });
           } else {
-            // Subsequent pages — append
-            set(state => ({
-              orders: [...state.orders, ...orders],
-              orderTotal: total,
-              orderPage: page,
-              isOrdersLoading: false,
-            }));
+            // Subsequent pages — merge uniquely
+            set(state => {
+              const map = new Map<string, Order>(state.orders.map(o => [o._id, o]));
+              orders.forEach((o: Order) => map.set(o._id, o));
+              return {
+                orders: Array.from(map.values()),
+                orderTotal: total,
+                orderPage: page,
+                isOrdersLoading: false,
+              };
+            });
           }
         } catch (err: any) {
           set({ error: err.message || 'Failed to load orders', isOrdersLoading: false });
@@ -358,12 +410,21 @@ export const useAppStore = create<AppState>()(
       },
 
       fetchUsers: async () => {
+        const role = get().currentUser?.role;
+        if (!['SuperAdmin', 'ShopAdmin'].includes(role || '')) {
+          return;
+        }
         try {
-          // Fetch all users (limit=100 as per backend) for the current shop (or all for SuperAdmin)
-          const res = await api.get('/auth/users?limit=100');
-          set({ users: res.data.users });
-        } catch (err) {
-          console.error('Failed to fetch users', err);
+          const shopId = get().currentTenantId || get().currentUser?.shopId;
+          const url = shopId ? `/auth/users?limit=100&shopId=${shopId}` : '/auth/users?limit=100';
+          const res = await api.get(url);
+          if (Array.isArray(res.data?.users)) {
+            set({ users: res.data.users });
+          }
+        } catch (err: any) {
+          if (err.response?.status !== 403) {
+            console.error('Failed to fetch users', err);
+          }
         }
       },
 
@@ -501,7 +562,7 @@ export const useAppStore = create<AppState>()(
           const newOrder = res.data;
 
           set(state => ({
-            orders: [newOrder, ...state.orders],
+            orders: [newOrder, ...state.orders.filter(o => o._id !== newOrder._id)],
             cart: [],
             activeCoupon: null,
             deliveryInstructions: '',
@@ -549,17 +610,19 @@ export const useAppStore = create<AppState>()(
 
       assignDeliveryBoy: async (orderId, deliveryBoyId) => {
         const deliveryBoy = get().users.find(u => u._id === deliveryBoyId);
-        if (!deliveryBoy) return;
+        const boyName = deliveryBoy?.name || 'Delivery Staff';
         try {
           const res = await api.patch(`/orders/${orderId}/assign`, {
             deliveryBoyId,
-            deliveryBoyName: deliveryBoy.name,
+            deliveryBoyName: boyName,
           });
           set(state => ({
             orders: state.orders.map(o => o._id === orderId ? res.data : o),
           }));
+          return res.data;
         } catch (err) {
           console.error('Failed to assign delivery boy', err);
+          throw err;
         }
       },
 
@@ -733,14 +796,23 @@ export const useAppStore = create<AppState>()(
         try {
           const order = get().orders.find(o => o._id === orderId);
           if (!order) return;
-          const updatedItems = order.items.map(it => ({
-            ...it,
-            quantity: itemsCount[it.itemId] ?? it.quantity,
-          }));
+          const updatedItems = order.items.map(it => {
+            const qty = (it.itemId && itemsCount[it.itemId] !== undefined)
+              ? itemsCount[it.itemId]
+              : ((it as any)._id && itemsCount[(it as any)._id] !== undefined)
+              ? itemsCount[(it as any)._id]
+              : it.quantity;
+            return {
+              ...it,
+              quantity: Math.max(0, Number(qty ?? 0)),
+            };
+          });
           const res = await api.patch(`/orders/${orderId}/verify`, { items: updatedItems });
-          set(state => ({
-            orders: state.orders.map(o => o._id === orderId ? res.data : o),
-          }));
+          if (res.data) {
+            set(state => ({
+              orders: state.orders.map(o => o._id === orderId ? res.data : o),
+            }));
+          }
         } catch (err) {
           console.error('Failed to verify items:', err);
         }
@@ -818,19 +890,33 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      addDeliveryBoy: async (email, targetShopId) => {
-        const shopId = targetShopId || get().currentTenantId;
-        if (!shopId) return;
+      addDeliveryBoy: async (email, targetShopId, name, phone) => {
+        const shopId = targetShopId || get().currentTenantId || (get().currentUser?.shopId);
+        if (!shopId) {
+          throw new Error('Please select a shop branch first.');
+        }
         try {
+          const derivedName = name || email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Delivery Staff';
           const res = await api.post('/auth/users', {
-            name: 'Delivery Staff',
-            email,
+            name: derivedName,
+            email: email.trim().toLowerCase(),
+            phone: phone || undefined,
             role: 'Delivery',
             shopId,
             address: 'Shop Branch',
           });
-          // Surgical: add new user to local state
-          set(state => ({ users: [...state.users, res.data] }));
+          // Surgical: add/update user in local state
+          set(state => {
+            const exists = state.users.some(u => u._id === res.data._id || u.email.toLowerCase() === res.data.email.toLowerCase());
+            return {
+              users: exists
+                ? state.users.map(u => (u._id === res.data._id || u.email.toLowerCase() === res.data.email.toLowerCase()) ? res.data : u)
+                : [...state.users, res.data]
+            };
+          });
+          // Background sync
+          get().fetchUsers();
+          return res.data;
         } catch (err: any) {
           console.error('Failed to add delivery boy:', err);
           throw err;

@@ -20,20 +20,14 @@
         "foregroundImage": "./assets/iconic.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.salgotra111.Frontend",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.salgotra111.Frontend"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "8a80cf63-bf9b-4c62-b807-480683bdd06c"
-      }
-    },
-    "owner": "salgotra111"
+      "expo-font",
+      "expo-asset"
+    ]
   }
 }

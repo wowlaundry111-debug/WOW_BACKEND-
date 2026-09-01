@@ -1,17 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
-  ImageBackground, ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  ScrollView,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, ShieldCheck, Clock, Mail } from 'lucide-react-native';
+import { ArrowRight, ShieldCheck, Clock, Mail, ArrowLeft } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { COLORS, SPACING, RADIUS, TYPO } from '../../components/Theme';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { useAppStore } from '../../store/useAppStore';
-import { WowLogo } from '../../components/WowLogo';
 import { RegisterScreen } from './RegisterScreen';
-import api from '../../services/api';
+import { WowLogo } from '../../components/WowLogo';
+import api, { setAuthToken } from '../../services/api';
 
 // ─── OTP Screen ───────────────────────────────────────────────────────────────
 interface OTPScreenProps {
@@ -29,7 +36,7 @@ const OTPScreen: React.FC<OTPScreenProps> = ({ email, onBack, onVerify, loading 
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setTimer(t => (t > 0 ? t - 1 : 0));
+      setTimer((t) => (t > 0 ? t - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -56,31 +63,25 @@ const OTPScreen: React.FC<OTPScreenProps> = ({ email, onBack, onVerify, loading 
       style={styles.kav}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top > 0 ? insets.top + 16 : 24 }]} keyboardShouldPersistTaps="handled">
-        {/* Back button */}
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Text style={styles.backArrow}>←</Text>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingTop: (insets.top > 0 ? insets.top : 44) + 16 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
+          <ArrowLeft size={22} color={COLORS.black} strokeWidth={3} />
         </TouchableOpacity>
 
         {/* Logo */}
         <View style={styles.logoWrap}>
-          <WowLogo width={340} height={136} />
+          <WowLogo width={260} height={95} />
         </View>
 
         {/* Card */}
         <View style={styles.card}>
-          {/* Shield Icon */}
-          <View style={styles.shieldWrap}>
-            <ShieldCheck size={28} color="#008CE5" strokeWidth={1.8} />
-          </View>
-
-          <Text style={styles.otpTitle}>Enter OTP</Text>
-          <Text style={styles.otpSubtitle}>We've sent a 4-digit OTP to</Text>
-          <View style={styles.phoneRow}>
-            <Text style={styles.phoneNumber}>{email}</Text>
-            <TouchableOpacity onPress={onBack}>
-              <Text style={styles.changeText}> Change</Text>
-            </TouchableOpacity>
+          <Text style={styles.cardTitle}>ENTER OTP</Text>
+          <Text style={styles.cardSubtitle}>We've sent a 4-digit code to</Text>
+          <View style={styles.emailBadge}>
+            <Text style={styles.emailBadgeText}>{email}</Text>
           </View>
 
           {/* 4 OTP Boxes */}
@@ -88,26 +89,27 @@ const OTPScreen: React.FC<OTPScreenProps> = ({ email, onBack, onVerify, loading 
             {digits.map((d, i) => (
               <TextInput
                 key={i}
-                ref={el => { refs.current[i] = el; }}
+                ref={(el) => {
+                  refs.current[i] = el;
+                }}
                 style={[styles.otpBox, d ? styles.otpBoxFilled : null]}
                 value={d}
-                onChangeText={t => handleDigit(t, i)}
-                onKeyPress={e => handleKey(e, i)}
+                onChangeText={(t) => handleDigit(t, i)}
+                onKeyPress={(e) => handleKey(e, i)}
                 keyboardType="number-pad"
                 maxLength={1}
                 textAlign="center"
-                selectionColor="#008CE5"
+                selectionColor={COLORS.black}
                 autoFocus={i === 0}
               />
             ))}
           </View>
 
-          {/* Resend timer */}
+          {/* Resend Timer */}
           <View style={styles.timerRow}>
-            <Clock size={14} color="#9CA3AF" />
+            <Clock size={14} color="#4B5563" strokeWidth={2.5} />
             <Text style={styles.timerText}>
-              {' '}Resend OTP in{' '}
-              <Text style={styles.timerCount}>00:{String(timer).padStart(2, '0')}</Text>
+              Resend in <Text style={styles.timerCount}>00:{String(timer).padStart(2, '0')}</Text>
             </Text>
           </View>
 
@@ -118,13 +120,14 @@ const OTPScreen: React.FC<OTPScreenProps> = ({ email, onBack, onVerify, loading 
             disabled={!canVerify || loading}
             activeOpacity={0.85}
           >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <Text style={styles.btnText}>Verify & Login</Text>
-                  <ArrowRight size={18} color="#fff" />
-                </>
-            }
+            {loading ? (
+              <ActivityIndicator color={COLORS.black} />
+            ) : (
+              <View style={styles.btnContent}>
+                <Text style={styles.btnText}>VERIFY & LOGIN</Text>
+                <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
+              </View>
+            )}
           </TouchableOpacity>
 
           {/* Resend link */}
@@ -133,7 +136,7 @@ const OTPScreen: React.FC<OTPScreenProps> = ({ email, onBack, onVerify, loading 
             disabled={timer > 0}
             onPress={() => setTimer(59)}
           >
-            <Text style={[styles.resendText, timer > 0 && { color: '#D1D5DB' }]}>
+            <Text style={[styles.resendText, timer > 0 && { color: '#9CA3AF' }]}>
               Resend OTP
             </Text>
           </TouchableOpacity>
@@ -157,409 +160,311 @@ export const AuthScreen = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try {
-      const response = await api.post('/auth/send-otp', { email });
-      
-      if (response.data.autoLogin) {
-        await handleVerifyOTP(response.data.mockOtp);
+      const response = await api.post('/auth/send-otp', { email: email.trim().toLowerCase() });
+      const data = response.data;
+
+      if (data.directLogin && data.token && data.user) {
+        await setAuthToken(data.token);
+        useAppStore.setState({
+          currentUser: data.user,
+          currentRole: data.user.role,
+          currentTenantId: data.user.role === 'SuperAdmin' ? '' : data.user.shopId || '',
+        });
+        useAppStore.getState().fetchCatalog();
+        useAppStore.getState().fetchOrders();
+        if (['SuperAdmin', 'ShopAdmin'].includes(data.user.role)) {
+          useAppStore.getState().fetchUsers();
+        }
+        setLoading(false);
+        return;
+      }
+
+      if (data.autoLogin) {
+        await handleVerifyOTP(data.mockOtp);
       } else {
         setLoading(false);
         setScreen('OTP');
-        if (response.data.mockOtp) {
-          alert(`[Dev Mode] SMTP OTP: ${response.data.mockOtp}`);
-        }
       }
     } catch (err: any) {
       setLoading(false);
-      alert(err.response?.data?.error || 'Failed to send OTP. Please check your email.');
+      alert(err.response?.data?.error || 'Failed to authenticate. Please check your email.');
     }
   };
 
   const handleVerifyOTP = async (otp: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setLoading(true);
-    const res = await login(email, otp);
+    const res = await login(email.trim().toLowerCase(), otp);
     setLoading(false);
     if (!res.success) alert(res.message);
   };
 
   const isEmailValid = email.trim().length >= 3;
 
+  if (screen === 'REGISTER') {
+    return (
+      <RegisterScreen
+        onBack={() => setScreen('EMAIL')}
+        onRegisterSuccess={(registeredEmail) => {
+          setEmail(registeredEmail);
+          setScreen('OTP');
+        }}
+      />
+    );
+  }
+
+  if (screen === 'OTP') {
+    return (
+      <OTPScreen
+        email={email}
+        onBack={() => setScreen('EMAIL')}
+        onVerify={handleVerifyOTP}
+        loading={loading}
+      />
+    );
+  }
+
   return (
-    <ImageBackground
-      source={require('../../../assets/bg.png')}
-      style={styles.bgImage}
-      resizeMode="stretch"
+    <KeyboardAvoidingView
+      style={styles.kav}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {screen === 'REGISTER' ? (
-        <RegisterScreen 
-          onBack={() => setScreen('EMAIL')} 
-          onRegisterSuccess={(registeredEmail) => {
-            setEmail(registeredEmail);
-            setScreen('OTP');
-          }}
-        />
-      ) : screen === 'OTP' ? (
-        <OTPScreen
-          email={email}
-          onBack={() => setScreen('EMAIL')}
-          onVerify={handleVerifyOTP}
-          loading={loading}
-        />
-      ) : (
-        <KeyboardAvoidingView
-          style={styles.kav}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top > 0 ? insets.top + 16 : 24 }]} keyboardShouldPersistTaps="handled">
-            {/* Logo */}
-            <View style={styles.logoWrap}>
-              <WowLogo width={340} height={136} />
-            </View>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingTop: (insets.top > 0 ? insets.top : 44) + 24 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Logo */}
+        <View style={styles.logoWrap}>
+          <WowLogo width={260} height={95} />
+        </View>
 
-            {/* Card */}
-            <View style={styles.card}>
-              <Text style={styles.fieldLabel}>User ID or Email</Text>
-              <View style={styles.inputRow}>
-                <Mail size={16} color="#9CA3AF" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your ID or email"
-                  placeholderTextColor="#9CA3AF"
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  autoFocus
-                />
+        {/* Neo-Brutalist Login Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>SIGN IN</Text>
+          <Text style={styles.cardSubtitle}>Enter your email to receive OTP</Text>
+
+          <View style={styles.inputWrap}>
+            <Mail size={20} color={COLORS.black} strokeWidth={2.5} />
+            <TextInput
+              style={styles.input}
+              placeholder="name@example.com"
+              placeholderTextColor="#6B7280"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              selectionColor={COLORS.black}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.btn, !isEmailValid && styles.btnDisabled]}
+            onPress={handleSendOTP}
+            disabled={!isEmailValid || loading}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.black} />
+            ) : (
+              <View style={styles.btnContent}>
+                <Text style={styles.btnText}>CONTINUE</Text>
+                <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
               </View>
+            )}
+          </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.btn, !isEmailValid && styles.btnDisabled]}
-                onPress={handleSendOTP}
-                disabled={!isEmailValid || loading}
-                activeOpacity={0.85}
-              >
-                {loading
-                  ? <ActivityIndicator color="#fff" />
-                  : <>
-                      <Text style={styles.btnText}>Continue</Text>
-                      <ArrowRight size={18} color="#fff" />
-                    </>
-                }
-              </TouchableOpacity>
-
-              <View style={styles.safeRow}>
-                <ShieldCheck size={13} color="#93C5FD" strokeWidth={2} />
-                <Text style={styles.safeText}> Your data is safe with us</Text>
-              </View>
-            </View>
-
-            {/* Register link — below card */}
-            <View style={styles.registerRow}>
-              <Text style={styles.registerText}>Don't have an account?</Text>
-              <TouchableOpacity onPress={() => setScreen('REGISTER')}>
-                <Text style={styles.registerLink}> Register</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      )}
-    </ImageBackground>
+          <View style={styles.registerRow}>
+            <Text style={styles.registerText}>Don't have an account?</Text>
+            <TouchableOpacity onPress={() => setScreen('REGISTER')}>
+              <Text style={styles.registerLink}> REGISTER</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: {
+  kav: {
     flex: 1,
+    backgroundColor: '#F0FDF4',
   },
-  bgImage: {
-    flex: 1,
-    width: '100%',
-    height: (Platform.OS === 'web' ? '100vh' : '100%') as any,
-    position: (Platform.OS === 'web' ? 'fixed' : 'relative') as any,
-    top: 0,
-    left: 0,
-    overflow: 'hidden',
-  },
-  kav: { flex: 1 },
   scrollContent: {
-    flexGrow: 1,
-    padding: 24,
-    justifyContent: 'flex-start',
+    padding: SPACING.mobile,
+    alignItems: 'center',
+    paddingBottom: 40,
   },
-
-  // Logo
-  logoWrap: { alignItems: 'center', marginBottom: 16 },
-
-  // Welcome text (login screen, outside card)
-  welcomeTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#111827',
-    fontFamily: 'Outfit_800ExtraBold',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  welcomeSub: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontFamily: 'Outfit_400Regular',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
-  },
-
-  // Back button
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
     alignSelf: 'flex-start',
+    marginBottom: SPACING.md,
+    ...NEO_SHADOW.box4,
   },
-  backArrow: {
-    fontSize: 18,
-    color: '#374151',
-    fontWeight: '600',
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
   },
-
-  // White card
+  logoImg: {
+    width: 220,
+    height: 90,
+  },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 22,
     width: '100%',
-    maxWidth: 420,
-    alignSelf: 'center',
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 6px 16px rgba(0,0,0,0.06)',
-      },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.06,
-        shadowRadius: 16,
-      }
-    }),
-    elevation: 4,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    ...NEO_SHADOW.box8,
   },
-
-  // Form label
-  fieldLabel: {
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  cardSubtitle: {
     fontSize: 13,
-    color: '#374151',
-    fontWeight: '600',
-    fontFamily: 'Outfit_600SemiBold',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#4B5563',
+    marginTop: 4,
+    marginBottom: SPACING.md,
   },
-
-  // Input row (+91 | text)
-  inputRow: {
+  emailBadge: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 8,
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  emailBadgeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
     paddingHorizontal: 14,
-    height: 52,
-    marginBottom: 18,
-    borderWidth: 1.5,
-    borderColor: '#F3F4F6',
-  },
-  countryCode: {
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '700',
-    fontFamily: 'Outfit_600SemiBold',
-  },
-  countryChevron: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    marginLeft: 3,
-    marginTop: 1,
-  },
-  vDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: SPACING.lg,
+    ...NEO_SHADOW.box4,
   },
   input: {
     flex: 1,
-    fontSize: 14,
-    color: '#111827',
-    fontFamily: 'Outfit_500Medium',
-    outlineStyle: 'none',
-    outlineWidth: 0,
-    borderWidth: 0,
-    backgroundColor: 'transparent',
-  } as any,
-
-  // Primary button
-  btn: {
-    backgroundColor: '#0D8DE3',
-    height: 52,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 4px 8px rgba(13, 141, 227, 0.3)',
-      },
-      default: {
-        shadowColor: '#0D8DE3',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      }
-    }),
-  } as any,
-  btnDisabled: { opacity: 0.4 },
-  btnText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontFamily: 'Outfit_600SemiBold',
-  },
-
-  // Safe row
-  safeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-  },
-  safeText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontFamily: 'Outfit_400Regular',
-  },
-
-  // Register link (login screen)
-  registerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  registerText: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontFamily: 'Outfit_400Regular',
-  },
-  registerLink: {
-    fontSize: 13,
-    color: '#0D8DE3',
-    fontWeight: '700',
-    fontFamily: 'Outfit_700Bold',
-  },
-
-  // OTP screen
-  shieldWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: '#DBEAFE',
-  },
-  otpTitle: {
-    fontSize: 22,
+    marginLeft: 10,
+    fontSize: 15,
     fontWeight: '800',
-    color: '#111827',
     fontFamily: 'Outfit_800ExtraBold',
-    textAlign: 'center',
-    marginBottom: 6,
+    color: COLORS.black,
   },
-  otpSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-    textAlign: 'center',
-    fontFamily: 'Outfit_400Regular',
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    marginTop: 4,
-  },
-  phoneNumber: {
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '700',
-    fontFamily: 'Outfit_700Bold',
-  },
-  changeText: {
-    fontSize: 14,
-    color: '#0D8DE3',
-    fontWeight: '700',
-    fontFamily: 'Outfit_700Bold',
-  },
-
-  // 4-digit OTP boxes
   otpBoxRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    gap: 12,
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
   },
   otpBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    width: 60,
+    height: 60,
     backgroundColor: '#F9FAFB',
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-    fontFamily: 'Outfit_700Bold',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    fontSize: 24,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    ...NEO_SHADOW.box4,
   },
   otpBoxFilled: {
-    borderColor: '#0D8DE3',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: COLORS.secondary,
   },
-
-  // Timer
   timerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    gap: 6,
+    marginBottom: SPACING.lg,
   },
   timerText: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    fontFamily: 'Outfit_400Regular',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
   },
   timerCount: {
-    color: '#0D8DE3',
-    fontWeight: '700',
-    fontFamily: 'Outfit_700Bold',
+    fontWeight: '900',
+    color: COLORS.black,
   },
-
-  // Resend link
+  btn: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...NEO_SHADOW.box6,
+  },
+  btnDisabled: {
+    backgroundColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
+  },
+  btnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  btnText: {
+    fontSize: 16,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.8,
+  },
   resendBtn: {
     alignItems: 'center',
-    marginTop: 14,
-    padding: 6,
+    marginTop: SPACING.md,
+    paddingVertical: 4,
   },
   resendText: {
-    fontSize: 14,
-    color: '#0D8DE3',
+    fontSize: 13,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    textDecorationLine: 'underline',
+  },
+  registerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: SPACING.lg,
+  },
+  registerText: {
+    fontSize: 13,
     fontWeight: '700',
-    fontFamily: 'Outfit_700Bold',
+    color: '#4B5563',
+  },
+  registerLink: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.primary,
+    letterSpacing: 0.5,
   },
 });

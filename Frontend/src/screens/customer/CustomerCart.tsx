@@ -1,12 +1,205 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Platform,
+  Dimensions,
+  Animated,
+  Easing,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Clock, MapPin, Receipt, CheckCircle2, ShoppingBag, Navigation, MessageSquare } from 'lucide-react-native';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
+import {
+  ArrowLeft,
+  Trash2,
+  MapPin,
+  Clock,
+  Navigation,
+  CheckCircle2,
+  Tag,
+  AlertTriangle,
+  Home,
+  Briefcase,
+  Sparkles,
+  ShieldCheck,
+  Plus,
+  Minus,
+  Check,
+  ArrowRight,
+} from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { COLORS, SPACING, RADIUS, TYPO, SHADOW } from '../../components/Theme';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { useAppStore } from '../../store/useAppStore';
-import { EmptyState } from '../../components/EmptyState';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const AnimatedView = Animated.View as any;
+
+/**
+ * Blinkit / iOS Style Bouncy Interactive Pressable with Spring Animation
+ */
+const BouncyCard: React.FC<{
+  onPress?: () => void;
+  style?: any;
+  contentStyle?: any;
+  children: React.ReactNode;
+  activeScale?: number;
+  disabled?: boolean;
+}> = ({ onPress, style, contentStyle, children, activeScale = 0.96, disabled = false }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(scale, {
+      toValue: activeScale,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 30,
+      bounciness: 8,
+    }).start();
+  };
+
+  return (
+    <AnimatedView style={[{ transform: [{ scale }] }, style]}>
+      <TouchableOpacity
+        activeOpacity={0.92}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={onPress}
+        disabled={disabled}
+        style={contentStyle}
+      >
+        {children}
+      </TouchableOpacity>
+    </AnimatedView>
+  );
+};
+
+/**
+ * Subtle Ambient Background Floating Bubble
+ */
+const AmbientBubble: React.FC<{
+  size: number;
+  startX: number;
+  startY: number;
+  duration?: number;
+  delay?: number;
+}> = ({ size, startX, startY, duration = 4500, delay = 0 }) => {
+  const animY = useRef(new Animated.Value(0)).current;
+  const animX = useRef(new Animated.Value(0)).current;
+  const animScale = useRef(new Animated.Value(0.9)).current;
+  const animOpacity = useRef(new Animated.Value(0.12)).current;
+
+  useEffect(() => {
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(animY, {
+            toValue: -16,
+            duration: duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+            delay,
+          }),
+          Animated.timing(animX, {
+            toValue: 6,
+            duration: duration * 0.5,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+            delay,
+          }),
+          Animated.timing(animScale, {
+            toValue: 1.1,
+            duration: duration * 0.5,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(animOpacity, {
+            toValue: 0.22,
+            duration: duration * 0.5,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(animY, {
+            toValue: 0,
+            duration: duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(animX, {
+            toValue: 0,
+            duration: duration * 0.5,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(animScale, {
+            toValue: 0.9,
+            duration: duration * 0.5,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(animOpacity, {
+            toValue: 0.12,
+            duration: duration * 0.5,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+    floatLoop.start();
+    return () => floatLoop.stop();
+  }, [animY, animX, animScale, animOpacity, duration, delay]);
+
+  return (
+    <AnimatedView
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: startX,
+        top: startY,
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: 'rgba(255, 255, 255, 0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.35)',
+        transform: [{ translateY: animY }, { translateX: animX }, { scale: animScale }],
+        opacity: animOpacity,
+        zIndex: 0,
+      }}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          top: size * 0.18,
+          left: size * 0.18,
+          width: size * 0.26,
+          height: size * 0.26,
+          borderRadius: size * 0.13,
+          backgroundColor: 'rgba(255, 255, 255, 0.65)',
+        }}
+      />
+    </AnimatedView>
+  );
+};
 
 interface CustomerCartProps {
   onBack: () => void;
@@ -14,33 +207,86 @@ interface CustomerCartProps {
 }
 
 export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onCheckoutSuccess }) => {
-  const { cart, addToCart, placeOrder, currentUser, currentTenantId, shops, activeCoupon } = useAppStore();
   const insets = useSafeAreaInsets();
+  const {
+    cart,
+    addToCart,
+    clearCart,
+    placeOrder,
+    currentUser,
+    currentTenantId,
+    shops,
+    activeCoupon,
+    applyCoupon,
+    removeCoupon,
+  } = useAppStore();
 
-  const shop = shops.find(s => s._id === currentTenantId);
+  const shop = shops.find((s) => s._id === currentTenantId);
   const isClosed = shop?.isOpen === false;
 
-  const [selectedPrefs, setSelectedPrefs] = React.useState<string[]>([]);
-  const activeWashPreferences = shop?.washPreferences?.filter(wp => selectedPrefs.includes(wp.id)) || [];
+  const [selectedPrefs, setSelectedPrefs] = useState<string[]>([]);
+  
+  const defaultWashPrefs = [
+    { id: 'extra_softener', name: 'Extra Fabric Softener', description: 'Delicate lavender scent & plush softness', price: 20, enabled: true },
+    { id: 'anti_bacterial', name: 'Anti-Bacterial Sanitization', description: 'Deep hygiene rinse eliminating 99.9% germs', price: 30, enabled: true },
+    { id: 'stain_booster', name: 'Stain Remover Booster', description: 'Spot treatment for tough grease & collar marks', price: 40, enabled: true }
+  ];
+  const availableWashPrefs = (shop?.washPreferences && shop.washPreferences.length > 0 ? shop.washPreferences : defaultWashPrefs).filter(p => p.enabled !== false);
+  const activeWashPreferences = availableWashPrefs.filter((wp) => selectedPrefs.includes(wp.id));
   const washPrefsCost = activeWashPreferences.reduce((sum, wp) => sum + wp.price, 0);
 
   const subtotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
-  const taxPercent = shop?.taxPercent || 0;
-  const deliveryFee = shop?.deliveryFee || 0;
+  const taxPercent = shop?.taxPercent || 5;
+  const deliveryFee = subtotal > 500 ? 0 : (shop?.deliveryFee || 50);
   const tax = (subtotal * taxPercent) / 100;
   const discount = activeCoupon
     ? Math.min((subtotal * activeCoupon.discountPercent) / 100, activeCoupon.maxDiscount)
     : 0;
   const total = subtotal + tax + deliveryFee + washPrefsCost - discount;
 
-  const [deliveryAddress, setDeliveryAddress] = React.useState(currentUser?.address || '');
-  const [isDetectingLoc, setIsDetectingLoc] = React.useState(false);
-  const DAYS = ['Today'];
-  const [selectedDay, setSelectedDay] = React.useState('Today');
-  const TIME_SLOTS = shop?.pickupTimings && shop.pickupTimings.length > 0 ? shop.pickupTimings : ['08:00 AM - 10:00 AM', '10:00 AM - 12:00 PM'];
-  const INSTRUCTIONS = ['Leave at door', 'Ring bell', 'Call before arriving'];
-  const [selectedSlot, setSelectedSlot] = React.useState(TIME_SLOTS[0] || '');
-  const [instruction, setInstruction] = React.useState('');
+  // Structured Precise Delivery Address
+  const [addrTag, setAddrTag] = useState<'Home' | 'Work' | 'Other'>('Home');
+  const [flatNo, setFlatNo] = useState('');
+  const [area, setArea] = useState('');
+  const [isDetectingLoc, setIsDetectingLoc] = useState(false);
+
+  useEffect(() => {
+    if (currentUser?.address) {
+      const raw = currentUser.address;
+      if (raw.includes('(Work)')) setAddrTag('Work');
+      else if (raw.includes('(Other)')) setAddrTag('Other');
+      else setAddrTag('Home');
+
+      const clean = raw.replace(/\((Home|Work|Other)\)/, '').trim();
+      const parts = clean.split(',').map((p) => p.trim());
+      if (parts.length >= 2) {
+        setFlatNo(parts[0].replace(/^(Flat|House|Flat\/House|House\/Flat)\s*:?/i, '').trim());
+        setArea(parts.slice(1).join(', '));
+      } else {
+        setArea(clean);
+      }
+    }
+  }, [currentUser]);
+
+  const getComputedAddress = () => {
+    const parts = [
+      flatNo.trim() ? (flatNo.trim().toLowerCase().startsWith('flat') || flatNo.trim().toLowerCase().startsWith('house') ? flatNo.trim() : `Flat/House: ${flatNo.trim()}`) : '',
+      area.trim() ? area.trim() : '',
+    ].filter(Boolean);
+
+    if (parts.length === 0) return '';
+    return `${parts.join(', ')} (${addrTag})`;
+  };
+
+  const [selectedDay, setSelectedDay] = useState('Today');
+  const TIME_SLOTS =
+    shop?.pickupTimings && shop.pickupTimings.length > 0
+      ? shop.pickupTimings
+      : ['08:00 AM - 10:00 AM', '10:00 AM - 12:00 PM', '02:00 PM - 04:00 PM', '06:00 PM - 08:00 PM'];
+  const [selectedSlot, setSelectedSlot] = useState(TIME_SLOTS[0] || '08:00 AM - 10:00 AM');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponMsg, setCouponMsg] = useState<{ type: string; text: string }>({ type: '', text: '' });
+  const [loading, setLoading] = useState(false);
 
   const handleAutoDetect = async () => {
     setIsDetectingLoc(true);
@@ -55,76 +301,93 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
           async (position) => {
             try {
               const { latitude, longitude } = position.coords;
-              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+              const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+              );
               const data = await res.json();
-              if (data && data.display_name) {
-                setDeliveryAddress(data.display_name);
+              if (data && data.address) {
+                const addr = data.address;
+                setArea(addr.suburb || addr.neighbourhood || addr.road || data.display_name.slice(0, 40));
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              } else {
-                alert('Could not resolve address from coordinates.');
+              } else if (data && data.display_name) {
+                setArea(data.display_name);
               }
-            } catch (err) {
-              alert('Failed to fetch address. Please enter manually.');
+            } catch {
+              alert('Failed to resolve address. Please enter details manually.');
             } finally {
               setIsDetectingLoc(false);
             }
           },
-          (error) => {
+          () => {
             setIsDetectingLoc(false);
-            alert('Failed to get location. Please allow location permissions or enter manually.');
-          },
-          { timeout: 8000, maximumAge: 60000 }
+            alert('Location permission denied.');
+          }
         );
-      } else {
-        // Native Location
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          alert('Permission to access location was denied. Please enable it in settings.');
-          setIsDetectingLoc(false);
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({});
-        const geocode = await Location.reverseGeocodeAsync({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude
-        });
-
-        if (geocode && geocode.length > 0) {
-          const place = geocode[0];
-          const addressString = [place.name, place.street, place.subregion, place.city, place.region, place.postalCode, place.country]
-            .filter(Boolean)
-            .join(', ');
-          setDeliveryAddress(addressString);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } else {
-          alert('Could not resolve your physical address.');
-        }
-        setIsDetectingLoc(false);
+        return;
       }
-    } catch (error) {
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Permission to access location was denied');
+        setIsDetectingLoc(false);
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [geo] = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+      if (geo) {
+        const parts = [geo.name, geo.street, geo.district, geo.city].filter(Boolean);
+        setArea(parts.join(', '));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch {
+      alert('Unable to fetch GPS address.');
+    } finally {
       setIsDetectingLoc(false);
-      alert('An error occurred while fetching your location.');
     }
   };
 
-  const handleCheckout = async () => {
+  const handleApplyCoupon = () => {
+    if (!couponCode.trim()) return;
+    const res = applyCoupon(couponCode.trim().toUpperCase());
+    if (res.success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setCouponMsg({ type: 'success', text: res.message });
+      setCouponCode('');
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setCouponMsg({ type: 'error', text: res.message });
+    }
+  };
+
+  const togglePreference = (prefId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedPrefs((prev) =>
+      prev.includes(prefId) ? prev.filter((p) => p !== prefId) : [...prev, prefId]
+    );
+  };
+
+  const handlePlaceOrder = async () => {
     if (isClosed) {
-      alert('This branch is currently closed and not accepting orders.');
+      alert('This laundry branch is currently closed and not accepting new orders.');
       return;
     }
-    if (!deliveryAddress.trim()) {
-      alert('Please enter a delivery address');
+
+    const finalAddress = getComputedAddress();
+    if (!finalAddress.trim()) {
+      alert('Please enter your precise delivery address before proceeding.');
       return;
     }
-    const minOrderValue = shop?.minOrderValue || 0;
-    if (subtotal < minOrderValue) {
-      alert(`Minimum order value for this branch is ₹${minOrderValue}. Please add more items.`);
-      return;
-    }
+
+    setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    const mappedPrefs = activeWashPreferences.map(wp => ({ name: wp.name, price: wp.price }));
-    const result = await placeOrder(deliveryAddress, `${selectedDay} | ${selectedSlot}`, mappedPrefs);
+    const mappedPrefs = activeWashPreferences.map((wp) => ({ name: wp.name, price: wp.price }));
+    const pickupSlot = `${selectedDay} | ${selectedSlot}`;
+    const result = await placeOrder(finalAddress, pickupSlot, mappedPrefs);
+    setLoading(false);
+
     if (result.success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onCheckoutSuccess();
@@ -133,281 +396,401 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
     }
   };
 
+  // ─── Empty Cart Screen ───────────────────────────────────────────────────
   if (cart.length === 0) {
     return (
       <View style={styles.root}>
-        <View style={[styles.header, { paddingTop: Math.max(insets.top + SPACING.sm, SPACING.xl) }]}>
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-            <ArrowLeft size={24} color={COLORS.onSurface} />
-          </TouchableOpacity>
-          <Text style={[TYPO.titleLg, { color: COLORS.onSurface }]}>Checkout</Text>
-          <View style={{ width: 40 }} />
+        <StatusBar style="light" backgroundColor="#061E38" translucent />
+        <LinearGradient
+          colors={['#061E38', '#0A2B4C', '#0E3A66', '#082340']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.headerHero, { paddingTop: (insets.top > 0 ? insets.top : 44) + 6 }]}
+        >
+          <View style={styles.headerTopRow}>
+            <BouncyCard onPress={onBack} contentStyle={styles.backBtn}>
+              <ArrowLeft size={20} color={COLORS.black} strokeWidth={3} />
+            </BouncyCard>
+            <Text style={styles.headerTitleText}>CHECKOUT</Text>
+            <View style={{ width: 40 }} />
+          </View>
+        </LinearGradient>
+
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconCircle}>
+            <Trash2 size={48} color={COLORS.black} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.emptyTitle}>YOUR CART IS EMPTY</Text>
+          <Text style={styles.emptySub}>
+            Looks like you haven't added any laundry items to your cart yet.
+          </Text>
+          <BouncyCard onPress={onBack} contentStyle={styles.startShoppingBtn}>
+            <Text style={styles.startShoppingBtnText}>START SHOPPING</Text>
+          </BouncyCard>
         </View>
-        <EmptyState 
-          icon={ShoppingBag} 
-          title="Your cart is empty" 
-          subtitle="Looks like you haven't added any laundry items yet." 
-        />
       </View>
     );
   }
 
+  // ─── Filled Cart / Checkout Screen ───────────────────────────────────────
   return (
     <View style={styles.root}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top + SPACING.sm, SPACING.xl) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <ArrowLeft size={24} color={COLORS.onSurface} />
-        </TouchableOpacity>
-        <Text style={[TYPO.headlineMd, { color: COLORS.onSurface, flex: 1, textAlign: 'center', fontWeight: '800', marginRight: 40 }]}>
-          Checkout
-        </Text>
-      </View>
+      <StatusBar style="light" backgroundColor="#061E38" translucent />
 
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {isClosed && (
-          <View style={styles.closedWarningCard}>
-            <View style={styles.closedWarningHeader}>
-              <Text style={{ fontSize: 20, marginRight: 8 }}>🚨</Text>
-              <Text style={[TYPO.titleLg, { color: COLORS.error, fontWeight: '800' }]}>Branch is Currently Closed</Text>
+      {/* Top Overscroll Blue Background Filler */}
+      <View style={styles.topOverscrollFiller} />
+
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        style={styles.scrollArea}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ─── Hero Royal Blue Header with Ambient Bubbles & Wave Curve ─── */}
+        <LinearGradient
+          colors={['#061E38', '#0A2B4C', '#0E3A66', '#082340']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.headerHero, { paddingTop: (insets.top > 0 ? insets.top : 44) + 6 }]}
+        >
+          <AmbientBubble size={16} startX={26} startY={22} duration={4200} delay={0} />
+          <AmbientBubble size={22} startX={SCREEN_WIDTH - 60} startY={38} duration={4800} delay={600} />
+
+          <View style={styles.headerTopRow}>
+            <BouncyCard onPress={onBack} contentStyle={styles.backBtn}>
+              <ArrowLeft size={20} color={COLORS.black} strokeWidth={3} />
+            </BouncyCard>
+
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.greetingText}>ORDER REVIEW</Text>
+              <Text style={styles.headerTitleText}>Checkout</Text>
             </View>
-            <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant, marginTop: 4, lineHeight: 20 }]}>
-              This branch ("{shop?.name || 'WOW Express'}") is temporarily closed. You cannot place new orders until this branch re-opens.
-            </Text>
-          </View>
-        )}
 
-        {shop?.instructions ? (
-          <View style={styles.card}>
-            <View style={[styles.cardRow, { alignItems: 'flex-start' }]}>
-              <MessageSquare size={20} color={COLORS.secondary} style={{ marginTop: 12 }} />
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '700', marginBottom: 4 }]}>Shop Instructions</Text>
-                <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant, lineHeight: 20 }]}>{shop.instructions}</Text>
+            <BouncyCard onPress={clearCart} contentStyle={styles.clearBtn}>
+              <Text style={styles.clearBtnText}>CLEAR ALL</Text>
+            </BouncyCard>
+          </View>
+
+          {/* ─── Wave Partition with 2.5px Dark Border ─── */}
+          <View style={styles.wavePartitionWrap}>
+            <Svg
+              width={SCREEN_WIDTH}
+              height={32}
+              viewBox={`0 0 ${SCREEN_WIDTH} 32`}
+              preserveAspectRatio="none"
+            >
+              <Path
+                d={`M 0,0 Q ${SCREEN_WIDTH * 0.5} 32, ${SCREEN_WIDTH} 0 L ${SCREEN_WIDTH} 32 L 0 32 Z`}
+                fill="#F8FAFC"
+              />
+              <Path
+                d={`M 0,0 Q ${SCREEN_WIDTH * 0.5} 32, ${SCREEN_WIDTH} 0`}
+                stroke="#000000"
+                strokeWidth={2.5}
+                fill="none"
+              />
+            </Svg>
+          </View>
+        </LinearGradient>
+
+        {/* ─── Body Content ─── */}
+        <View style={styles.bodyContent}>
+          {isClosed && (
+            <View style={styles.closedCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <AlertTriangle size={20} color={COLORS.black} strokeWidth={2.5} />
+                <Text style={styles.closedCardTitle}>BRANCH CLOSED</Text>
               </View>
+              <Text style={styles.closedCardSub}>
+                This branch ("{shop?.name || 'WOW Express'}") is currently closed. New orders cannot be placed.
+              </Text>
             </View>
-          </View>
-        ) : null}
+          )}
 
-        {/* Delivery Details */}
-        <View style={styles.card}>
-          <View style={[styles.cardRow, { alignItems: 'flex-start' }]}>
-            <MapPin size={20} color={COLORS.primary} style={{ marginTop: 12 }} />
-            <View style={{ marginLeft: 12, flex: 1 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '700' }]}>Delivery Address</Text>
-                <TouchableOpacity onPress={handleAutoDetect} disabled={isDetectingLoc} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(96, 74, 192, 0.08)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.sm }}>
-                  {isDetectingLoc ? (
-                    <ActivityIndicator size="small" color={COLORS.primary} style={{ transform: [{ scale: 0.7 }] }} />
-                  ) : (
-                    <Navigation size={12} color={COLORS.primary} style={{ marginRight: 4 }} />
-                  )}
-                  <Text style={[TYPO.labelSm, { color: COLORS.primary, fontWeight: '700' }]}>
-                    {isDetectingLoc ? 'Detecting...' : 'Auto Detect'}
-                  </Text>
-                </TouchableOpacity>
+          {/* 1. Precise Delivery Address Card */}
+          <View style={styles.sectionCard}>
+            <View style={styles.cardHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <MapPin size={18} color={COLORS.black} strokeWidth={2.5} />
+                <Text style={styles.cardHeading}>DELIVERY ADDRESS</Text>
               </View>
+              <BouncyCard
+                onPress={handleAutoDetect}
+                disabled={isDetectingLoc}
+                contentStyle={styles.detectBtn}
+              >
+                {isDetectingLoc ? (
+                  <ActivityIndicator size="small" color={COLORS.black} />
+                ) : (
+                  <>
+                    <Navigation size={12} color={COLORS.black} strokeWidth={2.5} />
+                    <Text style={styles.detectBtnText}>AUTODETECT</Text>
+                  </>
+                )}
+              </BouncyCard>
+            </View>
+
+            {/* Address Tag Selector */}
+            <View style={styles.tagSelectorRow}>
+              {([
+                { tag: 'Home', label: 'HOME', icon: Home },
+                { tag: 'Work', label: 'WORK', icon: Briefcase },
+                { tag: 'Other', label: 'OTHER', icon: MapPin },
+              ] as const).map(({ tag, label, icon: IconComponent }) => {
+                const isSelected = addrTag === tag;
+                return (
+                  <BouncyCard
+                    key={tag}
+                    style={{ flex: 1 }}
+                    contentStyle={[styles.tagPill, isSelected && styles.tagPillActive]}
+                    onPress={() => setAddrTag(tag)}
+                  >
+                    <IconComponent
+                      size={12}
+                      color={isSelected ? COLORS.black : '#6B7280'}
+                      strokeWidth={2.5}
+                    />
+                    <Text style={[styles.tagPillText, isSelected && styles.tagPillTextActive]}>
+                      {label}
+                    </Text>
+                  </BouncyCard>
+                );
+              })}
+            </View>
+
+            {/* Field 1: Flat / House No / Building */}
+            <View style={styles.cartInputGroup}>
+              <Text style={styles.cartInputLabel}>HOUSE / FLAT / BUILDING</Text>
               <TextInput
-                style={styles.addressInput}
-                placeholder="Enter your complete address manually..."
-                placeholderTextColor={COLORS.outline}
-                value={deliveryAddress}
-                onChangeText={setDeliveryAddress}
-                multiline
+                style={styles.cartInput}
+                placeholder="e.g. Flat 402, Palm Heights"
+                placeholderTextColor="#9CA3AF"
+                value={flatNo}
+                onChangeText={setFlatNo}
+              />
+            </View>
+
+            {/* Field 2: Area / Street / Landmark */}
+            <View style={[styles.cartInputGroup, { marginBottom: 0 }]}>
+              <Text style={styles.cartInputLabel}>AREA, STREET & CITY</Text>
+              <TextInput
+                style={styles.cartInput}
+                placeholder="e.g. 100ft Road, Near Metro, Indiranagar"
+                placeholderTextColor="#9CA3AF"
+                value={area}
+                onChangeText={setArea}
               />
             </View>
           </View>
-          <View style={styles.divider} />
-          <View style={styles.cardRow}>
-            <Clock size={20} color="#10B981" style={{ marginTop: 12 }} />
-            <View style={{ marginLeft: 12, flex: 1 }}>
-              <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '700', marginBottom: 8 }]}>Pickup Date</Text>
-              <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {DAYS.map(day => (
-                  <TouchableOpacity 
-                    key={day}
-                    onPress={() => setSelectedDay(day)}
-                    style={[
-                      styles.chip, 
-                      selectedDay === day && styles.chipActive
-                    ]}
-                  >
-                    <Text style={[TYPO.labelSm, { color: selectedDay === day ? COLORS.onPrimary : COLORS.onSurfaceVariant }]}>{day}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              
-              <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '700', marginTop: 16, marginBottom: 8 }]}>Pickup Time Slot</Text>
-              <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {TIME_SLOTS.map(slot => (
-                  <TouchableOpacity 
+
+          {/* 2. Pickup Slot Selector */}
+          <View style={styles.sectionCard}>
+            <View style={styles.cardHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Clock size={18} color={COLORS.black} strokeWidth={2.5} />
+                <Text style={styles.cardHeading}>PICKUP SLOT</Text>
+              </View>
+            </View>
+
+            <View style={styles.timeSlotGrid}>
+              {TIME_SLOTS.map((slot) => {
+                const isSelected = selectedSlot === slot;
+                return (
+                  <BouncyCard
                     key={slot}
                     onPress={() => setSelectedSlot(slot)}
-                    style={[
-                      styles.chip, 
-                      selectedSlot === slot && styles.chipActive
-                    ]}
+                    contentStyle={[styles.slotPill, isSelected && styles.slotPillActive]}
                   >
-                    <Text style={[TYPO.labelSm, { color: selectedSlot === slot ? COLORS.onPrimary : COLORS.onSurfaceVariant }]}>{slot}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                    <Text style={[styles.slotPillText, isSelected && styles.slotPillTextActive]}>
+                      {slot}
+                    </Text>
+                  </BouncyCard>
+                );
+              })}
             </View>
           </View>
-          <View style={styles.divider} />
-          <View style={[styles.cardRow, { alignItems: 'flex-start' }]}>
-            <MessageSquare size={20} color={COLORS.tertiary} style={{ marginTop: 12 }} />
-            <View style={{ marginLeft: 12, flex: 1 }}>
-              <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '700', marginBottom: 8 }]}>Delivery Instructions</Text>
-              <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {INSTRUCTIONS.map(inst => (
-                  <TouchableOpacity 
-                    key={inst}
-                    onPress={() => setInstruction(inst)}
-                    style={[
-                      styles.chip, 
-                      instruction === inst && { backgroundColor: COLORS.tertiary, borderColor: COLORS.tertiary }
-                    ]}
-                  >
-                    <Text style={[TYPO.labelSm, { color: instruction === inst ? COLORS.onPrimary : COLORS.onSurfaceVariant }]}>{inst}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </View>
 
-        {/* Order Items */}
-        <View style={styles.card}>
-          <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '800', marginBottom: SPACING.md }]}>Item Summary</Text>
-          {cart.map((item, index) => (
-            <View key={item.itemId} style={[styles.itemRow, index > 0 && { marginTop: SPACING.md }]}>
-              <Text style={{ fontSize: 18, marginRight: 8 }}>🧺</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>{item.name}</Text>
-                <Text style={[TYPO.labelSm, { color: COLORS.outline }]}>₹{item.price} / {item.unit}</Text>
+          {/* 3. Wash Add-ons & Preferences */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.cardHeading}>WASH ADD-ONS & CARE</Text>
+            <Text style={styles.cardSubheading}>Optional premium wash care for your clothes</Text>
+
+            <View style={{ gap: 8, marginTop: 10 }}>
+              {availableWashPrefs.map((pref) => {
+                const isSelected = selectedPrefs.includes(pref.id);
+                return (
+                  <BouncyCard
+                    key={pref.id}
+                    onPress={() => togglePreference(pref.id)}
+                    contentStyle={[styles.addonRow, isSelected && styles.addonRowActive]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.addonTitle}>{pref.name}</Text>
+                      <Text style={styles.addonDesc}>{pref.description}</Text>
+                    </View>
+                    <View style={[styles.addonPriceBadge, isSelected && styles.addonPriceBadgeActive]}>
+                      <Text style={[styles.addonPriceText, isSelected && styles.addonPriceTextActive]}>
+                        {isSelected ? '✓ ADDED' : `+₹${pref.price}`}
+                      </Text>
+                    </View>
+                  </BouncyCard>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* 4. Cart Items Breakdown */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.cardHeading}>ORDER ITEMS ({cart.length})</Text>
+
+            <View style={{ marginTop: 10 }}>
+              {cart.map((item, idx) => (
+                <View key={item.itemId}>
+                  <View style={styles.cartItemRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cartItemName}>{item.name}</Text>
+                      <Text style={styles.cartItemRate}>₹{item.price} per unit</Text>
+                    </View>
+
+                    <View style={styles.cartStepper}>
+                      <TouchableOpacity
+                        style={styles.cartStepperBtn}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          addToCart(
+                            {
+                              _id: item.itemId,
+                              name: item.name,
+                              pricePerItem: item.price,
+                              shopId: currentTenantId || '',
+                              categoryId: '',
+                            } as any,
+                            -1
+                          );
+                        }}
+                      >
+                        <Minus size={12} color={COLORS.black} strokeWidth={3} />
+                      </TouchableOpacity>
+                      <Text style={styles.cartStepperQty}>{item.quantity}</Text>
+                      <TouchableOpacity
+                        style={[styles.cartStepperBtn, { backgroundColor: COLORS.secondary }]}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          addToCart(
+                            {
+                              _id: item.itemId,
+                              name: item.name,
+                              pricePerItem: item.price,
+                              shopId: currentTenantId || '',
+                              categoryId: '',
+                            } as any,
+                            1
+                          );
+                        }}
+                      >
+                        <Plus size={12} color={COLORS.black} strokeWidth={3} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.cartItemTotal}>₹{item.price * item.quantity}</Text>
+                  </View>
+                  {idx < cart.length - 1 && <View style={styles.itemDivider} />}
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* 5. Promo Code & Bill Summary */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.cardHeading}>PROMO CODE</Text>
+            <View style={styles.couponRow}>
+              <TextInput
+                style={styles.couponInput}
+                placeholder="ENTER COUPON CODE"
+                placeholderTextColor="#9CA3AF"
+                value={couponCode}
+                onChangeText={(t) => setCouponCode(t.toUpperCase())}
+                autoCapitalize="characters"
+              />
+              <BouncyCard onPress={handleApplyCoupon} contentStyle={styles.applyCouponBtn}>
+                <Text style={styles.applyCouponText}>APPLY</Text>
+              </BouncyCard>
+            </View>
+            {couponMsg.text ? (
+              <Text
+                style={[
+                  styles.couponFeedback,
+                  { color: couponMsg.type === 'success' ? '#16A34A' : '#DC2626' },
+                ]}
+              >
+                {couponMsg.text}
+              </Text>
+            ) : null}
+
+            <View style={styles.billDivider} />
+
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Items Subtotal</Text>
+              <Text style={styles.billVal}>₹{subtotal}</Text>
+            </View>
+            {washPrefsCost > 0 && (
+              <View style={styles.billRow}>
+                <Text style={styles.billLabel}>Wash Add-ons</Text>
+                <Text style={styles.billVal}>+₹{washPrefsCost}</Text>
               </View>
-              <View style={styles.counterBox}>
-                <TouchableOpacity style={styles.counterBtn} onPress={() => addToCart({ _id: item.itemId } as any, -1)}>
-                  <Text style={styles.counterBtnText}>-</Text>
-                </TouchableOpacity>
-                <Text style={[TYPO.labelLg, { color: COLORS.primary, fontWeight: '800', marginHorizontal: 8 }]}>{item.quantity}</Text>
-                <TouchableOpacity style={styles.counterBtn} onPress={() => addToCart({ _id: item.itemId, pricePerKg: item.unit === 'KG' ? item.price : undefined, pricePerItem: item.unit === 'ITEM' ? item.price : undefined } as any, 1)}>
-                  <Text style={styles.counterBtnText}>+</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={[TYPO.labelLg, { color: COLORS.onSurface, width: 60, textAlign: 'right', fontWeight: '700' }]}>
-                ₹{item.price * item.quantity}
+            )}
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Delivery Fee</Text>
+              <Text style={styles.billVal}>
+                {deliveryFee === 0 ? 'FREE' : `₹${deliveryFee}`}
               </Text>
             </View>
-          ))}
-        </View>
-
-        {/* Wash Preferences */}
-        {shop?.washPreferences && shop.washPreferences.length > 0 && (
-          <View style={styles.card}>
-            <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '800', marginBottom: SPACING.md }]}>Wash Preferences</Text>
-            {shop.washPreferences.map(wp => {
-              const isActive = selectedPrefs.includes(wp.id);
-              return (
-                <TouchableOpacity 
-                  key={wp.id} 
-                  style={[styles.prefOption, isActive && styles.prefOptionActive]}
-                  onPress={() => {
-                    if (isActive) {
-                      setSelectedPrefs(prev => prev.filter(id => id !== wp.id));
-                    } else {
-                      setSelectedPrefs(prev => [...prev, wp.id]);
-                    }
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[TYPO.labelLg, { color: isActive ? COLORS.primary : COLORS.onSurface }]}>{wp.name}</Text>
-                    {wp.description ? <Text style={[TYPO.labelSm, { color: COLORS.outline, marginTop: 4 }]}>{wp.description}</Text> : null}
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>+₹{wp.price}</Text>
-                    {isActive && <CheckCircle2 size={16} color={COLORS.primary} style={{ marginTop: 4 }} />}
-                  </View>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-        )}
-
-        {/* Bill Details */}
-        <View style={styles.card}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.md }}>
-            <Receipt size={20} color={COLORS.onSurface} />
-            <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '800', marginLeft: 8 }]}>Bill Details</Text>
-          </View>
-
-          <View style={styles.billRow}>
-            <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant }]}>Item Total</Text>
-            <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>₹{subtotal}</Text>
-          </View>
-          {deliveryFee > 0 && (
             <View style={styles.billRow}>
-              <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant }]}>Delivery Fee</Text>
-              <Text style={[TYPO.labelMd, { color: COLORS.onSurface }]}>₹{deliveryFee}</Text>
+              <Text style={styles.billLabel}>Taxes & Fees</Text>
+              <Text style={styles.billVal}>₹{tax.toFixed(0)}</Text>
             </View>
-          )}
-          {activeWashPreferences.map(wp => (
-            <View key={wp.id} style={styles.billRow}>
-              <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant }]}>{wp.name}</Text>
-              <Text style={[TYPO.labelMd, { color: COLORS.onSurface }]}>₹{wp.price.toFixed(2)}</Text>
-            </View>
-          ))}
-          {taxPercent > 0 && (
-            <View style={styles.billRow}>
-              <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant }]}>Taxes & Charges ({taxPercent}%)</Text>
-              <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>₹{tax.toFixed(2)}</Text>
-            </View>
-          )}
-          {discount > 0 && (
-            <View style={styles.billRow}>
-              <Text style={[TYPO.labelMd, { color: '#10B981', fontWeight: '700' }]}>
-                {activeCoupon?.code ? `Promo (${activeCoupon.code})` : 'Promo Applied'}
-              </Text>
-              <Text style={[TYPO.labelLg, { color: '#10B981' }]}>- ₹{discount.toFixed(2)}</Text>
-            </View>
-          )}
+            {discount > 0 && (
+              <View style={styles.billRow}>
+                <Text style={[styles.billLabel, { color: '#16A34A' }]}>Discount</Text>
+                <Text style={[styles.billVal, { color: '#16A34A' }]}>-₹{discount.toFixed(0)}</Text>
+              </View>
+            )}
 
-          <View style={[styles.divider, { marginVertical: SPACING.sm }]} />
-          <View style={styles.billRow}>
-            <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '800' }]}>Grand Total</Text>
-            <Text style={[TYPO.headlineMd, { color: COLORS.onSurface, fontWeight: '800' }]}>₹{total.toFixed(2)}</Text>
+            <View style={styles.grandTotalDivider} />
+
+            <View style={styles.grandTotalRow}>
+              <Text style={styles.grandTotalLabel}>TO PAY</Text>
+              <Text style={styles.grandTotalVal}>₹{total.toFixed(0)}</Text>
+            </View>
           </View>
         </View>
       </ScrollView>
 
-      {/* Checkout Footer */}
-      <View style={styles.footer}>
-        <View>
-          <Text style={[TYPO.labelSm, { color: COLORS.primary }]}>Pay via UPI / Cash</Text>
-          <Text style={[TYPO.headlineMd, { color: COLORS.onSurface, fontWeight: '800' }]}>₹{total.toFixed(2)}</Text>
-        </View>
-        <TouchableOpacity 
-          style={[
-            styles.checkoutBtn, 
-            (!deliveryAddress.trim() || isClosed) && { backgroundColor: COLORS.surfaceContainerHighest, opacity: 0.7 }
-          ]} 
-          onPress={handleCheckout} 
-          activeOpacity={0.9}
-          disabled={!deliveryAddress.trim() || isClosed || (subtotal < (shop?.minOrderValue || 0))}
+      {/* Sticky Bottom Place Order Action Bar */}
+      <View style={[styles.stickyFooter, { paddingBottom: Math.max(insets.bottom, 12) + 6 }]}>
+        <BouncyCard
+          onPress={handlePlaceOrder}
+          disabled={loading || isClosed}
+          contentStyle={[styles.placeOrderBtn, isClosed && { backgroundColor: '#9CA3AF' }]}
         >
-          <Text style={[
-            TYPO.labelLg, 
-            { 
-              color: isClosed ? COLORS.onSurfaceVariant : COLORS.onPrimary, 
-              fontWeight: '800', 
-              marginRight: 8 
-            }
-          ]}>
-            {isClosed ? 'Shop Closed' : 'Place Order'}
-          </Text>
-          <CheckCircle2 size={20} color={isClosed ? COLORS.onSurfaceVariant : COLORS.onPrimary} />
-        </TouchableOpacity>
+          {loading ? (
+            <ActivityIndicator color={COLORS.black} size="small" />
+          ) : (
+            <>
+              <View>
+                <Text style={styles.placeOrderMainText}>
+                  {isClosed ? 'BRANCH CLOSED' : 'PLACE ORDER'}
+                </Text>
+                <Text style={styles.placeOrderSubText}>
+                  {cart.length} Item{cart.length > 1 ? 's' : ''} · Standard Delivery
+                </Text>
+              </View>
+              <View style={styles.totalPill}>
+                <Text style={styles.totalPillText}>₹{total.toFixed(0)} →</Text>
+              </View>
+            </>
+          )}
+        </BouncyCard>
       </View>
     </View>
   );
@@ -416,163 +799,516 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F3F4F6', // Slightly gray background to make cards pop
+    backgroundColor: '#F8FAFC',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: SPACING.xl,
-    paddingHorizontal: SPACING.mobile,
-    paddingBottom: SPACING.md,
-    backgroundColor: COLORS.surfaceContainerLowest,
-    ...SHADOW.ambient,
-    zIndex: 10,
+  topOverscrollFiller: {
+    position: 'absolute',
+    top: -1000,
+    left: 0,
+    right: 0,
+    height: 1000,
+    backgroundColor: '#061E38',
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  scrollArea: {
+    flex: 1,
   },
   scrollContent: {
-    padding: SPACING.mobile,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
-  card: {
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    ...SHADOW.ambient,
+  headerHero: {
+    paddingHorizontal: SPACING.mobile,
+    paddingBottom: 54,
+    overflow: 'hidden',
   },
-  cardRow: {
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    marginBottom: 16,
+    zIndex: 1,
   },
-  chip: {
-    paddingHorizontal: 14,
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...NEO_SHADOW.box2,
+  },
+  greetingText: {
+    fontSize: 10,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#90CAF9',
+    letterSpacing: 0.8,
+  },
+  headerTitleText: {
+    fontSize: 22,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.white,
+    letterSpacing: 0.3,
+  },
+  clearBtn: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: COLORS.surfaceContainerHighest,
-    backgroundColor: COLORS.surfaceContainerLowest,
+    ...NEO_SHADOW.box2,
   },
-  chipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-    ...SHADOW.glow(COLORS.primary),
+  clearBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
   },
-  prefOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  wavePartitionWrap: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 32,
+  },
+  bodyContent: {
+    paddingHorizontal: SPACING.mobile,
+    paddingTop: SPACING.md,
+    gap: SPACING.md,
+  },
+  closedCard: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 2,
+    borderColor: '#DC2626',
+    borderRadius: RADIUS.xl,
     padding: SPACING.md,
+    ...NEO_SHADOW.box4,
+  },
+  closedCardTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#DC2626',
+    letterSpacing: 0.5,
+  },
+  closedCardSub: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7F1D1D',
+  },
+  sectionCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
+    ...NEO_SHADOW.box4,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardHeading: {
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.6,
+  },
+  cardSubheading: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  detectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.xs,
+  },
+  detectBtnText: {
+    fontSize: 9,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  tagSelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  tagPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingVertical: 6,
     borderRadius: RADIUS.md,
+  },
+  tagPillActive: {
+    backgroundColor: COLORS.secondary,
+    ...NEO_SHADOW.box2,
+  },
+  tagPillText: {
+    fontSize: 10,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#6B7280',
+  },
+  tagPillTextActive: {
+    color: COLORS.black,
+  },
+  cartInputGroup: {
+    marginBottom: 10,
+  },
+  cartInputLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  cartInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 10,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.black,
+  },
+  timeSlotGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  slotPill: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  slotPillActive: {
+    backgroundColor: COLORS.secondary,
+    ...NEO_SHADOW.box2,
+  },
+  slotPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#4B5563',
+  },
+  slotPillTextActive: {
+    color: COLORS.black,
+  },
+  addonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: RADIUS.lg,
+    padding: 10,
+  },
+  addonRowActive: {
+    borderColor: COLORS.black,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 2,
+    ...NEO_SHADOW.box2,
+  },
+  addonTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  addonDesc: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  addonPriceBadge: {
+    backgroundColor: '#E5E7EB',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.xs,
     borderWidth: 1,
-    borderColor: COLORS.surfaceContainerHighest,
-    backgroundColor: COLORS.surfaceContainerLowest,
-    marginBottom: SPACING.sm,
+    borderColor: COLORS.black,
   },
-  prefOptionActive: {
-    borderColor: COLORS.primary,
-    backgroundColor: 'rgba(124, 58, 237, 0.05)',
+  addonPriceBadgeActive: {
+    backgroundColor: COLORS.secondary,
   },
-  divider: {
-    borderStyle: 'dashed',
-    borderWidth: 0.8,
-    borderColor: COLORS.surfaceContainerHighest,
-    marginVertical: 12,
-    height: 0,
+  addonPriceText: {
+    fontSize: 10,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
   },
-  itemRow: {
+  addonPriceTextActive: {
+    color: COLORS.black,
+  },
+  cartItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  counterBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-    borderRadius: RADIUS.md,
-    paddingHorizontal: 4,
     paddingVertical: 4,
   },
-  counterBtn: {
+  cartItemName: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  cartItemRate: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  cartStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginRight: 14,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#F3F4F6',
+    padding: 2,
+  },
+  cartStepperBtn: {
     width: 24,
     height: 24,
+    borderRadius: RADIUS.xs,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.black,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  counterBtnText: {
-    color: COLORS.primary,
-    fontSize: 18,
+  cartStepperQty: {
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    minWidth: 14,
+    textAlign: 'center',
+  },
+  cartItemTotal: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    minWidth: 45,
+    textAlign: 'right',
+  },
+  itemDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 8,
+  },
+  couponRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  couponInput: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 12,
     fontWeight: '800',
-    lineHeight: 20,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  applyCouponBtn: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...NEO_SHADOW.box2,
+  },
+  applyCouponText: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  couponFeedback: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  billDivider: {
+    height: 1.5,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 12,
   },
   billRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    marginBottom: 6,
   },
-  footer: {
+  billLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  billVal: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  grandTotalDivider: {
+    height: 2,
+    backgroundColor: COLORS.black,
+    marginVertical: 8,
+  },
+  grandTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  grandTotalLabel: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  grandTotalVal: {
+    fontSize: 18,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  stickyFooter: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    backgroundColor: COLORS.white,
+    borderTopWidth: 2,
+    borderTopColor: COLORS.black,
+    paddingHorizontal: SPACING.mobile,
+    paddingTop: 10,
+    zIndex: 100,
+  },
+  placeOrderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: COLORS.surfaceContainerLowest,
-    paddingHorizontal: SPACING.mobile,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.xl,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.surfaceContainer,
-    ...SHADOW.ambient,
-  },
-  checkoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: RADIUS.lg,
-    ...SHADOW.glow(COLORS.primary),
-  },
-  addBtn: {
-    marginTop: SPACING.md,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.2)',
-  },
-  addressInput: {
-    backgroundColor: COLORS.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainer,
-    borderRadius: RADIUS.sm,
-    padding: SPACING.sm,
-    color: COLORS.onSurface,
-    ...TYPO.bodyMd,
-    minHeight: 60,
-    textAlignVertical: 'top',
-    outlineWidth: 0,
-  } as any,
-  closedWarningCard: {
-    backgroundColor: COLORS.errorContainer,
+    backgroundColor: COLORS.black,
+    borderWidth: 2,
+    borderColor: COLORS.black,
     borderRadius: RADIUS.xl,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    borderWidth: 1.5,
-    borderColor: '#FCA5A5',
-    ...SHADOW.ambient,
+    paddingVertical: 12,
+    paddingHorizontal: SPACING.md,
+    ...NEO_SHADOW.boxLime4,
   },
-  closedWarningHeader: {
-    flexDirection: 'row',
+  placeOrderMainText: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.white,
+    letterSpacing: 0.6,
+  },
+  placeOrderSubText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  totalPill: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.md,
+  },
+  totalPillText: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  emptyContainer: {
+    flex: 1,
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center',
+    padding: SPACING.xl,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    ...NEO_SHADOW.box4,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: 6,
+  },
+  emptySub: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  startShoppingBtn: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: RADIUS.xl,
+    ...NEO_SHADOW.box4,
+  },
+  startShoppingBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
   },
 });

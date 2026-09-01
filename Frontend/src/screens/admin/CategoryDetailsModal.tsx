@@ -1,64 +1,67 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Animated,
   Modal,
   KeyboardAvoidingView,
   Platform,
   Alert,
   ScrollView,
-  Image,
 } from 'react-native';
-import { X, Plus, Trash2, Edit2, Image as ImageIcon } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { X, Plus, Trash2, Edit2, Image as ImageIcon, ArrowLeft, Sparkles } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { COLORS, SPACING, RADIUS, TYPO, SHADOW } from '../../components/Theme';
-import { Button, SurfaceCard, Divider } from '../../components/UIPack';
+import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { useAppStore } from '../../store/useAppStore';
-
-const XIcon = X as any;
-const PlusIcon = Plus as any;
-const Trash2Icon = Trash2 as any;
-const Edit2Icon = Edit2 as any;
-const ImageIconLucide = ImageIcon as any;
+import { CategoryVectorIllustration } from '../../components/CategoryVectors';
+import { VectorPickerModal } from '../../components/VectorPickerModal';
 
 interface CategoryDetailsModalProps {
   visible: boolean;
-  categoryId: string | null;
+  category?: any;
+  categoryId?: string | null;
   onClose: () => void;
 }
 
-export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({ visible, categoryId, onClose }) => {
-  const { categories, items, addCatalogItem, deleteCatalogItem, updateCatalogItem, updateCategory, deleteCategory } = useAppStore();
-  const category = categories.find(c => c._id === categoryId);
-  const catItems = items.filter(i => i.categoryId === categoryId);
+export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
+  visible,
+  category: passedCategory,
+  categoryId,
+  onClose,
+}) => {
+  const {
+    categories,
+    items,
+    addCatalogItem,
+    deleteCatalogItem,
+    updateCatalogItem,
+    updateCategory,
+    deleteCategory,
+  } = useAppStore();
+
+  const category = passedCategory || categories.find((c) => c._id === categoryId);
+  const catId = category?._id || categoryId;
+  const catItems = items.filter((i) => i.categoryId === catId);
 
   const [isAdding, setIsAdding] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [newItemName, setNewItemName] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
-  const [newItemUnit, setNewItemUnit] = useState<'KG' | 'ITEM'>('KG');
+  const [newItemUnit, setNewItemUnit] = useState<'KG' | 'ITEM'>('ITEM');
   const [newItemImage, setNewItemImage] = useState('');
+  const [isVectorPickerOpen, setVectorPickerOpen] = useState(false);
+  const [vectorTarget, setVectorTarget] = useState<'item' | 'category'>('item');
 
   // Category Edit State
   const [isEditingCategory, setIsEditingCategory] = useState(false);
-  const [editCatName, setEditCatName] = useState('');
-  const [editCatImage, setEditCatImage] = useState('');
+  const [editCatName, setEditCatName] = useState(category?.name || '');
+  const [editCatImage, setEditCatImage] = useState(category?.image || '');
 
-  const slideAnim = useRef(new Animated.Value(600)).current;
-
-  useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: visible ? 0 : 600,
-      useNativeDriver: Platform.OS !== 'web',
-      speed: 20,
-      bounciness: 6,
-    }).start();
-  }, [visible]);
+  if (!category) return null;
 
   const handleAddItem = () => {
     if (!newItemName.trim() || !newItemPrice.trim()) {
@@ -67,7 +70,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({ visi
     }
     const price = parseFloat(newItemPrice);
     if (isNaN(price)) {
-      Alert.alert('Invalid', 'Price must be a number');
+      Alert.alert('Invalid', 'Price must be a valid number');
       return;
     }
 
@@ -76,11 +79,20 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({ visi
         name: newItemName.trim(),
         description: newItemDesc.trim(),
         image: newItemImage || undefined,
-        ...(newItemUnit === 'KG' ? { pricePerKg: price, pricePerItem: undefined } : { pricePerItem: price, pricePerKg: undefined })
+        ...(newItemUnit === 'KG'
+          ? { pricePerKg: price, pricePerItem: undefined }
+          : { pricePerItem: price, pricePerKg: undefined }),
       });
       setEditingItemId(null);
     } else {
-      addCatalogItem(categoryId!, newItemName.trim(), newItemDesc.trim(), price, newItemUnit, newItemImage || undefined);
+      addCatalogItem(
+        catId!,
+        newItemName.trim(),
+        newItemDesc.trim(),
+        price,
+        newItemUnit,
+        newItemImage || undefined
+      );
     }
 
     setNewItemName('');
@@ -100,19 +112,38 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({ visi
     setIsAdding(true);
   };
 
-  const handlePickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      setEditCatImage(result.assets[0].uri);
-    }
+  const handleDeleteItem = (itemId: string) => {
+    Alert.alert('Delete Service', 'Are you sure you want to delete this service?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteCatalogItem(itemId) },
+    ]);
   };
 
-  const handlePickItemImage = async () => {
+  const handleSaveCategoryEdit = () => {
+    if (!editCatName.trim()) return Alert.alert('Required', 'Category name cannot be empty');
+    updateCategory(catId!, { name: editCatName.trim(), image: editCatImage || undefined });
+    setIsEditingCategory(false);
+  };
+
+  const handleDeleteCategory = () => {
+    Alert.alert(
+      'Delete Category',
+      `Delete "${category.name}" and all its services?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Category',
+          style: 'destructive',
+          onPress: () => {
+            deleteCategory(catId!);
+            onClose();
+          },
+        },
+      ]
+    );
+  };
+
+  const pickItemImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -124,346 +155,620 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({ visi
     }
   };
 
-  const saveCategoryEdit = () => {
-    if (!editCatName.trim()) {
-      Alert.alert('Required', 'Category name cannot be empty');
-      return;
-    }
-    updateCategory(categoryId!, { name: editCatName.trim(), image: editCatImage });
-    setIsEditingCategory(false);
-  };
-
-  const webBlurStyle: any = {
-    backdropFilter: 'blur(30px) saturate(150%)',
-    WebkitBackdropFilter: 'blur(30px) saturate(150%)',
-  };
-
-  if (!category && visible) return null;
-
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.sheetWrapper, { pointerEvents: 'box-none' as any }]}>
-        <Animated.View style={[styles.sheet, webBlurStyle, { transform: [{ translateY: slideAnim }] }]}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            {isEditingCategory ? (
-              <View style={{ flex: 1, marginRight: SPACING.md }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <View style={styles.modalBody}>
+          {/* Header */}
+          <View style={styles.headerRow}>
+            <TouchableOpacity style={styles.closeCircle} onPress={onClose} activeOpacity={0.8}>
+              <ArrowLeft size={20} color={COLORS.black} strokeWidth={3} />
+            </TouchableOpacity>
+
+            <View style={{ flex: 1, marginHorizontal: 12 }}>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {category.name}
+              </Text>
+              <Text style={styles.headerSubtitle}>{catItems.length} SERVICES AVAILABLE</Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.editCatBtn}
+              onPress={() => {
+                setEditCatName(category.name);
+                setEditCatImage(category.image || '');
+                setIsEditingCategory(true);
+              }}
+            >
+              <Edit2 size={16} color={COLORS.black} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.deleteCatBtn} onPress={handleDeleteCategory}>
+              <Trash2 size={16} color="#DC2626" strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
+            {/* Category Edit Banner if active */}
+            {isEditingCategory && (
+              <View style={styles.editCatBox}>
+                <Text style={styles.editCatBoxTitle}>EDIT CATEGORY</Text>
                 <TextInput
-                  style={[styles.input, { marginBottom: SPACING.sm }]}
+                  style={styles.input}
                   value={editCatName}
                   onChangeText={setEditCatName}
                   placeholder="Category Name"
-                  autoFocus
                 />
-                <View style={{ flexDirection: 'row', gap: SPACING.sm }}>
-                  <Button label="Pick Image" variant="outline" onPress={handlePickImage} style={{ flex: 1 }} />
-                  <Button label="Save" onPress={saveCategoryEdit} style={{ flex: 1 }} />
-                </View>
-              </View>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[TYPO.headlineMd, { color: COLORS.onSurface, fontWeight: '800' }]}>{category?.name}</Text>
-                  <Text style={[TYPO.labelSm, { color: COLORS.outline, marginTop: 2 }]}>{catItems.length} items configured</Text>
-                </View>
-                <View style={{ flexDirection: 'row', gap: SPACING.sm }}>
+
+                {/* Category Vector Icon Picker */}
+                <View style={{ marginTop: 8 }}>
+                  <Text style={styles.inputLabel}>CATEGORY ICON</Text>
+                  {editCatImage ? (
+                    <View style={styles.selectedImgPreview}>
+                      <Image source={{ uri: editCatImage }} style={{ width: 36, height: 36 }} contentFit="contain" />
+                      <Text style={styles.selectedImgText} numberOfLines={1}>Selected Icon</Text>
+                      <TouchableOpacity onPress={() => setEditCatImage('')}>
+                        <X size={16} color={COLORS.black} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
                   <TouchableOpacity
+                    style={[styles.imagePickerBtn, { backgroundColor: COLORS.secondary, marginTop: 4 }]}
                     onPress={() => {
-                      setEditCatName(category?.name || '');
-                      setEditCatImage(category?.image || '');
-                      setIsEditingCategory(true);
+                      setVectorTarget('category');
+                      setVectorPickerOpen(true);
                     }}
-                    style={styles.actionBtn}
+                    activeOpacity={0.8}
                   >
-                    <Edit2Icon size={18} color={COLORS.primary} />
+                    <Sparkles size={16} color={COLORS.black} strokeWidth={2.5} />
+                    <Text style={styles.imagePickerText}>Choose From Vector Gallery</Text>
                   </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                   <TouchableOpacity
-                    onPress={() => {
-                      Alert.alert(
-                        'Delete Category',
-                        `Are you sure you want to delete ${category?.name}? All items inside will be lost.`,
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { 
-                            text: 'Delete', 
-                            style: 'destructive', 
-                            onPress: () => {
-                              deleteCategory(category!._id);
-                              onClose();
-                            } 
-                          }
-                        ]
-                      );
-                    }}
-                    style={styles.deleteBtn}
+                    style={styles.cancelSmallBtn}
+                    onPress={() => setIsEditingCategory(false)}
                   >
-                    <Trash2Icon size={18} color={COLORS.error} />
+                    <Text style={styles.cancelSmallText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.saveSmallBtn} onPress={handleSaveCategoryEdit}>
+                    <Text style={styles.saveSmallText}>SAVE</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
-            {!isEditingCategory && (
-              <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { marginLeft: SPACING.sm }]}>
-                <XIcon size={18} color={COLORS.outline} />
+
+            {/* Add Service Section / Button */}
+            {!isAdding ? (
+              <TouchableOpacity
+                style={styles.addServiceCTA}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setEditingItemId(null);
+                  setNewItemName('');
+                  setNewItemDesc('');
+                  setNewItemPrice('');
+                  setNewItemImage('');
+                  setIsAdding(true);
+                }}
+              >
+                <Plus size={20} color={COLORS.black} strokeWidth={3} />
+                <Text style={styles.addServiceCTAText}>ADD NEW SERVICE</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            ) : (
+              <View style={styles.addFormBox}>
+                <Text style={styles.formHeading}>
+                  {editingItemId ? 'EDIT SERVICE' : 'NEW SERVICE'}
+                </Text>
 
-          <ScrollView keyboardShouldPersistTaps="handled" style={styles.itemsScroll} showsVerticalScrollIndicator={false}>
-            {catItems.length === 0 && !isAdding && (
-              <View style={styles.emptyState}>
-                <Text style={[TYPO.bodyMd, { color: COLORS.outline }]}>No items in this category yet.</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>SERVICE NAME</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Denim Jeans Wash"
+                    placeholderTextColor="#6B7280"
+                    value={newItemName}
+                    onChangeText={setNewItemName}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>DESCRIPTION</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Wash & Steam Iron"
+                    placeholderTextColor="#6B7280"
+                    value={newItemDesc}
+                    onChangeText={setNewItemDesc}
+                  />
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>PRICE (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. 50"
+                      placeholderTextColor="#6B7280"
+                      value={newItemPrice}
+                      onChangeText={setNewItemPrice}
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  <View style={{ width: 120 }}>
+                    <Text style={styles.inputLabel}>UNIT</Text>
+                    <View style={styles.unitToggleWrap}>
+                      <TouchableOpacity
+                        style={[
+                          styles.unitBtn,
+                          newItemUnit === 'ITEM' && styles.unitBtnActive,
+                        ]}
+                        onPress={() => setNewItemUnit('ITEM')}
+                      >
+                        <Text
+                          style={[
+                            styles.unitBtnText,
+                            newItemUnit === 'ITEM' && { color: COLORS.black },
+                          ]}
+                        >
+                          ITEM
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.unitBtn,
+                          newItemUnit === 'KG' && styles.unitBtnActive,
+                        ]}
+                        onPress={() => setNewItemUnit('KG')}
+                      >
+                        <Text
+                          style={[
+                            styles.unitBtnText,
+                            newItemUnit === 'KG' && { color: COLORS.black },
+                          ]}
+                        >
+                          KG
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Service Vector Icon Picker */}
+                <View style={{ marginTop: 8 }}>
+                  <Text style={styles.inputLabel}>SERVICE ICON</Text>
+                  {newItemImage ? (
+                    <View style={styles.selectedImgPreview}>
+                      <Image source={{ uri: newItemImage }} style={{ width: 36, height: 36 }} contentFit="contain" />
+                      <Text style={styles.selectedImgText} numberOfLines={1}>Selected Icon</Text>
+                      <TouchableOpacity onPress={() => setNewItemImage('')}>
+                        <X size={16} color={COLORS.black} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.imagePickerBtn, { backgroundColor: COLORS.secondary, marginTop: 4 }]}
+                    onPress={() => {
+                      setVectorTarget('item');
+                      setVectorPickerOpen(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Sparkles size={16} color={COLORS.black} strokeWidth={2.5} />
+                    <Text style={styles.imagePickerText}>Choose From Vector Gallery</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                  <TouchableOpacity
+                    style={styles.cancelSmallBtn}
+                    onPress={() => setIsAdding(false)}
+                  >
+                    <Text style={styles.cancelSmallText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.saveSmallBtn} onPress={handleAddItem}>
+                    <Text style={styles.saveSmallText}>
+                      {editingItemId ? 'UPDATE SERVICE' : 'ADD SERVICE'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
-            {catItems.map((item, index) => (
-              <View key={item._id}>
-                <View style={styles.itemRow}>
-                  {item.image && (
-                    <Image source={{ uri: item.image }} style={styles.itemImage} />
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={[TYPO.labelLg, { color: COLORS.onSurface, fontWeight: '700' }]}>{item.name}</Text>
-                    {!!item.description && (
-                      <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant, fontSize: 13, marginTop: 2 }]}>{item.description}</Text>
-                    )}
-                    <Text style={[TYPO.labelSm, { color: COLORS.primary, marginTop: 6 }]}>
-                      ₹{item.pricePerKg || item.pricePerItem} / {item.pricePerKg ? 'KG' : 'Item'}
+            {/* List of services in this category */}
+            <Text style={styles.servicesSectionTitle}>SERVICES ({catItems.length})</Text>
+
+            {catItems.map((item) => {
+              const price = item.pricePerKg || item.pricePerItem || 0;
+              const unit = item.pricePerKg ? 'KG' : 'Item';
+
+              return (
+                <View key={item._id} style={styles.itemCard}>
+                  <View style={styles.itemImgBox}>
+                    <CategoryVectorIllustration
+                      itemName={item.name}
+                      categoryName={category.name}
+                      customImage={item.image}
+                      size={44}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    {item.description ? (
+                      <Text style={styles.itemDesc} numberOfLines={1}>
+                        {item.description}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.itemPriceText}>
+                      ₹{price} <Text style={styles.itemPriceUnit}>/ {unit}</Text>
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={() => startEditItem(item)} style={styles.actionBtn}>
-                    <Edit2Icon size={16} color={COLORS.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => deleteCatalogItem(item._id)} style={styles.deleteBtn}>
-                    <Trash2Icon size={16} color={COLORS.error} />
-                  </TouchableOpacity>
-                </View>
-                {index < catItems.length - 1 && <Divider />}
-              </View>
-            ))}
 
-            {isAdding ? (
-              <SurfaceCard radius={RADIUS.lg} style={styles.addForm}>
-                <Text style={[TYPO.labelLg, { color: COLORS.onSurface, marginBottom: SPACING.sm }]}>
-                  {editingItemId ? 'Edit Service Item' : 'Add New Service Item'}
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Item Name (e.g. Blankets)"
-                  placeholderTextColor={COLORS.outline}
-                  value={newItemName}
-                  onChangeText={setNewItemName}
-                />
-                <TextInput
-                  style={[styles.input, { marginTop: SPACING.sm }]}
-                  placeholder="Description (Optional)"
-                  placeholderTextColor={COLORS.outline}
-                  value={newItemDesc}
-                  onChangeText={setNewItemDesc}
-                />
-                
-                <View style={[styles.input, { marginTop: SPACING.sm, paddingVertical: 6, flexDirection: 'row', alignItems: 'center' }]}>
-                  <TextInput
-                    style={{ flex: 1, ...TYPO.bodyLg, color: COLORS.onSurface, outlineWidth: 0 }}
-                    placeholder="Image URL or pick below"
-                    placeholderTextColor={COLORS.outline}
-                    value={newItemImage}
-                    onChangeText={setNewItemImage}
-                  />
-                  <TouchableOpacity onPress={handlePickItemImage} style={styles.inlinePickBtn}>
-                    <ImageIconLucide size={16} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={{ flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Price (₹)"
-                    placeholderTextColor={COLORS.outline}
-                    keyboardType="numeric"
-                    value={newItemPrice}
-                    onChangeText={setNewItemPrice}
-                  />
-                  <View style={styles.unitToggleGroup}>
+                  <View style={styles.itemActions}>
                     <TouchableOpacity
-                      style={[styles.unitToggle, newItemUnit === 'KG' && styles.unitToggleActive]}
-                      onPress={() => setNewItemUnit('KG')}
+                      style={styles.actionIconBtn}
+                      onPress={() => startEditItem(item)}
                     >
-                      <Text style={[TYPO.labelSm, { color: newItemUnit === 'KG' ? COLORS.primary : COLORS.outline }]}>/ KG</Text>
+                      <Edit2 size={16} color={COLORS.black} strokeWidth={2.5} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.unitToggle, newItemUnit === 'ITEM' && styles.unitToggleActive]}
-                      onPress={() => setNewItemUnit('ITEM')}
+                      style={[styles.actionIconBtn, { backgroundColor: '#FEE2E2' }]}
+                      onPress={() => handleDeleteItem(item._id)}
                     >
-                      <Text style={[TYPO.labelSm, { color: newItemUnit === 'ITEM' ? COLORS.primary : COLORS.outline }]}>/ Item</Text>
+                      <Trash2 size={16} color="#DC2626" strokeWidth={2.5} />
                     </TouchableOpacity>
                   </View>
                 </View>
-                <View style={{ flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md }}>
-                  <Button label="Cancel" variant="outline" onPress={() => { setIsAdding(false); setEditingItemId(null); }} style={{ flex: 1 }} />
-                  <Button label={editingItemId ? 'Update Item' : 'Save Item'} onPress={handleAddItem} style={{ flex: 1 }} />
-                </View>
-              </SurfaceCard>
-            ) : (
-              <TouchableOpacity style={styles.addCTA} onPress={() => {
-                setEditingItemId(null);
-                setNewItemName('');
-                setNewItemDesc('');
-                setNewItemPrice('');
-                setNewItemImage('');
-                setIsAdding(true);
-              }} activeOpacity={0.7}>
-                <PlusIcon size={18} color={COLORS.primary} />
-                <Text style={[TYPO.labelLg, { color: COLORS.primary }]}>Add New Item</Text>
-              </TouchableOpacity>
+              );
+            })}
+
+            {catItems.length === 0 && (
+              <View style={styles.emptyItemsBox}>
+                <Text style={styles.emptyItemsText}>No services added to this category yet.</Text>
+              </View>
             )}
           </ScrollView>
-        </Animated.View>
-      </KeyboardAvoidingView>
+        </View>
+      </View>
+      <VectorPickerModal
+        visible={isVectorPickerOpen}
+        selectedUrl={vectorTarget === 'item' ? newItemImage : editCatImage}
+        onSelect={(url) => {
+          if (vectorTarget === 'item') {
+            setNewItemImage(url);
+          } else {
+            setEditCatImage(url);
+          }
+        }}
+        onClose={() => setVectorPickerOpen(false)}
+      />
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(9, 9, 11, 0.50)',
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
   },
-  sheetWrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  sheet: {
-    backgroundColor: '#FFFFFF',
+  modalBody: {
+    backgroundColor: COLORS.white,
     borderTopLeftRadius: RADIUS.xxl,
     borderTopRightRadius: RADIUS.xxl,
-    padding: SPACING.lg,
-    paddingTop: SPACING.md,
+    borderTopWidth: 3,
+    borderColor: COLORS.black,
     maxHeight: '90%',
-    minHeight: '60%',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    boxShadow: '0px -10px 40px rgba(0, 0, 0, 0.08)' as any,
+    paddingBottom: 24,
   },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.outlineVariant,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: SPACING.md,
-  },
-  sheetHeader: {
+  headerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.md,
+    alignItems: 'center',
+    padding: SPACING.md,
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.black,
   },
-  closeBtn: {
+  closeCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...NEO_SHADOW.box2,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+  },
+  headerSubtitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6B7280',
+    letterSpacing: 0.5,
+  },
+  editCatBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  deleteCatBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollContent: {
+    padding: SPACING.md,
+    paddingBottom: 40,
+  },
+  editCatBox: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    ...NEO_SHADOW.box2,
+  },
+  editCatBoxTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: 6,
+  },
+  addServiceCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    paddingVertical: 14,
+    marginBottom: SPACING.lg,
+    gap: 8,
+    ...NEO_SHADOW.box4,
+  },
+  addServiceCTAText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  addFormBox: {
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    ...NEO_SHADOW.box4,
+  },
+  formHeading: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: SPACING.md,
+    letterSpacing: 0.5,
+  },
+  inputGroup: {
+    marginBottom: SPACING.sm,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  input: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 10,
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: SPACING.sm,
+  },
+  unitToggleWrap: {
+    flexDirection: 'row',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+    height: 42,
+  },
+  unitBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  unitBtnActive: {
+    backgroundColor: COLORS.secondary,
+  },
+  unitBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#6B7280',
+  },
+  cancelSmallBtn: {
+    flex: 1,
+    padding: 10,
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+  },
+  cancelSmallText: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  saveSmallBtn: {
+    flex: 1.5,
+    padding: 10,
+    alignItems: 'center',
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    ...NEO_SHADOW.box2,
+  },
+  saveSmallText: {
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  servicesSectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    marginBottom: SPACING.sm,
+    letterSpacing: 0.8,
+  },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.sm,
+    marginBottom: SPACING.sm,
+    ...NEO_SHADOW.box2,
+  },
+  itemImgBox: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.md,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemImg: {
+    width: 36,
+    height: 36,
+  },
+  itemName: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  itemDesc: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  itemPriceText: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.primary,
+    marginTop: 2,
+  },
+  itemPriceUnit: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  itemActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionIconBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.surfaceContainer,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  itemsScroll: {
-    flexGrow: 0,
-    backgroundColor: '#FAFAFA',
-    marginHorizontal: -SPACING.lg,
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  emptyState: {
-    padding: SPACING.xl,
+  emptyItemsBox: {
     alignItems: 'center',
-    justifyContent: 'center',
+    padding: SPACING.lg,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
   },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.md,
-    gap: SPACING.md,
+  emptyItemsText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
   },
-  itemImage: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surfaceContainer,
-  },
-  deleteBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.full,
-    backgroundColor: 'rgba(220, 38, 38, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.full,
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addCTA: {
+  imagePickerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    padding: SPACING.md,
+    backgroundColor: '#F9FAFB',
     borderWidth: 2,
-    borderColor: 'rgba(124, 58, 237, 0.2)',
-    borderStyle: 'dashed',
-    borderRadius: RADIUS.lg,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xl,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  addForm: {
-    padding: SPACING.md,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xl,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-  },
-  input: {
-    backgroundColor: COLORS.surfaceContainerLowest,
+    borderColor: COLORS.black,
     borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 10,
-    ...TYPO.bodyLg,
-    color: COLORS.onSurface,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceContainerHigh,
-    outlineWidth: 0,
-  } as any,
-  unitToggleGroup: {
+    padding: 10,
+  },
+  imagePickerText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  selectedImgPreview: {
     flexDirection: 'row',
-    backgroundColor: COLORS.surfaceContainerLow,
-    borderRadius: RADIUS.md,
-    padding: 4,
-  },
-  unitToggle: {
-    paddingHorizontal: 16,
-    justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: RADIUS.sm,
-  },
-  unitToggleActive: {
-    backgroundColor: COLORS.surfaceContainerLowest,
-    boxShadow: '0px 2px 8px rgba(0,0,0,0.05)' as any,
-  },
-  inlinePickBtn: {
-    padding: 8,
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 2,
+    borderColor: COLORS.black,
     borderRadius: RADIUS.md,
+    padding: 8,
+    marginVertical: 4,
+  },
+  selectedImgText: {
+    flex: 1,
     marginLeft: 8,
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.black,
   },
 });
