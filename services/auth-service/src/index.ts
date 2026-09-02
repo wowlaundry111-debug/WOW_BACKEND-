@@ -18,8 +18,8 @@ const router = Router();
 let transporter: nodemailer.Transporter | null = null;
 function getTransporter() {
   if (!transporter) {
-    const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
-    const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
+    const user = (process.env.SMTP_USER || 'wowlaundry111@gmail.com').trim();
+    const pass = (process.env.SMTP_PASS || 'gwujcrwwjlwicmsv').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
     const isGmail = (process.env.SMTP_HOST || '').includes('gmail') || user.endsWith('@gmail.com');
 
     if (isGmail) {
@@ -51,7 +51,7 @@ function getTransporter() {
 
 async function sendOtpEmail(email: string, otp: string) {
   const mailOptions = {
-    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'salgotraaditya555@gmail.com'}>`,
+    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'wowlaundry111@gmail.com'}>`,
     to: email,
     subject: 'WOW Laundry Verification Code',
     text: `Your verification code is ${otp}. It is valid for 5 minutes.`,
@@ -68,8 +68,9 @@ async function sendOtpEmail(email: string, otp: string) {
     `,
   };
 
-  const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
-  const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
+  const user = (process.env.SMTP_USER || 'wowlaundry111@gmail.com').trim();
+  const pass = (process.env.SMTP_PASS || 'gwujcrwwjlwicmsv').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+
 
   if (!user || !pass) {
     console.warn(`[SMTP Config Missing] Fallback OTP for ${email}: ${otp}`);
