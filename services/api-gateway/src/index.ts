@@ -23,7 +23,12 @@ import uploadRouter from './uploadRoute';
 const app = express();
 const server = http.createServer(app);
 
+// Trust the first reverse proxy hop (Render, Cloudflare, Nginx load balancers)
+// Essential for correct X-Forwarded-For IP resolution and express-rate-limit
+app.set('trust proxy', 1);
+
 // CORS configuration — dynamically allows requests from Vercel preview domains, production domains, and localhost
+
 const isOriginAllowed = (origin: string | undefined): boolean => {
   if (!origin) return true;
   if (!process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS === '*') return true;
