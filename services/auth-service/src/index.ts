@@ -99,179 +99,185 @@ const OTP_LOCK_TTL_MS = 15 * 60 * 1000; // 15 minute lockout window
 // created by an admin via the portal.
 const STAFF_ROLES = ['SuperAdmin', 'ShopAdmin', 'Delivery'] as const;
 
-// ── 1. Send OTP (Login Flow) ──────────────────────────────────────────────────
-router.post('/send-otp', async (req: Request, res: Response) => {
-  const { email } = req.body;
-  if (!email || email.trim().length < 3) {
-    return res.status(400).json({ error: 'Valid email address is required' });
-  }
+// ── Helper: Find user by email, phone, or identifier ───────────────────────────
+async function findUserByIdentifier(identifier: string) {
+  if (!identifier) return null;
+  const clean = identifier.trim();
+  const normalizedEmail = clean.toLowerCase();
 
-  const normalizedEmail = email.toLowerCase().trim();
-  
-  // Look up user by normalized email OR domain alias (@wowlaundry.com <-> @wow.com)
   const aliasEmail = normalizedEmail.includes('@wowlaundry.com')
     ? normalizedEmail.replace('@wowlaundry.com', '@wow.com')
     : normalizedEmail.includes('@wow.com')
       ? normalizedEmail.replace('@wow.com', '@wowlaundry.com')
       : null;
 
-  const user = await User.findOne({
+  return await User.findOne({
     $or: [
       { email: normalizedEmail },
-      ...(aliasEmail ? [{ email: aliasEmail }] : [])
+      { phone: clean },
+      ...(aliasEmail ? [{ email: aliasEmail }] : []),
+      ...((clean.length === 24 && /^[0-9a-fA-F]{24}$/.test(clean)) ? [{ _id: clean }] : [])
     ]
   }).lean() as any;
+}
 
-  // ── Direct Login Bypass (No OTP needed for Staff, Aditya, or Demo Customers) ──
-  const isDirectLoginUser = user && (
-    STAFF_ROLES.includes(user.role) ||
-    normalizedEmail === 'salgotraaditya555@gmail.com' ||
-    normalizedEmail.includes('aditya') ||
-    normalizedEmail.startsWith('customer.')
-  );
+// ── 1. Direct Login Flow (replaces OTP requirement) ───────────────────────────
+const handleDirectLogin = async (req: Request, res: Response) => {
+  const { email, phone, identifier, password } = req.body;
+  const rawInput = identifier || email || phone;
 
-  if (isDirectLoginUser) {
+  if (!rawInput || String(rawInput).trim().length < 2) {
+    return res.status(400).json({ error: 'Email, mobile number, or User ID is required' });
+  }
+
+  const cleanInput = String(rawInput).trim();
+  let user = await findUserByIdentifier(cleanInput);
+
+  // If user exists, check optional password if user has one configured
+  if (user) {
+    if (user.password && password && user.password !== password) {
+      return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+    }
+
     const token = generateToken(user);
     return res.json({
-      message: 'Authenticated directly (No OTP required)',
+      message: 'Authenticated successfully',
       directLogin: true,
       user,
       token,
     });
   }
 
-  // Generate 6-digit OTP (more secure than 4-digit)
-  const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  // Store in TTLCache — auto-expires after 5 min, swept every 10 min
-  otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-  // Reset attempt counter when a fresh OTP is sent
-  otpAttemptCache.delete(normalizedEmail);
+  // If user does not exist, auto-create a Customer profile for instant access
+  try {
+    const isEmail = cleanInput.includes('@');
+    const normalizedEmail = isEmail
+      ? cleanInput.toLowerCase()
+      : `user.${cleanInput.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}@wow.com`;
 
-  await sendOtpEmail(normalizedEmail, otp);
+    let userPhone = !isEmail && cleanInput.replace(/[^0-9]/g, '').length === 10
+      ? cleanInput.replace(/[^0-9]/g, '')
+      : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
 
-  res.json({ message: 'OTP sent successfully to your email' });
-});
+    // Ensure phone uniqueness
+    let existingPhone = await User.findOne({ phone: userPhone });
+    while (existingPhone) {
+      userPhone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      existingPhone = await User.findOne({ phone: userPhone });
+    }
 
-// ── 2. Register User (Initiate Registration) ──────────────────────────────────
+    const defaultName = cleanInput.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Customer';
+
+    const newUser = await User.create({
+      name: defaultName,
+      phone: userPhone,
+      email: normalizedEmail,
+      role: 'Customer',
+      password: password || '',
+    });
+
+    const token = generateToken(newUser as any);
+    return res.json({
+      message: 'Account created and authenticated successfully',
+      directLogin: true,
+      user: newUser,
+      token,
+    });
+  } catch (err: any) {
+    console.error('Direct login auto-provision error:', err);
+    return res.status(500).json({ error: 'Failed to authenticate user' });
+  }
+};
+
+// Route aliases for login
+router.post('/login', handleDirectLogin);
+router.post('/send-otp', handleDirectLogin);
+
+// ── 2. Register User (Immediate Account Creation & Direct Sign-In) ─────────────
 router.post('/register', async (req: Request, res: Response) => {
-  const { name, phone, email } = req.body;
+  const { name, phone, email, password } = req.body;
   if (!name || name.trim().length < 2) {
     return res.status(400).json({ error: 'Full name is required (minimum 2 characters)' });
   }
-  if (!phone || phone.trim().length !== 10) {
+  if (!phone || String(phone).trim().replace(/[^0-9]/g, '').length !== 10) {
     return res.status(400).json({ error: 'Valid 10-digit mobile number is required' });
   }
-  if (!email || email.trim().length < 3) {
+  if (!email || !email.includes('@')) {
     return res.status(400).json({ error: 'Valid email address is required' });
   }
 
   const normalizedEmail = email.toLowerCase().trim();
+  const cleanPhone = String(phone).trim().replace(/[^0-9]/g, '');
 
   try {
     const existing = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone }]
-    }).select('email phone').lean() as any;
+      $or: [{ email: normalizedEmail }, { phone: cleanPhone }]
+    }).lean() as any;
 
     if (existing) {
-      if (existing.email === normalizedEmail) {
-        return res.status(400).json({ error: 'User with this email already exists' });
-      }
-      return res.status(400).json({ error: 'User with this phone number already exists' });
+      // If user already exists, directly sign them in!
+      const token = generateToken(existing);
+      return res.json({
+        message: 'Account already exists. Signed in successfully.',
+        directLogin: true,
+        user: existing,
+        token,
+      });
     }
 
-    // Store pending registration in TTLCache — auto-expires in 10 min
-    pendingRegCache.set(normalizedEmail, { name, phone, email: normalizedEmail }, 10 * 60 * 1000);
+    const newUser = await User.create({
+      name: name.trim(),
+      phone: cleanPhone,
+      email: normalizedEmail,
+      role: 'Customer',
+      password: password || '',
+    });
 
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-    otpAttemptCache.delete(normalizedEmail);
-
-    await sendOtpEmail(normalizedEmail, otp);
-
-    res.json({ message: 'Registration OTP sent successfully to your email' });
-  } catch (error) {
+    const token = generateToken(newUser as any);
+    res.status(201).json({
+      message: 'Registered and authenticated successfully',
+      directLogin: true,
+      user: newUser,
+      token,
+    });
+  } catch (error: any) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Failed to initiate registration' });
+    res.status(500).json({ error: error.message || 'Failed to register' });
   }
 });
 
-// ── 3. Verify OTP & Authenticate ─────────────────────────────────────────────
+// ── 3. Verify OTP Bypass (for backwards compatibility) ─────────────────────────
 router.post('/verify-otp', async (req: Request, res: Response) => {
-  const { phone: emailBody, email, otp } = req.body;
-  const emailInput = email || emailBody;
+  const { phone: emailBody, email, identifier, password } = req.body;
+  const rawInput = identifier || email || emailBody;
 
-  if (!emailInput || !otp) {
-    return res.status(400).json({ error: 'Email and OTP are required' });
+  if (!rawInput) {
+    return res.status(400).json({ error: 'Email or phone is required' });
   }
 
-  const normalizedEmail = emailInput.toLowerCase().trim();
+  const cleanInput = String(rawInput).trim();
+  let user = await findUserByIdentifier(cleanInput);
 
-  // ── Staff bypass check ────────────────────────────────────────────────────
-  // If this is a staff account (SuperAdmin / ShopAdmin / Delivery), issue a
-  // token directly without validating OTP. Staff accounts don't go through
-  // the email OTP flow — they use the direct login path in /send-otp.
-  const existingUser = await User.findOne({ email: normalizedEmail }).lean() as any;
-  const isStaffBypass = existingUser && STAFF_ROLES.includes(existingUser.role);
+  if (!user) {
+    const normalizedEmail = cleanInput.includes('@')
+      ? cleanInput.toLowerCase()
+      : `user.${cleanInput.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}@wow.com`;
 
-  if (isStaffBypass) {
-    const token = generateToken(existingUser);
-    return res.json({ user: existingUser, token });
-  }
+    const userPhone = cleanInput.replace(/[^0-9]/g, '').length === 10
+      ? cleanInput.replace(/[^0-9]/g, '')
+      : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
 
-  // ── Brute-force lockout check ─────────────────────────────────────────────
-  const attempts = otpAttemptCache.get(normalizedEmail) ?? 0;
-  if (attempts >= OTP_MAX_ATTEMPTS) {
-    return res.status(429).json({
-      error: `Too many failed attempts. Please request a new OTP and try again in 15 minutes.`,
+    user = await User.create({
+      name: normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+      phone: userPhone,
+      email: normalizedEmail,
+      role: 'Customer',
+      password: password || '',
     });
   }
 
-  // ── OTP validation ────────────────────────────────────────────────────────
-  const record = otpCache.get(normalizedEmail);
-  if (!record) {
-    return res.status(401).json({ error: 'OTP expired or not requested. Please request a new one.' });
-  }
-  if (Date.now() > record.expiresAt) {
-    otpCache.delete(normalizedEmail);
-    return res.status(401).json({ error: 'OTP has expired. Please request a new one.' });
-  }
-  if (record.otp !== otp) {
-    // Increment attempt counter — lock for 15 min after 5 failures
-    otpAttemptCache.set(normalizedEmail, attempts + 1, OTP_LOCK_TTL_MS);
-    const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
-    return res.status(401).json({
-      error: remaining > 0
-        ? `Invalid OTP. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`
-        : 'Too many failed attempts. Please request a new OTP.',
-    });
-  }
-
-  // OTP valid — clear both OTP and attempt counter
-  otpCache.delete(normalizedEmail);
-  otpAttemptCache.delete(normalizedEmail);
-
-  try {
-    let user = existingUser ? await User.findOne({ email: normalizedEmail }) : null;
-
-    if (!user) {
-      const pending = pendingRegCache.get(normalizedEmail);
-      const name = pending
-        ? pending.name
-        : normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
-      const phone = pending
-        ? pending.phone
-        : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
-
-      user = await User.create({ name, phone, email: normalizedEmail, role: 'Customer' });
-      if (pending) pendingRegCache.delete(normalizedEmail);
-    }
-
-    const token = generateToken(user as any);
-    res.json({ user, token });
-  } catch (error) {
-    console.error('Login verify error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  const token = generateToken(user as any);
+  res.json({ user, token, directLogin: true });
 });
 
 // ── Socket Event Helper ───────────────────────────────────────────────────────

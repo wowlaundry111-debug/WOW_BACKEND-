@@ -13,6 +13,7 @@ export interface IUser {
   expoPushToken?: string;
   address?: string;
   image?: string;
+  password?: string;
   selectedWashPreferences?: string[];
   isActive?: boolean;
 }

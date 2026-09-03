@@ -11,6 +11,7 @@ const UserSchema = new Schema<IUser>({
   expoPushToken: { type: String, required: false },
   address: { type: String, required: false },
   image: { type: String, required: false },
+  password: { type: String, required: false },
   selectedWashPreferences: [{ type: String }],
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
