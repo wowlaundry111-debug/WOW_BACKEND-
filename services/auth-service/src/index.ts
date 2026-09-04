@@ -143,24 +143,23 @@ async function findUserByIdentifier(identifier: string) {
   }).lean() as any;
 }
 
-// ── 1. Direct Login Flow (replaces OTP requirement) ───────────────────────────
-const handleDirectLogin = async (req: Request, res: Response) => {
+// ── 1. Send OTP / Login Flow ──────────────────────────────────────────────────
+// - If staff account with password provided -> direct login
+// - Otherwise -> generate 6-digit OTP, send via Resend, store in otpCache
+router.post('/send-otp', async (req: Request, res: Response) => {
   const { email, phone, identifier, password } = req.body;
   const rawInput = identifier || email || phone;
 
   if (!rawInput || String(rawInput).trim().length < 2) {
-    return res.status(400).json({ error: 'Email, mobile number, or User ID is required' });
+    return res.status(400).json({ error: 'Email or mobile number is required' });
   }
 
   const cleanInput = String(rawInput).trim();
+  const normalizedEmail = cleanInput.toLowerCase();
   let user = await findUserByIdentifier(cleanInput);
 
-  // If user exists, check optional password if user has one configured
-  if (user) {
-    if (user.password && password && user.password !== password) {
-      return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
-    }
-
+  // If user provided a password and it matches their hardcoded account, direct login
+  if (user && user.password && password && user.password === password) {
     const token = generateToken(user);
     return res.json({
       message: 'Authenticated successfully',
@@ -170,50 +169,125 @@ const handleDirectLogin = async (req: Request, res: Response) => {
     });
   }
 
-  // If user does not exist, auto-create a Customer profile for instant access
+  // If password was provided but incorrect for a staff member
+  if (user && user.password && password && user.password !== password) {
+    return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+  }
+
+  // If it's an email address, send OTP via Resend
+  const targetEmail = user?.email || (cleanInput.includes('@') ? normalizedEmail : null);
+
+  if (!targetEmail) {
+    // If phone without email, send direct login or fallback
+    if (user) {
+      const token = generateToken(user);
+      return res.json({ directLogin: true, user, token });
+    }
+    return res.status(400).json({ error: 'Please enter a valid email address to receive OTP' });
+  }
+
+  // Generate 6-digit OTP
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  otpCache.set(targetEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
+
+  // Also cache pending login user info if new user
+  if (!user) {
+    const defaultName = targetEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Customer';
+    const fakePhone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+    pendingRegCache.set(targetEmail, { name: defaultName, phone: fakePhone, email: targetEmail, password: '' } as any, 10 * 60 * 1000);
+  }
+
+  const sent = await sendOtpEmail(targetEmail, otp);
+  if (!sent) {
+    console.warn(`[OTP fallback] Login OTP for ${targetEmail}: ${otp}`);
+  }
+
+  return res.json({
+    requiresOtp: true,
+    email: targetEmail,
+    message: sent
+      ? `Verification code sent to ${targetEmail}. Please check your inbox.`
+      : `Could not send email. Use this code to verify: ${otp}`,
+  });
+});
+
+// Direct login alias (backward compatibility for mobile app or direct callers)
+router.post('/login', async (req: Request, res: Response) => {
+  const { email, phone, identifier, password, otp } = req.body;
+  const rawInput = identifier || email || phone;
+
+  if (!rawInput || String(rawInput).trim().length < 2) {
+    return res.status(400).json({ error: 'Email, mobile number, or User ID is required' });
+  }
+
+  const cleanInput = String(rawInput).trim();
+  const normalizedEmail = cleanInput.toLowerCase();
+
+  // If OTP is provided, verify OTP and complete login
+  if (otp) {
+    const targetEmail = normalizedEmail.includes('@') ? normalizedEmail : null;
+    if (!targetEmail) return res.status(400).json({ error: 'Valid email is required with OTP' });
+
+    const cachedOtpEntry = otpCache.get(targetEmail);
+    const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
+
+    if (!storedOtp || String(otp).trim() !== storedOtp) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    otpCache.delete(targetEmail);
+
+    let user = await findUserByIdentifier(targetEmail);
+    if (!user) {
+      const pendingData = pendingRegCache.get(targetEmail) as any;
+      const defaultName = pendingData?.name || targetEmail.split('@')[0];
+      const defaultPhone = pendingData?.phone || `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      user = await User.create({
+        name: defaultName,
+        phone: defaultPhone,
+        email: targetEmail,
+        role: 'Customer',
+      });
+      pendingRegCache.delete(targetEmail);
+    }
+
+    const token = generateToken(user as any);
+    return res.json({ message: 'Authenticated successfully', directLogin: true, user, token });
+  }
+
+  // Direct login for staff or password users
+  let user = await findUserByIdentifier(cleanInput);
+  if (user) {
+    if (user.password && password && user.password !== password) {
+      return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+    }
+    const token = generateToken(user);
+    return res.json({ message: 'Authenticated successfully', directLogin: true, user, token });
+  }
+
+  // Auto-create customer if no password required (mobile app flow)
   try {
     const isEmail = cleanInput.includes('@');
-    const normalizedEmail = isEmail
-      ? cleanInput.toLowerCase()
-      : `user.${cleanInput.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}@wow.com`;
-
+    const userEmail = isEmail ? normalizedEmail : `user.${cleanInput.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}@wow.com`;
     let userPhone = !isEmail && cleanInput.replace(/[^0-9]/g, '').length === 10
       ? cleanInput.replace(/[^0-9]/g, '')
       : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
 
-    // Ensure phone uniqueness
-    let existingPhone = await User.findOne({ phone: userPhone });
-    while (existingPhone) {
-      userPhone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
-      existingPhone = await User.findOne({ phone: userPhone });
-    }
-
     const defaultName = cleanInput.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Customer';
-
     const newUser = await User.create({
       name: defaultName,
       phone: userPhone,
-      email: normalizedEmail,
+      email: userEmail,
       role: 'Customer',
       password: password || '',
     });
 
     const token = generateToken(newUser as any);
-    return res.json({
-      message: 'Account created and authenticated successfully',
-      directLogin: true,
-      user: newUser,
-      token,
-    });
+    return res.json({ message: 'Account created and authenticated', directLogin: true, user: newUser, token });
   } catch (err: any) {
-    console.error('Direct login auto-provision error:', err);
     return res.status(500).json({ error: 'Failed to authenticate user' });
   }
-};
-
-// Route aliases for login
-router.post('/login', handleDirectLogin);
-router.post('/send-otp', handleDirectLogin);
+});
 
 // ── 2. Register — Step 1: Validate & Send OTP ─────────────────────────────────
 // Customers submit their details → we send an OTP to their email for verification.
