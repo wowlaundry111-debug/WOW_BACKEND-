@@ -215,9 +215,12 @@ const handleDirectLogin = async (req: Request, res: Response) => {
 router.post('/login', handleDirectLogin);
 router.post('/send-otp', handleDirectLogin);
 
-// ── 2. Register User (New Customer Account Creation) ────────────────────────────
+// ── 2. Register — Step 1: Validate & Send OTP ─────────────────────────────────
+// Customers submit their details → we send an OTP to their email for verification.
+// Staff accounts are pre-created in the DB and use /login directly (no OTP).
 router.post('/register', async (req: Request, res: Response) => {
   const { name, phone, email, password } = req.body;
+
   if (!name || name.trim().length < 2) {
     return res.status(400).json({ error: 'Full name is required (minimum 2 characters)' });
   }
@@ -232,112 +235,119 @@ router.post('/register', async (req: Request, res: Response) => {
   const cleanPhone = String(phone).trim().replace(/[^0-9]/g, '');
 
   try {
+    // Check for duplicate email or phone
     const existing = await User.findOne({
       $or: [{ email: normalizedEmail }, { phone: cleanPhone }]
     }).lean() as any;
 
     if (existing) {
-      // Account already exists — do NOT silently sign them in as another user.
-      // Return a clear conflict error so the client prompts them to sign in instead.
       return res.status(409).json({
-        error: 'An account with this email or phone already exists. Please sign in instead.',
+        error: 'An account with this email or phone already exists. Please sign in.',
       });
     }
 
-    const newUser = await User.create({
-      name: name.trim(),
-      phone: cleanPhone,
-      email: normalizedEmail,
-      role: 'Customer',
-      password: password || '',
-    });
+    // Generate 6-digit OTP
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
 
-    const token = generateToken(newUser as any);
-    res.status(201).json({
-      message: 'Account created successfully! You are now signed in.',
-      directLogin: true,
-      user: newUser,
-      token,
+    // Store pending registration data keyed by email (TTL: 10 min)
+    pendingRegCache.set(normalizedEmail, { name: name.trim(), phone: cleanPhone, email: normalizedEmail, password: password || '' });
+    otpCache.set(normalizedEmail, otp);
+
+    // Send OTP via Resend
+    const sent = await sendOtpEmail(normalizedEmail, otp);
+    if (!sent) {
+      console.warn(`[OTP fallback] Registration OTP for ${normalizedEmail}: ${otp}`);
+    }
+
+    return res.json({
+      requiresOtp: true,
+      message: sent
+        ? `Verification code sent to ${normalizedEmail}. Please check your inbox.`
+        : `Could not send email. Use this code to verify: ${otp}`,
     });
   } catch (error: any) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: error.message || 'Failed to register' });
+    return res.status(500).json({ error: error.message || 'Failed to start registration' });
   }
 });
 
-// ── 2b. Staff-Only Login (Website Portal) ────────────────────────────────────────
-// The Website portal is for ShopAdmin, SuperAdmin, and Delivery staff only.
-// Customers must use the mobile app. This endpoint enforces that restriction.
-router.post('/staff-login', async (req: Request, res: Response) => {
-  const { email, phone, identifier, password } = req.body;
-  const rawInput = identifier || email || phone;
-
-  if (!rawInput || String(rawInput).trim().length < 2) {
-    return res.status(400).json({ error: 'Email, mobile number, or User ID is required' });
-  }
-
-  const cleanInput = String(rawInput).trim();
-  const user = await findUserByIdentifier(cleanInput);
-
-  if (!user) {
-    return res.status(404).json({ error: 'No account found with this email or phone. Please contact your administrator.' });
-  }
-
-  // Only allow staff roles to log in via the website portal
-  const allowedRoles = ['SuperAdmin', 'ShopAdmin', 'Delivery'] as const;
-  if (!(allowedRoles as readonly string[]).includes(user.role)) {
-    return res.status(403).json({
-      error: 'This portal is for staff only. Customers must use the WOW Laundry mobile app.',
-    });
-  }
-
-  // Check password if user has one set
-  if (user.password && password && user.password !== password) {
-    return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
-  }
-
-  const token = generateToken(user);
-  return res.json({
-    message: 'Authenticated successfully',
-    directLogin: true,
-    user,
-    token,
-  });
-});
-
-// ── 3. Verify OTP Bypass (for backwards compatibility) ─────────────────────────
+// ── 3. Verify OTP → Create Account & Return Token ─────────────────────────────
 router.post('/verify-otp', async (req: Request, res: Response) => {
-  const { phone: emailBody, email, identifier, password } = req.body;
+  const { phone: emailBody, email, identifier, otp } = req.body;
   const rawInput = identifier || email || emailBody;
 
   if (!rawInput) {
     return res.status(400).json({ error: 'Email or phone is required' });
   }
 
-  const cleanInput = String(rawInput).trim();
-  let user = await findUserByIdentifier(cleanInput);
+  const cleanInput = String(rawInput).trim().toLowerCase();
 
+  // ── New registration OTP verification flow ───────────────────────────────
+  const pendingData = pendingRegCache.get(cleanInput) as any;
+  const storedOtp = otpCache.get(cleanInput) as string | undefined;
+
+  if (pendingData && storedOtp) {
+    const attempts = (otpAttemptCache.get(cleanInput) as number) || 0;
+    if (attempts >= OTP_MAX_ATTEMPTS) {
+      return res.status(429).json({ error: 'Too many incorrect attempts. Please try again in 15 minutes.' });
+    }
+
+    if (!otp || String(otp).trim() !== storedOtp) {
+      otpAttemptCache.set(cleanInput, attempts + 1);
+      const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
+      return res.status(400).json({
+        error: `Invalid verification code. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : 'Account locked — try again later.'}`,
+      });
+    }
+
+    // OTP correct — clean caches
+    pendingRegCache.delete(cleanInput);
+    otpCache.delete(cleanInput);
+    otpAttemptCache.delete(cleanInput);
+
+    try {
+      // Guard against duplicate created while OTP was in-flight
+      const duplicate = await User.findOne({
+        $or: [{ email: pendingData.email }, { phone: pendingData.phone }]
+      }).lean() as any;
+
+      if (duplicate) {
+        const token = generateToken(duplicate);
+        return res.json({ user: duplicate, token, directLogin: true });
+      }
+
+      const newUser = await User.create({
+        name: pendingData.name,
+        phone: pendingData.phone,
+        email: pendingData.email,
+        role: 'Customer',
+        password: pendingData.password,
+      });
+
+      const token = generateToken(newUser as any);
+      return res.status(201).json({
+        message: 'Account verified and created!',
+        user: newUser,
+        token,
+        directLogin: true,
+      });
+    } catch (err: any) {
+      console.error('Account creation after OTP error:', err);
+      return res.status(500).json({ error: 'Failed to create account. Please try again.' });
+    }
+  }
+
+  // ── Legacy: existing user lookup (no pending registration) ───────────────
+  const user = await findUserByIdentifier(cleanInput);
   if (!user) {
-    const normalizedEmail = cleanInput.includes('@')
-      ? cleanInput.toLowerCase()
-      : `user.${cleanInput.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}@wow.com`;
-
-    const userPhone = cleanInput.replace(/[^0-9]/g, '').length === 10
-      ? cleanInput.replace(/[^0-9]/g, '')
-      : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
-
-    user = await User.create({
-      name: normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-      phone: userPhone,
-      email: normalizedEmail,
-      role: 'Customer',
-      password: password || '',
-    });
+    return res.status(404).json({ error: 'No pending registration found. Please register first.' });
   }
 
   const token = generateToken(user as any);
-  res.json({ user, token, directLogin: true });
+  return res.json({ user, token, directLogin: true });
 });
+
+
 
 // ── Socket Event Helper ───────────────────────────────────────────────────────
 const emitSocketEvent = (req: Request, event: string, data: any) => {
