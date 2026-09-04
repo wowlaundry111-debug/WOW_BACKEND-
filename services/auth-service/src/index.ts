@@ -9,80 +9,102 @@ import {
   pendingRegCache,
   otpAttemptCache,
 } from '@wow/shared';
+import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
 
 const router = Router();
 
-// ── SMTP Transporter ──────────────────────────────────────────────────────────
+// ── Email Sender (Resend primary, nodemailer fallback for local dev) ──────────
+//
+// WHY: Render blocks outbound SMTP ports 25, 465, and 587 at the platform level.
+// Gmail SMTP therefore silently fails on Render. Resend uses HTTPS (port 443)
+// so it works on every hosting platform with zero firewall issues.
+//
+// Setup:
+//   1. Create a free account at https://resend.com
+//   2. Verify your sending domain (or use the onboarding sandbox address)
+//   3. Create an API key and add it as RESEND_API_KEY on Render's env vars
+//   4. Set RESEND_FROM to "WOW Laundry <noreply@yourdomain.com>"
+//      (if unverified domain, use "WOW Laundry <onboarding@resend.dev>" for testing)
 
-let transporter: nodemailer.Transporter | null = null;
-function getTransporter() {
-  if (!transporter) {
-    const user = (process.env.SMTP_USER || 'wowlaundry111@gmail.com').trim();
-    const pass = (process.env.SMTP_PASS || 'gwujcrwwjlwicmsv').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
-    const isGmail = (process.env.SMTP_HOST || '').includes('gmail') || user.endsWith('@gmail.com');
+const OTP_EMAIL_TEMPLATE = (otp: string) => ({
+  subject: 'WOW Laundry Verification Code',
+  text: `Your WOW Laundry verification code is ${otp}. It is valid for 5 minutes. Do not share this code with anyone.`,
+  html: `
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 10px;">
+      <h2 style="color: #0D8DE3; text-align: center;">WOW Laundry Verification</h2>
+      <p>Hello,</p>
+      <p>Your one-time verification code is:</p>
+      <div style="font-size: 40px; font-weight: bold; letter-spacing: 8px; text-align: center; margin: 30px 0; color: #0D8DE3; background: #f0f9ff; border-radius: 8px; padding: 16px;">${otp}</div>
+      <p style="color: #666;">This code is valid for <strong>5 minutes</strong>. Please do not share this code with anyone.</p>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+      <p style="font-size: 12px; color: #999; text-align: center;">WOW Laundry &bull; Premium Laundry Services</p>
+    </div>
+  `,
+});
 
-    if (isGmail) {
-      transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user, pass },
-        pool: true,
-        maxConnections: 5,
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
+async function sendOtpEmail(email: string, otp: string): Promise<boolean> {
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  const from = (process.env.RESEND_FROM || 'WOW Laundry <onboarding@resend.dev>').trim();
+  const template = OTP_EMAIL_TEMPLATE(otp);
+
+  // ── Primary: Resend (works on Render, no SMTP port issues) ────────────────
+  if (resendApiKey) {
+    try {
+      const resend = new Resend(resendApiKey);
+      const { data, error } = await resend.emails.send({
+        from,
+        to: [email],
+        subject: template.subject,
+        html: template.html,
+        text: template.text,
       });
-    } else {
-      const port = parseInt(process.env.SMTP_PORT || '587', 10);
-      const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
-      transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port,
-        secure: isSecure,
-        auth: { user, pass },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-      });
+
+      if (error) {
+        console.error(`[Resend Error] Failed to send OTP to ${email}:`, error);
+        return false;
+      }
+      console.log(`[Resend Success] OTP sent to ${email} (id: ${data?.id})`);
+      return true;
+    } catch (err: any) {
+      console.error(`[Resend Exception] ${email}:`, err.message || err);
+      return false;
     }
   }
-  return transporter;
-}
 
-async function sendOtpEmail(email: string, otp: string) {
-  const mailOptions = {
-    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'wowlaundry111@gmail.com'}>`,
-    to: email,
-    subject: 'WOW Laundry Verification Code',
-    text: `Your verification code is ${otp}. It is valid for 5 minutes.`,
-    html: `
-      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 10px;">
-        <h2 style="color: #0D8DE3; text-align: center;">WOW Laundry Verification</h2>
-        <p>Hello,</p>
-        <p>Your one-time verification code is:</p>
-        <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; text-align: center; margin: 30px 0; color: #0D8DE3;">${otp}</div>
-        <p>This code is valid for 5 minutes. Please do not share this code with anyone.</p>
-        <hr style="border: none; border-top: 1px solid #eee;" />
-        <p style="font-size: 12px; color: #999; text-align: center;">WOW Laundry App &bull; Premium Laundry Services</p>
-      </div>
-    `,
-  };
+  // ── Fallback: nodemailer for local dev (requires SMTP_USER + SMTP_PASS) ──
+  // NOTE: This path will NOT work on Render because Render blocks SMTP ports.
+  //       Always set RESEND_API_KEY in your Render environment variables.
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const smtpPass = process.env.SMTP_PASS?.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
 
-  const user = (process.env.SMTP_USER || 'wowlaundry111@gmail.com').trim();
-  const pass = (process.env.SMTP_PASS || 'gwujcrwwjlwicmsv').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
-
-
-  if (!user || !pass) {
-    console.warn(`[SMTP Config Missing] Fallback OTP for ${email}: ${otp}`);
+  if (!smtpUser || !smtpPass) {
+    // Neither Resend nor SMTP is configured — log OTP to server console (dev only)
+    console.warn(`[Email Not Configured] OTP for ${email}: ${otp}`);
     return false;
   }
 
   try {
-    const info = await getTransporter().sendMail(mailOptions);
-    console.log(`[SMTP Success] OTP email sent to ${email} (MessageId: ${info.messageId})`);
+    const port = parseInt(process.env.SMTP_PORT || '587', 10);
+    const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
+    const localTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port,
+      secure: isSecure,
+      auth: { user: smtpUser, pass: smtpPass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+    const info = await localTransporter.sendMail({
+      from: `"WOW Laundry" <${smtpUser}>`,
+      to: email,
+      ...template,
+    });
+    console.log(`[SMTP Success] OTP sent to ${email} (MessageId: ${info.messageId})`);
     return true;
-  } catch (error: any) {
-    console.error(`[SMTP Error] Failed to send OTP email to ${email}:`, error.message || error);
+  } catch (err: any) {
+    console.error(`[SMTP Error] Failed to send OTP to ${email}:`, err.message || err);
     return false;
   }
 }
@@ -193,7 +215,7 @@ const handleDirectLogin = async (req: Request, res: Response) => {
 router.post('/login', handleDirectLogin);
 router.post('/send-otp', handleDirectLogin);
 
-// ── 2. Register User (Immediate Account Creation & Direct Sign-In) ─────────────
+// ── 2. Register User (New Customer Account Creation) ────────────────────────────
 router.post('/register', async (req: Request, res: Response) => {
   const { name, phone, email, password } = req.body;
   if (!name || name.trim().length < 2) {
@@ -215,13 +237,10 @@ router.post('/register', async (req: Request, res: Response) => {
     }).lean() as any;
 
     if (existing) {
-      // If user already exists, directly sign them in!
-      const token = generateToken(existing);
-      return res.json({
-        message: 'Account already exists. Signed in successfully.',
-        directLogin: true,
-        user: existing,
-        token,
+      // Account already exists — do NOT silently sign them in as another user.
+      // Return a clear conflict error so the client prompts them to sign in instead.
+      return res.status(409).json({
+        error: 'An account with this email or phone already exists. Please sign in instead.',
       });
     }
 
@@ -235,7 +254,7 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const token = generateToken(newUser as any);
     res.status(201).json({
-      message: 'Registered and authenticated successfully',
+      message: 'Account created successfully! You are now signed in.',
       directLogin: true,
       user: newUser,
       token,
@@ -244,6 +263,46 @@ router.post('/register', async (req: Request, res: Response) => {
     console.error('Registration error:', error);
     res.status(500).json({ error: error.message || 'Failed to register' });
   }
+});
+
+// ── 2b. Staff-Only Login (Website Portal) ────────────────────────────────────────
+// The Website portal is for ShopAdmin, SuperAdmin, and Delivery staff only.
+// Customers must use the mobile app. This endpoint enforces that restriction.
+router.post('/staff-login', async (req: Request, res: Response) => {
+  const { email, phone, identifier, password } = req.body;
+  const rawInput = identifier || email || phone;
+
+  if (!rawInput || String(rawInput).trim().length < 2) {
+    return res.status(400).json({ error: 'Email, mobile number, or User ID is required' });
+  }
+
+  const cleanInput = String(rawInput).trim();
+  const user = await findUserByIdentifier(cleanInput);
+
+  if (!user) {
+    return res.status(404).json({ error: 'No account found with this email or phone. Please contact your administrator.' });
+  }
+
+  // Only allow staff roles to log in via the website portal
+  const allowedRoles = ['SuperAdmin', 'ShopAdmin', 'Delivery'] as const;
+  if (!(allowedRoles as readonly string[]).includes(user.role)) {
+    return res.status(403).json({
+      error: 'This portal is for staff only. Customers must use the WOW Laundry mobile app.',
+    });
+  }
+
+  // Check password if user has one set
+  if (user.password && password && user.password !== password) {
+    return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+  }
+
+  const token = generateToken(user);
+  return res.json({
+    message: 'Authenticated successfully',
+    directLogin: true,
+    user,
+    token,
+  });
 });
 
 // ── 3. Verify OTP Bypass (for backwards compatibility) ─────────────────────────
