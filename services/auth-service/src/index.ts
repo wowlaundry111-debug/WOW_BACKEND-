@@ -250,8 +250,8 @@ router.post('/register', async (req: Request, res: Response) => {
     const otp = String(Math.floor(100000 + Math.random() * 900000));
 
     // Store pending registration data keyed by email (TTL: 10 min)
-    pendingRegCache.set(normalizedEmail, { name: name.trim(), phone: cleanPhone, email: normalizedEmail, password: password || '' });
-    otpCache.set(normalizedEmail, otp);
+    pendingRegCache.set(normalizedEmail, { name: name.trim(), phone: cleanPhone, email: normalizedEmail, password: password || '' } as any, 10 * 60 * 1000);
+    otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
 
     // Send OTP via Resend
     const sent = await sendOtpEmail(normalizedEmail, otp);
@@ -284,7 +284,8 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
 
   // ── New registration OTP verification flow ───────────────────────────────
   const pendingData = pendingRegCache.get(cleanInput) as any;
-  const storedOtp = otpCache.get(cleanInput) as string | undefined;
+  const cachedOtpEntry = otpCache.get(cleanInput);
+  const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
 
   if (pendingData && storedOtp) {
     const attempts = (otpAttemptCache.get(cleanInput) as number) || 0;
@@ -293,7 +294,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
     }
 
     if (!otp || String(otp).trim() !== storedOtp) {
-      otpAttemptCache.set(cleanInput, attempts + 1);
+      otpAttemptCache.set(cleanInput, attempts + 1, OTP_LOCK_TTL_MS);
       const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
       return res.status(400).json({
         error: `Invalid verification code. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : 'Account locked — try again later.'}`,
