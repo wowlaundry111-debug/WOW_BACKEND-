@@ -43,9 +43,9 @@ const OTP_EMAIL_TEMPLATE = (otp: string) => ({
   `,
 });
 
-async function sendOtpEmail(email: string, otp: string): Promise<boolean> {
+async function sendOtpEmail(email: string, otp: string): Promise<{ success: boolean; error?: string }> {
   const resendApiKey = process.env.RESEND_API_KEY?.trim();
-  const from = (process.env.RESEND_FROM || 'WOW Laundry <onboarding@resend.dev>').trim();
+  const from = (process.env.RESEND_FROM || 'WOW Laundry <noreply@wowlaundry.in>').trim();
   const template = OTP_EMAIL_TEMPLATE(otp);
 
   // ── Primary: Resend (works on Render, no SMTP port issues) ────────────────
@@ -62,26 +62,23 @@ async function sendOtpEmail(email: string, otp: string): Promise<boolean> {
 
       if (error) {
         console.error(`[Resend Error] Failed to send OTP to ${email}:`, error);
-        return false;
+        return { success: false, error: (error as any).message || JSON.stringify(error) };
       }
       console.log(`[Resend Success] OTP sent to ${email} (id: ${data?.id})`);
-      return true;
+      return { success: true };
     } catch (err: any) {
       console.error(`[Resend Exception] ${email}:`, err.message || err);
-      return false;
+      return { success: false, error: err.message || 'Failed to communicate with email service' };
     }
   }
 
   // ── Fallback: nodemailer for local dev (requires SMTP_USER + SMTP_PASS) ──
-  // NOTE: This path will NOT work on Render because Render blocks SMTP ports.
-  //       Always set RESEND_API_KEY in your Render environment variables.
   const smtpUser = process.env.SMTP_USER?.trim();
   const smtpPass = process.env.SMTP_PASS?.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
 
   if (!smtpUser || !smtpPass) {
-    // Neither Resend nor SMTP is configured — log OTP to server console (dev only)
     console.warn(`[Email Not Configured] OTP for ${email}: ${otp}`);
-    return false;
+    return { success: false, error: 'Email service is not configured (RESEND_API_KEY missing)' };
   }
 
   try {
@@ -102,10 +99,10 @@ async function sendOtpEmail(email: string, otp: string): Promise<boolean> {
       ...template,
     });
     console.log(`[SMTP Success] OTP sent to ${email} (MessageId: ${info.messageId})`);
-    return true;
+    return { success: true };
   } catch (err: any) {
     console.error(`[SMTP Error] Failed to send OTP to ${email}:`, err.message || err);
-    return false;
+    return { success: false, error: err.message || 'SMTP delivery failed' };
   }
 }
 
@@ -116,9 +113,6 @@ const OTP_MAX_ATTEMPTS = 5;              // lock after 5 wrong guesses
 const OTP_LOCK_TTL_MS = 15 * 60 * 1000; // 15 minute lockout window
 
 // ── Staff roles that bypass OTP entirely ─────────────────────────────────────
-// Any user account with one of these roles gets a direct JWT — no email OTP needed.
-// This covers SuperAdmin accounts, ShopAdmin accounts, and Delivery staff
-// created by an admin via the portal.
 const STAFF_ROLES = ['SuperAdmin', 'ShopAdmin', 'Delivery'] as const;
 
 // ── Helper: Find user by email, phone, or identifier ───────────────────────────
@@ -145,6 +139,7 @@ async function findUserByIdentifier(identifier: string) {
 
 // ── 1. Send OTP / Login Flow ──────────────────────────────────────────────────
 // - If staff account with password provided -> direct login
+// - If user does not exist -> immediately raise 404 error
 // - Otherwise -> generate 6-digit OTP, send via Resend, store in otpCache
 router.post('/send-otp', async (req: Request, res: Response) => {
   const { email, phone, identifier, password } = req.body;
@@ -174,40 +169,34 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
   }
 
-  // If it's an email address, send OTP via Resend
-  const targetEmail = user?.email || (cleanInput.includes('@') ? normalizedEmail : null);
+  // If user is not registered, immediately raise an error
+  if (!user) {
+    return res.status(404).json({
+      error: 'No account found with this email. Please register first.'
+    });
+  }
 
+  const targetEmail = user.email;
   if (!targetEmail) {
-    // If phone without email, send direct login or fallback
-    if (user) {
-      const token = generateToken(user);
-      return res.json({ directLogin: true, user, token });
-    }
-    return res.status(400).json({ error: 'Please enter a valid email address to receive OTP' });
+    const token = generateToken(user);
+    return res.json({ directLogin: true, user, token });
   }
 
   // Generate 6-digit OTP
   const otp = String(Math.floor(100000 + Math.random() * 900000));
   otpCache.set(targetEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
 
-  // Also cache pending login user info if new user
-  if (!user) {
-    const defaultName = targetEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Customer';
-    const fakePhone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
-    pendingRegCache.set(targetEmail, { name: defaultName, phone: fakePhone, email: targetEmail, password: '' } as any, 10 * 60 * 1000);
-  }
-
-  const sent = await sendOtpEmail(targetEmail, otp);
-  if (!sent) {
-    console.warn(`[OTP fallback] Login OTP for ${targetEmail}: ${otp}`);
+  const result = await sendOtpEmail(targetEmail, otp);
+  if (!result.success) {
+    return res.status(500).json({
+      error: `Failed to deliver verification code: ${result.error || 'Please try again later'}`
+    });
   }
 
   return res.json({
     requiresOtp: true,
     email: targetEmail,
-    message: sent
-      ? `Verification code sent to ${targetEmail}. Please check your inbox.`
-      : `Could not send email. Use this code to verify: ${otp}`,
+    message: `Verification code sent to ${targetEmail}. Please check your inbox.`,
   });
 });
 
@@ -328,16 +317,16 @@ router.post('/register', async (req: Request, res: Response) => {
     otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
 
     // Send OTP via Resend
-    const sent = await sendOtpEmail(normalizedEmail, otp);
-    if (!sent) {
-      console.warn(`[OTP fallback] Registration OTP for ${normalizedEmail}: ${otp}`);
+    const result = await sendOtpEmail(normalizedEmail, otp);
+    if (!result.success) {
+      return res.status(500).json({
+        error: `Failed to deliver verification code: ${result.error || 'Please check your email address and try again'}`
+      });
     }
 
     return res.json({
       requiresOtp: true,
-      message: sent
-        ? `Verification code sent to ${normalizedEmail}. Please check your inbox.`
-        : `Could not send email. Use this code to verify: ${otp}`,
+      message: `Verification code sent to ${normalizedEmail}. Please check your inbox.`,
     });
   } catch (error: any) {
     console.error('Registration error:', error);
