@@ -28,18 +28,219 @@ const router = Router();
 //      (if unverified domain, use "WOW Laundry <onboarding@resend.dev>" for testing)
 
 const OTP_EMAIL_TEMPLATE = (otp: string) => ({
-  subject: 'WOW Laundry Verification Code',
-  text: `Your WOW Laundry verification code is ${otp}. It is valid for 5 minutes. Do not share this code with anyone.`,
+  subject: `${otp} is your WOW Laundry verification code`,
+  text: `Your WOW Laundry verification code is: ${otp}\n\nThis code is valid for 5 minutes. Please do not share this code with anyone.\n\nWOW LAUNDRY SERVICES LLP\nhttps://wowlaundry.in`,
   html: `
-    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 10px;">
-      <h2 style="color: #0D8DE3; text-align: center;">WOW Laundry Verification</h2>
-      <p>Hello,</p>
-      <p>Your one-time verification code is:</p>
-      <div style="font-size: 40px; font-weight: bold; letter-spacing: 8px; text-align: center; margin: 30px 0; color: #0D8DE3; background: #f0f9ff; border-radius: 8px; padding: 16px;">${otp}</div>
-      <p style="color: #666;">This code is valid for <strong>5 minutes</strong>. Please do not share this code with anyone.</p>
-      <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-      <p style="font-size: 12px; color: #999; text-align: center;">WOW Laundry &bull; Premium Laundry Services</p>
-    </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WOW Laundry Verification</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap');
+    
+    @keyframes pulseGlow {
+      0%, 100% {
+        box-shadow: 0 0 25px rgba(154, 230, 0, 0.45), 0 0 50px rgba(13, 141, 227, 0.25);
+        border-color: #9AE600;
+      }
+      50% {
+        box-shadow: 0 0 35px rgba(13, 141, 227, 0.55), 0 0 65px rgba(154, 230, 0, 0.4);
+        border-color: #0D8DE3;
+      }
+    }
+    
+    @keyframes floatLogo {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-4px) rotate(1deg); }
+    }
+    
+    @keyframes liveBlink {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.88); }
+    }
+
+    @keyframes shimmerBar {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    .glow-card {
+      animation: pulseGlow 3s ease-in-out infinite;
+    }
+
+    .floating-logo {
+      animation: floatLogo 4s ease-in-out infinite;
+    }
+
+    .live-dot {
+      animation: liveBlink 1.5s ease-in-out infinite;
+    }
+
+    .shimmer-line {
+      background: linear-gradient(90deg, transparent, #9AE600, #0D8DE3, transparent);
+      background-size: 200% 100%;
+      animation: shimmerBar 3s linear infinite;
+    }
+
+    @media only screen and (max-width: 600px) {
+      .email-container {
+        width: 100% !important;
+        border-radius: 16px !important;
+      }
+      .otp-digit {
+        font-size: 34px !important;
+        letter-spacing: 8px !important;
+      }
+      .content-padding {
+        padding: 24px 18px !important;
+      }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #06090E; font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #FFFFFF;">
+  
+  <!-- Preheader preview text -->
+  <div style="display: none; font-size: 1px; color: #06090E; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+    Your WOW Laundry verification code is ${otp}. Valid for 5 minutes.
+  </div>
+
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #06090E; padding: 40px 10px;">
+    <tr>
+      <td align="center">
+        
+        <!-- Main Email Wrapper -->
+        <table role="presentation" class="email-container" width="560" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; width: 100%; background: #0E1422; border: 2px solid #1E293B; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);">
+          
+          <!-- Animated Top Gradient Accent Bar -->
+          <tr>
+            <td height="6" class="shimmer-line" style="height: 6px; background: linear-gradient(90deg, #0D8DE3, #9AE600, #0D8DE3); font-size: 0; line-height: 0;">&nbsp;</td>
+          </tr>
+
+          <!-- Header Section -->
+          <tr>
+            <td align="center" style="padding: 36px 24px 20px; background: radial-gradient(circle at 50% 30%, rgba(13, 141, 227, 0.15), transparent 70%);">
+              
+              <!-- Logo Container with Animated Glow and Floating Effect -->
+              <table role="presentation" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center">
+                    <div class="floating-logo" style="width: 80px; height: 80px; background: #000000; border: 2px solid #9AE600; border-radius: 50%; padding: 4px; box-shadow: 0 0 20px rgba(154, 230, 0, 0.35); text-align: center; line-height: 80px;">
+                      <img src="https://www.wowlaundry.in/logo.png" alt="WOW Laundry" width="70" height="70" style="width: 70px; height: 70px; object-fit: contain; vertical-align: middle; border-radius: 50%; display: inline-block;" />
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Brand Name -->
+              <h1 style="margin: 16px 0 4px; font-size: 24px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #FFFFFF;">
+                WOW <span style="color: #0D8DE3;">LAUNDRY</span>
+              </h1>
+              <p style="margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: #9AE600;">
+                Premium Fabric Care &amp; Dry Cleaning
+              </p>
+            </td>
+          </tr>
+
+          <!-- Main Content Body -->
+          <tr>
+            <td class="content-padding" style="padding: 20px 40px 32px;">
+              
+              <div style="background: #141B2D; border: 1px solid #1E293B; border-radius: 20px; padding: 28px 24px; text-align: center;">
+                
+                <span style="display: inline-block; background: rgba(154, 230, 0, 0.12); color: #9AE600; border: 1px solid rgba(154, 230, 0, 0.3); font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 12px;">
+                  🔒 One-Time Security Code
+                </span>
+
+                <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px;">
+                  Verify Your Account
+                </h2>
+
+                <p style="margin: 0 0 24px; font-size: 14px; line-height: 1.6; color: #94A3B8;">
+                  Use the 6-digit verification code below to securely sign in to your WOW Laundry account.
+                </p>
+
+                <!-- Animated Glowing OTP Display -->
+                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td align="center">
+                      <div class="glow-card" style="display: inline-block; background: #000000; border: 2px solid #9AE600; border-radius: 16px; padding: 18px 32px; box-shadow: 0 0 25px rgba(154, 230, 0, 0.35); text-align: center; margin: 6px 0 16px;">
+                        <span class="otp-digit" style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 900; letter-spacing: 10px; color: #9AE600; text-shadow: 0 0 16px rgba(154, 230, 0, 0.5); display: inline-block; padding-left: 10px;">
+                          ${otp}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Animated Live Timer Indicator -->
+                <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; font-size: 12px; font-weight: 700; color: #E2E8F0; background: rgba(0, 0, 0, 0.4); border: 1px solid #1E293B; border-radius: 20px; padding: 6px 14px;">
+                  <span class="live-dot" style="display: inline-block; width: 8px; height: 8px; background-color: #9AE600; border-radius: 50%; box-shadow: 0 0 8px #9AE600; margin-right: 6px;"></span>
+                  <span>Code expires in <strong style="color: #9AE600;">5 minutes</strong></span>
+                </div>
+
+              </div>
+
+              <!-- Security Caution Note -->
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 20px;">
+                <tr>
+                  <td style="background: rgba(239, 68, 68, 0.08); border-left: 3px solid #EF4444; border-radius: 8px; padding: 12px 16px;">
+                    <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #FCA5A5;">
+                      <strong>Security Tip:</strong> Never share this code with anyone. WOW Laundry representatives will never ask for your verification code. If you did not request this, please disregard this email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Highlights Row -->
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 24px; border-top: 1px solid #1E293B; padding-top: 20px;">
+                <tr>
+                  <td width="33%" align="center" style="padding: 6px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #FFFFFF; text-transform: uppercase; letter-spacing: 0.8px;">⚡ 24h Express</div>
+                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">Fast Turnaround</div>
+                  </td>
+                  <td width="33%" align="center" style="padding: 6px; border-left: 1px solid #1E293B; border-right: 1px solid #1E293B;">
+                    <div style="font-size: 11px; font-weight: 800; color: #9AE600; text-transform: uppercase; letter-spacing: 0.8px;">🧼 100% Hygienic</div>
+                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">Antiseptic Care</div>
+                  </td>
+                  <td width="33%" align="center" style="padding: 6px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #0D8DE3; text-transform: uppercase; letter-spacing: 0.8px;">🚚 Doorstep Pickup</div>
+                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">Convenient &amp; Fast</div>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- Footer Section -->
+          <tr>
+            <td align="center" style="background: #090D16; border-top: 1px solid #1E293B; padding: 28px 24px;">
+              <p style="margin: 0 0 6px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #FFFFFF;">
+                WOW LAUNDRY SERVICES LLP
+              </p>
+              <p style="margin: 0 0 12px; font-size: 11px; color: #64748B; line-height: 1.6;">
+                📍 Branch 1: Rama Mandi, Jalandhar Cantt, Punjab<br/>
+                📍 Branch 2: Shop No. 1 Gaba PG, Mughlai Point, Law Gate Maheru
+              </p>
+              <p style="margin: 0 0 12px; font-size: 11px; color: #64748B;">
+                Need help? Contact <a href="mailto:wowlaundry111@gmail.com" style="color: #0D8DE3; text-decoration: none; font-weight: 600;">wowlaundry111@gmail.com</a> &bull; <span style="color: #E2E8F0;">+91 7814508706</span>
+              </p>
+              <p style="margin: 0; font-size: 10px; color: #475569;">
+                &copy; ${new Date().getFullYear()} WOW Laundry. All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
   `,
 });
 
