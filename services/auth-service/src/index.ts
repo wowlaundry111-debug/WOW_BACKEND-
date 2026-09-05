@@ -27,209 +27,232 @@ const router = Router();
 //   4. Set RESEND_FROM to "WOW Laundry <noreply@yourdomain.com>"
 //      (if unverified domain, use "WOW Laundry <onboarding@resend.dev>" for testing)
 
-const OTP_EMAIL_TEMPLATE = (otp: string) => ({
-  subject: `${otp} is your WOW Laundry verification code`,
-  text: `Your WOW Laundry verification code is: ${otp}\n\nThis code is valid for 5 minutes. Please do not share this code with anyone.\n\nWOW LAUNDRY SERVICES LLP\nhttps://wowlaundry.in`,
-  html: `
+const OTP_EMAIL_TEMPLATE = (otp: string) => {
+  const digits = String(otp || '000000').trim().padEnd(6, '0').slice(0, 6).split('');
+
+  return {
+    subject: `${otp} is your WOW Laundry verification code`,
+    text: `Your WOW Laundry verification code is: ${otp}\n\nThis code is valid for 5 minutes. Please do not share this code with anyone.\n\nWOW LAUNDRY SERVICES LLP\nhttps://wowlaundry.in`,
+    html: `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WOW Laundry Verification</title>
+  <title>WOW Laundry Verification Code</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap');
     
-    @keyframes pulseGlow {
-      0%, 100% {
-        box-shadow: 0 0 25px rgba(154, 230, 0, 0.45), 0 0 50px rgba(13, 141, 227, 0.25);
-        border-color: #9AE600;
-      }
-      50% {
-        box-shadow: 0 0 35px rgba(13, 141, 227, 0.55), 0 0 65px rgba(154, 230, 0, 0.4);
-        border-color: #0D8DE3;
-      }
-    }
-    
     @keyframes floatLogo {
       0%, 100% { transform: translateY(0px) rotate(0deg); }
-      50% { transform: translateY(-4px) rotate(1deg); }
+      50% { transform: translateY(-5px) rotate(-1deg); }
     }
     
     @keyframes liveBlink {
       0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.35; transform: scale(0.88); }
+      50% { opacity: 0.3; transform: scale(0.85); }
     }
 
-    @keyframes shimmerBar {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
-    }
-
-    .glow-card {
-      animation: pulseGlow 3s ease-in-out infinite;
+    @keyframes popIn {
+      0% { transform: scale(0.9); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
     }
 
     .floating-logo {
-      animation: floatLogo 4s ease-in-out infinite;
+      animation: floatLogo 3.5s ease-in-out infinite;
     }
 
     .live-dot {
-      animation: liveBlink 1.5s ease-in-out infinite;
+      animation: liveBlink 1.4s ease-in-out infinite;
     }
 
-    .shimmer-line {
-      background: linear-gradient(90deg, transparent, #9AE600, #0D8DE3, transparent);
-      background-size: 200% 100%;
-      animation: shimmerBar 3s linear infinite;
+    .digit-box {
+      animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
     }
 
     @media only screen and (max-width: 600px) {
-      .email-container {
-        width: 100% !important;
-        border-radius: 16px !important;
+      .email-card {
+        padding: 24px 16px !important;
+        border-radius: 22px !important;
       }
-      .otp-digit {
-        font-size: 34px !important;
-        letter-spacing: 8px !important;
+      .digit-box {
+        width: 38px !important;
+        height: 50px !important;
+        line-height: 48px !important;
+        font-size: 26px !important;
+        border-radius: 10px !important;
       }
-      .content-padding {
-        padding: 24px 18px !important;
+      .logo-circle {
+        width: 96px !important;
+        height: 96px !important;
+      }
+      .logo-img {
+        width: 82px !important;
+        height: 82px !important;
+      }
+      .brand-title {
+        font-size: 22px !important;
+        padding: 6px 18px !important;
       }
     }
   </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #06090E; font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #FFFFFF;">
+<body style="margin: 0; padding: 0; background-color: #0D8DE3; font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #000000;">
   
-  <!-- Preheader preview text -->
-  <div style="display: none; font-size: 1px; color: #06090E; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+  <!-- Preheader text for inbox preview -->
+  <div style="display: none; font-size: 1px; color: #0D8DE3; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
     Your WOW Laundry verification code is ${otp}. Valid for 5 minutes.
   </div>
 
-  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #06090E; padding: 40px 10px;">
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0D8DE3; padding: 36px 12px 48px;">
     <tr>
       <td align="center">
         
-        <!-- Main Email Wrapper -->
-        <table role="presentation" class="email-container" width="560" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; width: 100%; background: #0E1422; border: 2px solid #1E293B; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);">
+        <!-- Max Width Wrapper -->
+        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 520px; width: 100%;">
           
-          <!-- Animated Top Gradient Accent Bar -->
+          <!-- TOP: BIG LOGO & BRAND TITLE (Matches Website Login) -->
           <tr>
-            <td height="6" class="shimmer-line" style="height: 6px; background: linear-gradient(90deg, #0D8DE3, #9AE600, #0D8DE3); font-size: 0; line-height: 0;">&nbsp;</td>
+            <td align="center" style="padding-bottom: 24px;">
+              
+              <!-- Big Circular Logo Badge -->
+              <div class="floating-logo logo-circle" style="width: 114px; height: 114px; background: #FFFFFF; border: 3px solid #000000; border-radius: 50%; box-shadow: 6px 6px 0px #000000; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 12px;">
+                <img src="https://www.wowlaundry.in/logo.png" alt="WOW Laundry" class="logo-img" width="98" height="98" style="width: 98px; height: 98px; object-fit: contain; display: block; margin: auto;" />
+              </div>
+
+              <!-- Brand Name Pill (Tilted like Website) -->
+              <div>
+                <div class="brand-title" style="display: inline-block; background: #FFFFFF; color: #000000; font-size: 26px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; padding: 6px 24px; border: 3px solid #000000; border-radius: 16px; box-shadow: 5px 5px 0px #000000; font-family: 'Lilita One', 'Outfit', Impact, Arial Black, sans-serif; transform: rotate(-2deg);">
+                  WOW Laundry
+                </div>
+              </div>
+
+            </td>
           </tr>
 
-          <!-- Header Section -->
+          <!-- MAIN NEO-BRUTALIST WHITE CARD -->
           <tr>
-            <td align="center" style="padding: 36px 24px 20px; background: radial-gradient(circle at 50% 30%, rgba(13, 141, 227, 0.15), transparent 70%);">
-              
-              <!-- Logo Container with Animated Glow and Floating Effect -->
-              <table role="presentation" border="0" cellspacing="0" cellpadding="0">
+            <td>
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="email-card" style="background: #FFFFFF; border: 3px solid #000000; border-radius: 28px; box-shadow: 8px 8px 0px #000000; padding: 36px 28px; text-align: center;">
+                
+                <!-- Shield Badge Icon -->
                 <tr>
                   <td align="center">
-                    <div class="floating-logo" style="width: 80px; height: 80px; background: #000000; border: 2px solid #9AE600; border-radius: 50%; padding: 4px; box-shadow: 0 0 20px rgba(154, 230, 0, 0.35); text-align: center; line-height: 80px;">
-                      <img src="https://www.wowlaundry.in/logo.png" alt="WOW Laundry" width="70" height="70" style="width: 70px; height: 70px; object-fit: contain; vertical-align: middle; border-radius: 50%; display: inline-block;" />
+                    <div style="width: 58px; height: 58px; background: #9AE600; border: 3px solid #000000; border-radius: 50%; box-shadow: 4px 4px 0px #000000; display: inline-flex; align-items: center; justify-content: center; font-size: 28px; line-height: 52px; transform: rotate(6deg); margin-bottom: 14px;">
+                      🛡️
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Heading -->
+                <tr>
+                  <td align="center">
+                    <h2 style="margin: 0 0 6px; font-size: 22px; font-weight: 900; color: #000000; text-transform: uppercase; letter-spacing: 1px; font-family: 'Lilita One', 'Outfit', Impact, Arial Black, sans-serif;">
+                      ENTER VERIFICATION CODE
+                    </h2>
+                    <p style="margin: 0 0 20px; font-size: 13px; font-weight: 700; color: #4B5563; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Use the 6-digit code below to sign in
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- 6 INDIVIDUAL OTP DIGIT BOXES (Exact UI from Website Login) -->
+                <tr>
+                  <td align="center" style="padding: 10px 0 16px;">
+                    <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin: auto;">
+                      <tr>
+                        ${digits.map((d, i) => `
+                        <td align="center" style="padding: 0 4px;">
+                          <div class="digit-box" style="width: 46px; height: 58px; background: #9AE600; border: 3px solid #000000; border-radius: 12px; box-shadow: 4px 4px 0px #000000; text-align: center; line-height: 54px; font-size: 32px; font-weight: 900; color: #000000; font-family: 'Lilita One', 'Outfit', Impact, Arial Black, sans-serif;">
+                            ${d}
+                          </div>
+                        </td>
+                        `).join('')}
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Live Expiry Badge -->
+                <tr>
+                  <td align="center" style="padding-top: 6px;">
+                    <div style="display: inline-block; background: #000000; color: #9AE600; border: 2px solid #000000; border-radius: 999px; padding: 6px 18px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; box-shadow: 3px 3px 0px #000000;">
+                      <span class="live-dot" style="display: inline-block; width: 8px; height: 8px; background-color: #9AE600; border-radius: 50%; box-shadow: 0 0 6px #9AE600; margin-right: 6px; vertical-align: middle;"></span>
+                      Code expires in 5 minutes
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Security Tip Box -->
+                <tr>
+                  <td style="padding-top: 22px;">
+                    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="background: #FFFBEB; border: 2px solid #000000; border-radius: 14px; box-shadow: 3px 3px 0px #000000; padding: 12px 16px; text-align: left;">
+                          <p style="margin: 0; font-size: 11px; font-weight: 700; color: #78350F; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.3px;">
+                            🔒 <strong>Security Tip:</strong> Never share this OTP with anyone. WOW Laundry staff will never ask for your code.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- 3 Feature Badges Row -->
+                <tr>
+                  <td style="padding-top: 22px;">
+                    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td width="33%" align="center" style="padding: 3px;">
+                          <div style="background: #FAF8F5; border: 2px solid #000000; border-radius: 10px; box-shadow: 2px 2px 0px #000000; padding: 8px 4px; font-size: 10px; font-weight: 900; text-transform: uppercase; color: #000000;">
+                            ⚡ Fast Pickup
+                          </div>
+                        </td>
+                        <td width="33%" align="center" style="padding: 3px;">
+                          <div style="background: #9AE600; border: 2px solid #000000; border-radius: 10px; box-shadow: 2px 2px 0px #000000; padding: 8px 4px; font-size: 10px; font-weight: 900; text-transform: uppercase; color: #000000;">
+                            🧼 Hygienic
+                          </div>
+                        </td>
+                        <td width="33%" align="center" style="padding: 3px;">
+                          <div style="background: #0D8DE3; border: 2px solid #000000; border-radius: 10px; box-shadow: 2px 2px 0px #000000; padding: 8px 4px; font-size: 10px; font-weight: 900; text-transform: uppercase; color: #FFFFFF;">
+                            ✨ 24h Express
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+
+          <!-- FOOTER (Matches Website Style) -->
+          <tr>
+            <td style="padding-top: 20px;">
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background: #000000; border: 3px solid #000000; border-radius: 24px; box-shadow: 6px 6px 0px #000000; padding: 24px 20px; text-align: center; color: #FFFFFF;">
+                <tr>
+                  <td>
+                    <div style="font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; color: #9AE600; font-family: 'Lilita One', 'Outfit', Impact, Arial Black, sans-serif; margin-bottom: 4px;">
+                      WOW LAUNDRY SERVICES LLP
+                    </div>
+                    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #E5E7EB; margin-bottom: 12px;">
+                      Wear Fresh and Feel Fresh
+                    </div>
+                    <div style="font-size: 11px; color: #9CA3AF; line-height: 1.6; margin-bottom: 12px;">
+                      📍 Branch 1: Rama Mandi, Jalandhar Cantt, Punjab<br/>
+                      📍 Branch 2: Shop No. 1 Gaba PG, Mughlai Point, Law Gate Maheru
+                    </div>
+                    <div style="font-size: 11px; color: #9CA3AF;">
+                      Need help? <a href="mailto:wowlaundry111@gmail.com" style="color: #9AE600; text-decoration: underline; font-weight: 700;">wowlaundry111@gmail.com</a> &bull; +91 7814508706
+                    </div>
+                    <div style="font-size: 10px; color: #6B7280; margin-top: 10px;">
+                      &copy; ${new Date().getFullYear()} WOW Laundry. All rights reserved.
                     </div>
                   </td>
                 </tr>
               </table>
-
-              <!-- Brand Name -->
-              <h1 style="margin: 16px 0 4px; font-size: 24px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #FFFFFF;">
-                WOW <span style="color: #0D8DE3;">LAUNDRY</span>
-              </h1>
-              <p style="margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: #9AE600;">
-                Premium Fabric Care &amp; Dry Cleaning
-              </p>
-            </td>
-          </tr>
-
-          <!-- Main Content Body -->
-          <tr>
-            <td class="content-padding" style="padding: 20px 40px 32px;">
-              
-              <div style="background: #141B2D; border: 1px solid #1E293B; border-radius: 20px; padding: 28px 24px; text-align: center;">
-                
-                <span style="display: inline-block; background: rgba(154, 230, 0, 0.12); color: #9AE600; border: 1px solid rgba(154, 230, 0, 0.3); font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 12px;">
-                  🔒 One-Time Security Code
-                </span>
-
-                <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px;">
-                  Verify Your Account
-                </h2>
-
-                <p style="margin: 0 0 24px; font-size: 14px; line-height: 1.6; color: #94A3B8;">
-                  Use the 6-digit verification code below to securely sign in to your WOW Laundry account.
-                </p>
-
-                <!-- Animated Glowing OTP Display -->
-                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
-                  <tr>
-                    <td align="center">
-                      <div class="glow-card" style="display: inline-block; background: #000000; border: 2px solid #9AE600; border-radius: 16px; padding: 18px 32px; box-shadow: 0 0 25px rgba(154, 230, 0, 0.35); text-align: center; margin: 6px 0 16px;">
-                        <span class="otp-digit" style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 900; letter-spacing: 10px; color: #9AE600; text-shadow: 0 0 16px rgba(154, 230, 0, 0.5); display: inline-block; padding-left: 10px;">
-                          ${otp}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                </table>
-
-                <!-- Animated Live Timer Indicator -->
-                <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; font-size: 12px; font-weight: 700; color: #E2E8F0; background: rgba(0, 0, 0, 0.4); border: 1px solid #1E293B; border-radius: 20px; padding: 6px 14px;">
-                  <span class="live-dot" style="display: inline-block; width: 8px; height: 8px; background-color: #9AE600; border-radius: 50%; box-shadow: 0 0 8px #9AE600; margin-right: 6px;"></span>
-                  <span>Code expires in <strong style="color: #9AE600;">5 minutes</strong></span>
-                </div>
-
-              </div>
-
-              <!-- Security Caution Note -->
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 20px;">
-                <tr>
-                  <td style="background: rgba(239, 68, 68, 0.08); border-left: 3px solid #EF4444; border-radius: 8px; padding: 12px 16px;">
-                    <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #FCA5A5;">
-                      <strong>Security Tip:</strong> Never share this code with anyone. WOW Laundry representatives will never ask for your verification code. If you did not request this, please disregard this email.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Highlights Row -->
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 24px; border-top: 1px solid #1E293B; padding-top: 20px;">
-                <tr>
-                  <td width="33%" align="center" style="padding: 6px;">
-                    <div style="font-size: 11px; font-weight: 800; color: #FFFFFF; text-transform: uppercase; letter-spacing: 0.8px;">⚡ 24h Express</div>
-                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">Fast Turnaround</div>
-                  </td>
-                  <td width="33%" align="center" style="padding: 6px; border-left: 1px solid #1E293B; border-right: 1px solid #1E293B;">
-                    <div style="font-size: 11px; font-weight: 800; color: #9AE600; text-transform: uppercase; letter-spacing: 0.8px;">🧼 100% Hygienic</div>
-                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">Antiseptic Care</div>
-                  </td>
-                  <td width="33%" align="center" style="padding: 6px;">
-                    <div style="font-size: 11px; font-weight: 800; color: #0D8DE3; text-transform: uppercase; letter-spacing: 0.8px;">🚚 Doorstep Pickup</div>
-                    <div style="font-size: 10px; color: #64748B; margin-top: 2px;">Convenient &amp; Fast</div>
-                  </td>
-                </tr>
-              </table>
-
-            </td>
-          </tr>
-
-          <!-- Footer Section -->
-          <tr>
-            <td align="center" style="background: #090D16; border-top: 1px solid #1E293B; padding: 28px 24px;">
-              <p style="margin: 0 0 6px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #FFFFFF;">
-                WOW LAUNDRY SERVICES LLP
-              </p>
-              <p style="margin: 0 0 12px; font-size: 11px; color: #64748B; line-height: 1.6;">
-                📍 Branch 1: Rama Mandi, Jalandhar Cantt, Punjab<br/>
-                📍 Branch 2: Shop No. 1 Gaba PG, Mughlai Point, Law Gate Maheru
-              </p>
-              <p style="margin: 0 0 12px; font-size: 11px; color: #64748B;">
-                Need help? Contact <a href="mailto:wowlaundry111@gmail.com" style="color: #0D8DE3; text-decoration: none; font-weight: 600;">wowlaundry111@gmail.com</a> &bull; <span style="color: #E2E8F0;">+91 7814508706</span>
-              </p>
-              <p style="margin: 0; font-size: 10px; color: #475569;">
-                &copy; ${new Date().getFullYear()} WOW Laundry. All rights reserved.
-              </p>
             </td>
           </tr>
 
@@ -241,8 +264,9 @@ const OTP_EMAIL_TEMPLATE = (otp: string) => ({
 
 </body>
 </html>
-  `,
-});
+    `,
+  };
+};
 
 async function sendOtpEmail(email: string, otp: string): Promise<{ success: boolean; error?: string }> {
   const resendApiKey = process.env.RESEND_API_KEY?.trim();
