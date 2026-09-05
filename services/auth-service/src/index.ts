@@ -339,9 +339,9 @@ async function findUserByIdentifier(identifier: string) {
 }
 
 // ── 1. Send OTP / Login Flow ──────────────────────────────────────────────────
-// - If staff account with password provided -> direct login
+// - If staff account (SuperAdmin, ShopAdmin, Delivery) -> direct login without OTP!
 // - If user does not exist -> immediately raise 404 error
-// - Otherwise -> generate 6-digit OTP, send via Resend, store in otpCache
+// - Otherwise (Customer) -> generate 6-digit OTP, send via Resend, store in otpCache
 router.post('/send-otp', async (req: Request, res: Response) => {
   const { email, phone, identifier, password } = req.body;
   const rawInput = identifier || email || phone;
@@ -354,22 +354,6 @@ router.post('/send-otp', async (req: Request, res: Response) => {
   const normalizedEmail = cleanInput.toLowerCase();
   let user = await findUserByIdentifier(cleanInput);
 
-  // If user provided a password and it matches their hardcoded account, direct login
-  if (user && user.password && password && user.password === password) {
-    const token = generateToken(user);
-    return res.json({
-      message: 'Authenticated successfully',
-      directLogin: true,
-      user,
-      token,
-    });
-  }
-
-  // If password was provided but incorrect for a staff member
-  if (user && user.password && password && user.password !== password) {
-    return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
-  }
-
   // If user is not registered, immediately raise an error
   if (!user) {
     return res.status(404).json({
@@ -377,6 +361,26 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     });
   }
 
+  // ── Staff Accounts (SuperAdmin, ShopAdmin, Delivery) bypass OTP entirely ────
+  const isStaff = user.role === 'SuperAdmin' || user.role === 'ShopAdmin' || user.role === 'Delivery';
+  if (isStaff) {
+    // If staff account has a password set and caller supplied one, verify it
+    if (user.password && password && user.password !== password) {
+      return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+    }
+
+    const token = generateToken(user);
+    console.log(`[Staff Direct Login] Bypass OTP for ${user.role} (${user.email || user.phone})`);
+    return res.json({
+      message: 'Authenticated successfully',
+      directLogin: true,
+      requiresOtp: false,
+      user,
+      token,
+    });
+  }
+
+  // ── Customers require OTP ───────────────────────────────────────────────────
   const targetEmail = user.email;
   if (!targetEmail) {
     const token = generateToken(user);
