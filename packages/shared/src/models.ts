@@ -64,12 +64,15 @@ const CategorySchema = new Schema<ICategory>({
   name: { type: String, required: true },
   image: { type: String },
   isActive: { type: Boolean, default: true },
+  parentCategoryId: { type: String, required: false, default: null }, // null = top-level
 }, { timestamps: true });
 
 // -- Category indexes --
 // Every catalog load: Category.find({ shopId, isActive: true })
 // Single-field shopId alone still scans all shop categories to filter isActive
 CategorySchema.index({ shopId: 1, isActive: 1 });
+// Sub-category lookup: Category.find({ shopId, parentCategoryId })
+CategorySchema.index({ shopId: 1, parentCategoryId: 1 });
 
 const ItemSchema = new Schema<IItem>({
   _id: { type: String, default: () => new mongoose.Types.ObjectId().toHexString() },
@@ -80,6 +83,7 @@ const ItemSchema = new Schema<IItem>({
   pricePerItem: { type: Number },
   pricePerKg: { type: Number },
   isActive: { type: Boolean, default: true },
+  isBucket: { type: Boolean, default: false }, // bucket = fixed-price tap-to-increment card
 }, { timestamps: true });
 
 // -- Item indexes --
@@ -125,6 +129,8 @@ const OrderSchema = new Schema<IOrder>({
     unit: { type: String },
     price: { type: Number, required: true },
     kgWeight: { type: Number }, // set by delivery agent after weighing
+    categoryName: { type: String },    // breadcrumb stamped at order creation
+    subCategoryName: { type: String },  // populated when item is in a sub-category
   }],
   washPreferences: [{
     name: { type: String },

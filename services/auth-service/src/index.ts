@@ -290,10 +290,10 @@ async function findUserByIdentifier(identifier: string) {
 
   return await User.findOne({
     $or: [
+      { _id: clean },
       { email: normalizedEmail },
       { phone: clean },
       ...(aliasEmail ? [{ email: aliasEmail }] : []),
-      ...((clean.length === 24 && /^[0-9a-fA-F]{24}$/.test(clean)) ? [{ _id: clean }] : [])
     ]
   }).lean() as any;
 }

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { Order, Shop, User, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache } from '@wow/shared';
+import { Order, Shop, User, Item, Category, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache } from '@wow/shared';
 
 // Helper: emit to a specific shop's room only (not all sockets)
 const emitToShop = (req: Request, shopId: string, event: string, data: any) => {
@@ -37,12 +37,43 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
 
     const customer = await User.findById(req.user!._id).select('name phone').lean() as any;
 
+    // Stamp category breadcrumbs onto each order line item at creation time
+    // so bills always have readable context regardless of future catalog changes.
+    const itemIds = (items || []).map((i: any) => i.itemId);
+    const catalogItems = await Item.find({ _id: { $in: itemIds } }).select('_id categoryId').lean() as any[];
+    const categoryIds = [...new Set(catalogItems.map((ci: any) => ci.categoryId))];
+    const catalogCategories = await Category.find({ _id: { $in: categoryIds } }).select('_id name parentCategoryId').lean() as any[];
+
+    // Build quick lookup maps
+    const itemCategoryMap: Record<string, string> = {}; // itemId -> categoryId
+    catalogItems.forEach((ci: any) => { itemCategoryMap[ci._id] = ci.categoryId; });
+    const catNameMap: Record<string, any> = {}; // categoryId -> { name, parentCategoryId }
+    catalogCategories.forEach((c: any) => { catNameMap[c._id] = c; });
+
+    // Enrich items with breadcrumb names
+    const enrichedItems = (items || []).map((item: any) => {
+      const catId = itemCategoryMap[item.itemId];
+      const cat = catId ? catNameMap[catId] : null;
+      if (!cat) return item;
+
+      if (cat.parentCategoryId && catNameMap[cat.parentCategoryId]) {
+        // Item is in a sub-category
+        return {
+          ...item,
+          categoryName: catNameMap[cat.parentCategoryId].name,
+          subCategoryName: cat.name,
+        };
+      }
+      // Item is in a top-level category
+      return { ...item, categoryName: cat.name };
+    });
+
     const order = await Order.create({
       customerId: req.user!._id,
       customerName: customer?.name || 'Unknown Customer',
       customerPhone: customer?.phone || 'N/A',
       shopId,
-      items,
+      items: enrichedItems,
       washPreferences,
       totalAmount,
       discountAmount,
@@ -71,7 +102,7 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
         if (adminTokens.length > 0) {
           await sendPushNotification(
             adminTokens,
-            'New Order Placed! 🧺',
+            'New Order Placed',
             `A new order of ₹${totalAmount} has been placed.`,
             { orderId: order._id }
           );
@@ -282,6 +313,51 @@ router.delete('/archive', requireAuth, requireRole(['SuperAdmin']), async (req: 
   }
 });
 
+// Helper: Auto-finalize KG prices on order completion
+async function autoFinalizeKgPrices(order: any) {
+  if (order.kgPriceUpdated) return order;
+  const kgItems = (order.items || []).filter((it: any) => it.unit === 'KG');
+  if (kgItems.length === 0) {
+    order.kgPriceUpdated = true;
+    if (order.save) await order.save();
+    return order;
+  }
+
+  const kgItemIds = kgItems.map((it: any) => it.itemId);
+  const catalogItems = await Item.find({ _id: { $in: kgItemIds } }).select('_id pricePerKg').lean() as any[];
+  const catalogMap: Record<string, number> = {};
+  catalogItems.forEach((ci: any) => { catalogMap[ci._id] = ci.pricePerKg || 0; });
+
+  const updatedItems = order.items.map((it: any) => {
+    if (it.unit === 'KG') {
+      const kgWeight = it.kgWeight || 0;
+      const pricePerKg = catalogMap[it.itemId] || 0;
+      const kgPrice = Math.round(kgWeight * pricePerKg * 100) / 100;
+      const itObj = it.toObject ? it.toObject() : { ...it };
+      return { ...itObj, price: kgPrice };
+    }
+    return it.toObject ? it.toObject() : { ...it };
+  });
+
+  const perItemSubtotal = updatedItems
+    .filter((it: any) => it.unit !== 'KG')
+    .reduce((s: number, it: any) => s + it.price * it.quantity, 0);
+  const kgSubtotal = updatedItems
+    .filter((it: any) => it.unit === 'KG')
+    .reduce((s: number, it: any) => s + (it.price || 0), 0);
+  const newTotal = perItemSubtotal + kgSubtotal
+    + (order.taxAmount || 0)
+    + (order.deliveryFee || 0)
+    - (order.discountAmount || 0)
+    + ((order.washPreferences || []).reduce((s: number, p: any) => s + (p.price || 0), 0));
+
+  order.items = updatedItems;
+  order.totalAmount = Math.round(newTotal * 100) / 100;
+  order.kgPriceUpdated = true;
+  if (order.save) await order.save();
+  return order;
+}
+
 // Status transitions allowed per role
 const ADMIN_ALLOWED_STATUSES = ['ACCEPTED', 'PICKUP_ASSIGNED', 'PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'] as const;
 const DELIVERY_ALLOWED_STATUSES = ['PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
@@ -309,31 +385,39 @@ router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAd
       updateData.paymentStatus = 'SUCCESS';
     }
 
-    const order = await Order.findByIdAndUpdate(req.params.orderId, updateData, { new: true }).lean() as any;
+    let order = await Order.findByIdAndUpdate(req.params.orderId, updateData, { new: true }) as any;
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
+    // AUTO-FINALIZE KG PRICES: when order reaches DELIVERED and KG prices are still pending,
+    // recalculate totals using whatever kgWeight is stored on each item.
+    if (status === 'DELIVERED') {
+      await autoFinalizeKgPrices(order);
+    }
+
+    const updatedOrder = order.toObject ? order.toObject() : order;
+
     // Respond immediately
-    res.json(order);
+    res.json(updatedOrder);
 
     // Targeted room emit — only shop staff and the customer receive this
-    emitToShop(req, order.shopId, 'order_updated', order);
-    emitToUser(req, String(order.customerId), 'order_updated', order);
+    emitToShop(req, updatedOrder.shopId, 'order_updated', updatedOrder);
+    emitToUser(req, String(updatedOrder.customerId), 'order_updated', updatedOrder);
 
     // Fire-and-forget notifications
     setImmediate(async () => {
       try {
-        const customer = await User.findById(order.customerId).select('expoPushToken').lean() as any;
+        const customer = await User.findById(updatedOrder.customerId).select('expoPushToken').lean() as any;
         if (customer?.expoPushToken) {
           await sendPushNotification(
             [customer.expoPushToken],
-            'Order Status Updated 🧺',
+            'Order Status Updated',
             `Your order is now: ${status.replace(/_/g, ' ')}`,
-            { orderId: order._id, status }
+            { orderId: updatedOrder._id, status }
           );
         }
 
         if (req.user!.role === 'Delivery') {
-          const shopAdmins = await User.find({ shopId: order.shopId, role: 'ShopAdmin' })
+          const shopAdmins = await User.find({ shopId: updatedOrder.shopId, role: 'ShopAdmin' })
             .select('expoPushToken')
             .lean() as any[];
           const adminTokens = shopAdmins.map((a: any) => a.expoPushToken).filter(Boolean) as string[];
@@ -341,8 +425,8 @@ router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAd
             await sendPushNotification(
               adminTokens,
               'Order Status Updated',
-              `Order #${String(order._id).slice(-4)} is now: ${status.replace(/_/g, ' ')}`,
-              { orderId: order._id, status }
+              `Order #${String(updatedOrder._id).slice(-4)} is now: ${status.replace(/_/g, ' ')}`,
+              { orderId: updatedOrder._id, status }
             );
           }
         }
@@ -409,7 +493,7 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
         if (customer?.expoPushToken) {
           await sendPushNotification(
             [customer.expoPushToken],
-            'Delivery Boy Assigned 🚚',
+            'Delivery Boy Assigned',
             `${deliveryBoyName} has been assigned to pick up your laundry.`,
             { orderId: order._id }
           );
@@ -417,7 +501,7 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
         if (deliveryBoy?.expoPushToken) {
           await sendPushNotification(
             [deliveryBoy.expoPushToken],
-            'New Pickup Assigned 📦',
+            'New Pickup Assigned',
             `You have been assigned a new pickup for ${order.customerName || 'a customer'}.`,
             { orderId: order._id }
           );
@@ -523,7 +607,7 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
         if (customer?.expoPushToken) {
           await sendPushNotification(
             [customer.expoPushToken],
-            'Order Total Updated 🏋️',
+            'Order Total Updated',
             `Your KG items have been weighed. Total: ₹${updatedOrder.totalAmount}`,
             { orderId: updatedOrder._id }
           );
@@ -592,7 +676,7 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
         if (customer?.expoPushToken) {
           await sendPushNotification(
             [customer.expoPushToken],
-            'Items Verified ✅',
+            'Items Verified',
             `Your laundry items have been verified. Grand total: ₹${grandTotal.toFixed(2)}.`,
             { orderId: order._id }
           );
@@ -614,19 +698,20 @@ router.patch('/:orderId/payment', requireAuth, requireRole(['ShopAdmin', 'SuperA
     if (!paymentMode) {
       return res.status(400).json({ error: 'paymentMode is required' });
     }
-    const order = await Order.findByIdAndUpdate(
-      req.params.orderId,
-      { paymentMode, paymentStatus: 'SUCCESS', status: 'DELIVERED' },
-      { new: true }
-    ).lean();
+    const order = await Order.findById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    
-    // Targeted room emit for payment
-    const paidOrder = order as any;
-    if (paidOrder?.shopId) emitToShop(req, paidOrder.shopId, 'order_updated', order);
-    if (paidOrder?.customerId) emitToUser(req, String(paidOrder.customerId), 'order_updated', order);
 
-    res.json(order);
+    order.paymentMode = paymentMode;
+    order.paymentStatus = 'SUCCESS';
+    order.status = 'DELIVERED';
+    await autoFinalizeKgPrices(order);
+    await order.save();
+
+    const paidOrder = order.toObject ? order.toObject() : order;
+    if (paidOrder?.shopId) emitToShop(req, paidOrder.shopId, 'order_updated', paidOrder);
+    if (paidOrder?.customerId) emitToUser(req, String(paidOrder.customerId), 'order_updated', paidOrder);
+
+    res.json(paidOrder);
   } catch (err) {
     res.status(500).json({ error: 'Failed to record payment' });
   }

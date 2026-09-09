@@ -142,6 +142,7 @@ router.delete('/shops/:shopId', requireAuth, requireRole(['SuperAdmin']), async 
 
 // ── GET /shops/:shopId/catalog — combined cached endpoint ─────────────────────
 // Single round-trip for categories + items. Most frequently called endpoint.
+// Returns categories in a hierarchical structure with subCategories[] populated.
 router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
   try {
     const { shopId } = req.params;
@@ -153,12 +154,32 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
       return res.json(cached);
     }
 
-    const [categories, items] = await Promise.all([
+    const [allCategories, items] = await Promise.all([
       Category.find({ shopId, isActive: true }).lean(),
       Item.find({ shopId, isActive: true }).lean(),
     ]);
 
-    const result = { categories, items };
+    // Build hierarchical structure: top-level cats get subCategories[] populated
+    const catMap: Record<string, any> = {};
+    const topLevel: any[] = [];
+
+    for (const cat of allCategories) {
+      catMap[(cat as any)._id] = { ...cat, subCategories: [] };
+    }
+    for (const cat of allCategories) {
+      const c = cat as any;
+      if (c.parentCategoryId && catMap[c.parentCategoryId]) {
+        catMap[c.parentCategoryId].subCategories.push(catMap[c._id]);
+      } else {
+        topLevel.push(catMap[c._id]);
+      }
+    }
+
+    // Return all categories (with subCategories populated on parents) so flat lookups
+    // (find by ID, filter by parentCategoryId, breadcrumbs) work seamlessly everywhere,
+    // while also providing categoriesTree for tree-based consumers.
+    const allEnrichedCategories = allCategories.map((c: any) => catMap[c._id]);
+    const result = { categories: allEnrichedCategories, categoriesTree: topLevel, items };
     catalogCache.set(CACHE_KEY, result, CATALOG_TTL);
     res.setHeader('X-Cache', 'MISS');
     res.json(result);
@@ -190,8 +211,18 @@ router.get('/shops/:shopId/items', async (req: Request, res: Response) => {
 // ── POST /categories ──────────────────────────────────────────────────────────
 router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const { shopId, name, image } = req.body;
-    const category = await Category.create({ shopId, name, image, isActive: true });
+    const { shopId, name, image, parentCategoryId } = req.body;
+
+    // Validate parent exists in same shop (if provided)
+    if (parentCategoryId) {
+      const parent = await Category.findById(parentCategoryId).lean() as any;
+      if (!parent) return res.status(404).json({ error: 'Parent category not found' });
+      if (parent.shopId !== shopId) return res.status(400).json({ error: 'Parent category belongs to a different shop' });
+      // Prevent nesting beyond 2 levels (parent must be top-level)
+      if (parent.parentCategoryId) return res.status(400).json({ error: 'Sub-categories can only be one level deep' });
+    }
+
+    const category = await Category.create({ shopId, name, image, isActive: true, parentCategoryId: parentCategoryId || null });
     // Invalidate catalog cache for this shop
     catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(category);
@@ -204,7 +235,7 @@ router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
 // ── PATCH /categories/:id ─────────────────────────────────────────────────────
 router.patch('/categories/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const allowed = ['name', 'image', 'isActive'];
+    const allowed = ['name', 'image', 'isActive', 'parentCategoryId'];
     const updates: Record<string, any> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -225,6 +256,12 @@ router.delete('/categories/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAd
   try {
     const category = await Category.findByIdAndDelete(req.params.id).lean() as any;
     if (!category) return res.status(404).json({ error: 'Category not found' });
+    // Cascade: delete sub-categories and their items
+    const subCats = await Category.find({ parentCategoryId: req.params.id }).lean() as any[];
+    for (const sub of subCats) {
+      await Item.deleteMany({ categoryId: sub._id });
+      await Category.findByIdAndDelete(sub._id);
+    }
     await Item.deleteMany({ categoryId: req.params.id });
     if (category.shopId) catalogCache.delete(`catalog:${category.shopId}`);
     res.json({ message: 'Category deleted successfully' });
@@ -234,11 +271,21 @@ router.delete('/categories/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAd
   }
 });
 
+// ── GET /categories/:id/subcategories — lazy-load sub-categories ──────────────
+router.get('/categories/:id/subcategories', async (req: Request, res: Response) => {
+  try {
+    const subCategories = await Category.find({ parentCategoryId: req.params.id, isActive: true }).lean();
+    res.json(subCategories);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch sub-categories' });
+  }
+});
+
 // ── POST /items ───────────────────────────────────────────────────────────────
 router.post('/items', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const { shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image } = req.body;
-    const item = await Item.create({ shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image, isActive: true });
+    const { shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image, isBucket } = req.body;
+    const item = await Item.create({ shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image, isActive: true, isBucket: !!isBucket });
     if (shopId) catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(item);
     emitSocketEvent(req, 'item_created', item);
@@ -250,7 +297,7 @@ router.post('/items', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), asy
 // ── PATCH /items/:id ──────────────────────────────────────────────────────────
 router.patch('/items/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const allowed = ['name', 'description', 'pricePerItem', 'pricePerKg', 'image', 'isActive', 'categoryId'];
+    const allowed = ['name', 'description', 'pricePerItem', 'pricePerKg', 'image', 'isActive', 'categoryId', 'isBucket'];
     const updates: Record<string, any> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
