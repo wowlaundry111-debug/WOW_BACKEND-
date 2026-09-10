@@ -164,22 +164,37 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
     const topLevel: any[] = [];
 
     for (const cat of allCategories) {
-      catMap[(cat as any)._id] = { ...cat, subCategories: [] };
+      const c = cat as any;
+      const cId = String(c._id);
+      catMap[cId] = {
+        ...c,
+        _id: cId,
+        parentCategoryId: c.parentCategoryId ? String(c.parentCategoryId) : null,
+        subCategories: []
+      };
     }
     for (const cat of allCategories) {
       const c = cat as any;
-      if (c.parentCategoryId && catMap[c.parentCategoryId]) {
-        catMap[c.parentCategoryId].subCategories.push(catMap[c._id]);
+      const cId = String(c._id);
+      const pId = c.parentCategoryId ? String(c.parentCategoryId) : null;
+      if (pId && catMap[pId]) {
+        catMap[pId].subCategories.push(catMap[cId]);
       } else {
-        topLevel.push(catMap[c._id]);
+        topLevel.push(catMap[cId]);
       }
     }
 
     // Return all categories (with subCategories populated on parents) so flat lookups
     // (find by ID, filter by parentCategoryId, breadcrumbs) work seamlessly everywhere,
     // while also providing categoriesTree for tree-based consumers.
-    const allEnrichedCategories = allCategories.map((c: any) => catMap[c._id]);
-    const result = { categories: allEnrichedCategories, categoriesTree: topLevel, items };
+    const allEnrichedCategories = allCategories.map((c: any) => catMap[String(c._id)]);
+    const safeItems = items.map((i: any) => ({
+      ...i,
+      _id: String(i._id),
+      categoryId: String(i.categoryId),
+      shopId: String(i.shopId)
+    }));
+    const result = { categories: allEnrichedCategories, categoriesTree: topLevel, items: safeItems };
     catalogCache.set(CACHE_KEY, result, CATALOG_TTL);
     res.setHeader('X-Cache', 'MISS');
     res.json(result);
@@ -285,11 +300,28 @@ router.get('/categories/:id/subcategories', async (req: Request, res: Response) 
 router.post('/items', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
     const { shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image, isBucket } = req.body;
+
+    if (!categoryId) {
+      return res.status(400).json({ error: 'Target sub-category ID is required' });
+    }
+
+    // Items are ONLY allowed inside a sub-category (category that has a parentCategoryId)
+    const targetCategory = await Category.findById(categoryId).lean() as any;
+    if (!targetCategory) {
+      return res.status(404).json({ error: 'Selected category does not exist' });
+    }
+    if (!targetCategory.parentCategoryId) {
+      return res.status(400).json({
+        error: 'Items can only be created inside a sub-category. Please select a valid sub-category under a parent category.'
+      });
+    }
+
     const item = await Item.create({ shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image, isActive: true, isBucket: !!isBucket });
     if (shopId) catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(item);
     emitSocketEvent(req, 'item_created', item);
   } catch (err) {
+    console.error('Failed to create item:', err);
     res.status(500).json({ error: 'Failed to create item' });
   }
 });
@@ -302,12 +334,26 @@ router.patch('/items/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
+
+    if (updates.categoryId) {
+      const targetCategory = await Category.findById(updates.categoryId).lean() as any;
+      if (!targetCategory) {
+        return res.status(404).json({ error: 'Target category does not exist' });
+      }
+      if (!targetCategory.parentCategoryId) {
+        return res.status(400).json({
+          error: 'Items can only belong to a sub-category. Please select a valid sub-category.'
+        });
+      }
+    }
+
     const item = await Item.findByIdAndUpdate(req.params.id, updates, { new: true }).lean() as any;
     if (!item) return res.status(404).json({ error: 'Item not found' });
     if (item.shopId) catalogCache.delete(`catalog:${item.shopId}`);
     res.json(item);
     emitSocketEvent(req, 'item_updated', item);
   } catch (err) {
+    console.error('Failed to update item:', err);
     res.status(500).json({ error: 'Failed to update item' });
   }
 });

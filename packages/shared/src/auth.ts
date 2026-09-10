@@ -54,11 +54,36 @@ export const requireAuth = (req: AuthRequest, res: Response, next: NextFunction)
   }
 };
 
+export const normalizeRole = (role?: string): string => {
+  if (!role) return '';
+  const r = role.toLowerCase().replace(/[-_ ]/g, '');
+  if (r === 'superadmin') return 'SuperAdmin';
+  if (r === 'shopadmin' || r === 'admin') return 'ShopAdmin';
+  if (r === 'delivery' || r === 'deliveryboy' || r === 'deliveryagent' || r === 'driver') return 'Delivery';
+  if (r === 'customer' || r === 'user') return 'Customer';
+  return role;
+};
+
 export const requireRole = (roles: string[]) => {
+  const normalizedAllowed = roles.map(r => normalizeRole(r));
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized: No user session found' });
+    }
+
+    const userRole = normalizeRole(req.user.role);
+
+    // SuperAdmin always has full access to all staff, shop, and admin endpoints
+    const hasAccess =
+      userRole === 'SuperAdmin' ||
+      normalizedAllowed.includes(userRole) ||
+      (normalizedAllowed.includes('ShopAdmin') && (userRole === 'ShopAdmin' || userRole === 'SuperAdmin'));
+
+    if (!hasAccess) {
+      console.warn(`[requireRole Forbidden] User ${req.user._id} role '${req.user.role}' (normalized: '${userRole}') denied for required roles:`, roles);
       return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
     }
     next();
   };
 };
+

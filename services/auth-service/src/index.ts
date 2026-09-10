@@ -4,6 +4,7 @@ import {
   generateToken,
   requireAuth,
   requireRole,
+  normalizeRole,
   AuthRequest,
   otpCache,
   pendingRegCache,
@@ -321,8 +322,18 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     });
   }
 
+  // ── Auto-promote official admin email to SuperAdmin if needed ──────────────
+  const lowerEmail = (user.email || '').toLowerCase().trim();
+  if (lowerEmail === 'wowlaundry111@gmail.com' || lowerEmail === 'superadmin@wow.com') {
+    if (user.role !== 'SuperAdmin') {
+      await User.findByIdAndUpdate(user._id, { role: 'SuperAdmin' });
+      user.role = 'SuperAdmin';
+    }
+  }
+
   // ── Staff Accounts (SuperAdmin, ShopAdmin, Delivery) bypass OTP entirely ────
-  const isStaff = user.role === 'SuperAdmin' || user.role === 'ShopAdmin' || user.role === 'Delivery';
+  const userRole = normalizeRole(user.role);
+  const isStaff = userRole === 'SuperAdmin' || userRole === 'ShopAdmin' || userRole === 'Delivery';
   if (isStaff) {
     // If staff account has a password set and caller supplied one, verify it
     if (user.password && password && user.password !== password) {
@@ -762,7 +773,8 @@ router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Deliv
 
     const query: Record<string, any> = {};
 
-    if (req.user!.role === 'ShopAdmin' || req.user!.role === 'Delivery') {
+    const callerRole = normalizeRole(req.user!.role);
+    if (callerRole === 'ShopAdmin' || callerRole === 'Delivery') {
       const effectiveShopId = (req.query.shopId as string) || req.user!.shopId;
       if (effectiveShopId) {
         query.$or = [
