@@ -31,10 +31,17 @@ export const getCategoryIllustrationUrl = (name?: string, customImage?: string):
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
       return trimmed;
     }
+    if (CLOUDINARY_VECTOR_MAP[trimmed]) {
+      return CLOUDINARY_VECTOR_MAP[trimmed];
+    }
+    for (const [key, val] of Object.entries(CLOUDINARY_VECTOR_MAP)) {
+      if (trimmed.toLowerCase().includes(key.toLowerCase())) return val;
+    }
   }
 
   const n = (name || '').toLowerCase().trim();
 
+  if (n.includes('wash') || n.includes('fold') || n.includes('daily') || n.includes('everyday')) return CLOUDINARY_HOSTED_ASSETS.washing_machine;
   if (n.includes('dry') || n.includes('premium')) return CLOUDINARY_HOSTED_ASSETS.suit_blazer;
   if (n.includes('leather')) return CLOUDINARY_HOSTED_ASSETS.leather_jacket;
   if (n.includes('winter') || n.includes('jacket') || n.includes('coat')) return CLOUDINARY_HOSTED_ASSETS.winter_jacket;
@@ -58,6 +65,12 @@ export const getItemIllustrationUrl = (itemName?: string, categoryName?: string,
     const trimmed = customImage.trim();
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
       return trimmed;
+    }
+    if (CLOUDINARY_VECTOR_MAP[trimmed]) {
+      return CLOUDINARY_VECTOR_MAP[trimmed];
+    }
+    for (const [key, val] of Object.entries(CLOUDINARY_VECTOR_MAP)) {
+      if (trimmed.toLowerCase().includes(key.toLowerCase())) return val;
     }
   }
 

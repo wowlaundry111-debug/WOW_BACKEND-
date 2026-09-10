@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   RefreshControl, Linking, Modal, ActivityIndicator, Dimensions,
   Animated, Easing,
 } from 'react-native';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -171,6 +172,11 @@ const VerifyOrderModal = ({
               <View key={it.itemId} style={styles.verifyRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.verifyItemName}>{it.name}</Text>
+                  {(it.categoryName || it.subCategoryName) && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginTop: 1 }}>
+                      {it.categoryName}{it.subCategoryName ? ` › ${it.subCategoryName}` : ''}{it.isBucket ? ' • Bucket' : ''}
+                    </Text>
+                  )}
                   <Text style={styles.verifyItemQty}>Stated qty: {it.quantity}</Text>
                 </View>
                 <View style={styles.stepperWrap}>
@@ -211,7 +217,165 @@ const VerifyOrderModal = ({
   );
 };
 
+// ─── Weigh KG Items Modal ──────────────────────────────────────────────────
+
+const WeighKgModal = ({
+  visible,
+  order,
+  catalogItems,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  order: Order | null;
+  catalogItems: any[];
+  onClose: () => void;
+  onConfirm: (weights: { itemId: string; kgWeight: number }[]) => Promise<void>;
+}) => {
+  const [weights, setWeights] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  React.useEffect(() => {
+    if (order) {
+      const initial: Record<string, string> = {};
+      order.items.forEach((it) => {
+        const isKg = it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+        if (isKg) {
+          initial[it.itemId] = it.kgWeight ? String(it.kgWeight) : '1.0';
+        }
+      });
+      setWeights(initial);
+    }
+  }, [order]);
+
+  if (!order || !visible) return null;
+
+  const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+  const kgItems = order.items.filter(isKgCheck);
+
+  const calculateLiveTotal = () => {
+    let sum = 0;
+    kgItems.forEach(it => {
+      const catItem = catalogItems.find(c => c._id === it.itemId || c.name === it.name);
+      const rate = catItem?.pricePerKg || (catItem as any)?.price || 60;
+      const w = parseFloat(weights[it.itemId] || '0') || 0;
+      sum += w * rate;
+    });
+    return sum;
+  };
+
+  const handleSave = async () => {
+    setSubmitting(true);
+    const payload = kgItems.map(it => ({
+      itemId: it.itemId,
+      kgWeight: parseFloat(weights[it.itemId] || '0') || 0,
+    }));
+    await onConfirm(payload);
+    setSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalHeading}>WEIGH KG CLOTHES</Text>
+          <Text style={{ fontSize: 13, color: '#4B5563', marginBottom: 16 }}>
+            Enter the exact weight (in KG) measured on the scale.
+          </Text>
+
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 300 }}>
+            {kgItems.map((it) => {
+              const catItem = catalogItems.find(c => c._id === it.itemId || c.name === it.name);
+              const rate = catItem?.pricePerKg || (catItem as any)?.price || 60;
+              const w = parseFloat(weights[it.itemId] || '0') || 0;
+              const lineTotal = w * rate;
+
+              return (
+                <View key={it.itemId} style={[styles.verifyRow, { flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.verifyItemName}>{it.name}</Text>
+                      {(it.categoryName || it.subCategoryName) && (
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginTop: 1 }}>
+                          {it.categoryName}{it.subCategoryName ? ` › ${it.subCategoryName}` : ''}{it.isBucket ? ' • Bucket' : ''}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#0369A1' }}>₹{rate}/KG</Text>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={styles.stepperWrap}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const curr = parseFloat(weights[it.itemId] || '0') || 0;
+                          const next = Math.max(0.5, curr - 0.5);
+                          setWeights(p => ({ ...p, [it.itemId]: next.toFixed(1) }));
+                        }}
+                        style={styles.stepperBtn}
+                      >
+                        <Text style={styles.stepperBtnText}>-0.5</Text>
+                      </TouchableOpacity>
+                      <TextInput
+                        keyboardType="decimal-pad"
+                        style={{ width: 60, textAlign: 'center', fontWeight: '900', fontSize: 16, color: COLORS.black }}
+                        value={weights[it.itemId] || '1.0'}
+                        onChangeText={(t) => setWeights(p => ({ ...p, [it.itemId]: t }))}
+                      />
+                      <Text style={{ fontWeight: '800', fontSize: 13, color: '#6B7280' }}>KG</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const curr = parseFloat(weights[it.itemId] || '0') || 0;
+                          const next = curr + 0.5;
+                          setWeights(p => ({ ...p, [it.itemId]: next.toFixed(1) }));
+                        }}
+                        style={styles.stepperBtn}
+                      >
+                        <Text style={styles.stepperBtnText}>+0.5</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: COLORS.black, marginLeft: 'auto' }}>
+                      = ₹{lineTotal.toFixed(0)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          <View style={{ backgroundColor: '#F0FDF4', padding: 12, borderRadius: 8, marginTop: 12, borderWidth: 1, borderColor: '#BBF7D0' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#166534' }}>Estimated KG Total:</Text>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: '#166534' }}>₹{calculateLiveTotal().toFixed(0)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.modalActionRow}>
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={onClose} disabled={submitting}>
+              <Text style={styles.modalCancelText}>CANCEL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalConfirmBtn, { backgroundColor: '#B0FF49' }]}
+              onPress={handleSave}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color={COLORS.black} />
+              ) : (
+                <Text style={styles.modalConfirmText}>SAVE & UPDATE BILL</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 // ─── Payment Modal ───────────────────────────────────────────────────────────
+
 
 const PaymentModal = ({
   visible,
@@ -347,14 +511,16 @@ const PaymentModal = ({
 
 export const DeliveryTasksScreen = () => {
   const {
-    orders, shops, currentUser,
-    updateOrderStatus, verifyOrderItems, recordPayment, fetchOrders, initializeAppData, isLoading,
+    orders, shops, items, currentUser,
+    updateOrderStatus, verifyOrderItems, updateKgWeight, recordPayment, fetchOrders, initializeAppData, isLoading,
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<'PICKUP' | 'DELIVERY'>('PICKUP');
   const [refreshing, setRefreshing] = useState(false);
   const [verifyModalOrder, setVerifyModalOrder] = useState<Order | null>(null);
   const [paymentModalOrder, setPaymentModalOrder] = useState<Order | null>(null);
+  const [weighModalOrder, setWeighModalOrder] = useState<Order | null>(null);
+
 
   React.useEffect(() => {
     if (shops.length === 0) {
@@ -582,7 +748,7 @@ export const DeliveryTasksScreen = () => {
               {order.items && order.items.length > 0 && (
                 <View style={styles.itemsRow}>
                   <Text style={styles.itemsSummaryText} numberOfLines={1}>
-                    {order.items.map((it) => `${it.quantity}x ${it.name}`).join(' · ')}
+                    {order.items.map((it) => `${it.quantity}x ${it.name}${(it.categoryName || it.subCategoryName) ? ` [${it.categoryName || ''}${it.subCategoryName ? ` › ${it.subCategoryName}` : ''}]` : ''}`).join(' · ')}
                   </Text>
                 </View>
               )}
@@ -594,6 +760,40 @@ export const DeliveryTasksScreen = () => {
                   {order.deliveryAddress || 'No address specified'}
                 </Text>
               </View>
+
+              {/* KG Weighing Action Button (if order contains KG items) */}
+              {(() => {
+                const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                const hasKg = order.items.some(isKgCheck);
+                if (!hasKg) return null;
+
+                return (
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: order.kgPriceUpdated ? '#DCFCE7' : '#FEF08A',
+                      borderColor: COLORS.black,
+                      borderWidth: 2,
+                      borderRadius: 8,
+                      paddingVertical: 8,
+                      paddingHorizontal: 12,
+                      marginBottom: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      setWeighModalOrder(order);
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: '900', color: COLORS.black }}>
+                      {order.kgPriceUpdated ? 'EDIT KG WEIGHTS (WEIGHED)' : 'WEIGH KG CLOTHES (REQUIRED)'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })()}
 
               {/* Action Buttons */}
               <View style={styles.actionRow}>
@@ -667,6 +867,19 @@ export const DeliveryTasksScreen = () => {
         />
       )}
 
+      {/* Weigh KG Modal */}
+      {weighModalOrder && (
+        <WeighKgModal
+          visible={!!weighModalOrder}
+          order={weighModalOrder}
+          catalogItems={items}
+          onClose={() => setWeighModalOrder(null)}
+          onConfirm={async (weights) => {
+            await updateKgWeight(weighModalOrder._id, weights);
+          }}
+        />
+      )}
+
       {/* Payment Modal */}
       {paymentModalOrder && (
         <PaymentModal
@@ -679,6 +892,7 @@ export const DeliveryTasksScreen = () => {
       )}
     </View>
   );
+
 };
 
 // ─── Styles ──────────────────────────────────────────────────────────────────

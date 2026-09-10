@@ -13,7 +13,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Search, Plus, X, ArrowLeft, Image as ImageIcon, Sparkles, Package } from 'lucide-react-native';
+import { Search, Plus, X, ArrowLeft, Image as ImageIcon, Sparkles, Package, ChevronRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { ToggleSwitch } from '../../components/UIPack';
@@ -27,7 +27,9 @@ export const AdminCatalogScreen: React.FC = () => {
 
   const [search, setSearch] = useState('');
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
+  const [viewingParentId, setViewingParentId] = useState<string | null>(null); // null = top-level
   const [isAddCatVisible, setAddCatVisible] = useState(false);
+  const [newCatParentId, setNewCatParentId] = useState<string | null>(null);
   const [isVectorPickerOpen, setVectorPickerOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatImage, setNewCatImage] = useState('');
@@ -35,13 +37,22 @@ export const AdminCatalogScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
 
   const activeShopId = currentTenantId || currentUser?.shopId || '';
-  const tenantCategories = activeShopId
+  const allShopCats = activeShopId
     ? categories.filter((c) => c.shopId === activeShopId)
     : categories;
 
-  const filteredCategories = tenantCategories.filter((c) =>
+  // Top-level categories (no parent)
+  const topLevelCats = allShopCats.filter(c => !c.parentCategoryId);
+  // Sub-categories of the currently viewed parent
+  const visibleCategories = viewingParentId
+    ? allShopCats.filter(c => c.parentCategoryId === viewingParentId)
+    : topLevelCats;
+
+  const filteredCategories = visibleCategories.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const viewingParentCat = viewingParentId ? allShopCats.find(c => c._id === viewingParentId) : null;
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -64,7 +75,7 @@ export const AdminCatalogScreen: React.FC = () => {
     }
     setIsCreating(true);
     try {
-      await addCategory(newCatName.trim(), newCatImage.trim() || undefined, activeShopId);
+      await addCategory(newCatName.trim(), newCatImage.trim() || undefined, activeShopId, newCatParentId || undefined);
       setNewCatName('');
       setNewCatImage('');
       setAddCatVisible(false);
@@ -89,21 +100,41 @@ export const AdminCatalogScreen: React.FC = () => {
 
   const selectedCategory = categories.find((c) => c._id === selectedCatId) || null;
 
+  const openAddCategory = (parentId: string | null = null) => {
+    setNewCatParentId(parentId);
+    setNewCatName('');
+    setNewCatImage('');
+    setAddCatVisible(true);
+  };
+
   return (
     <View style={styles.root}>
       {/* Header Bar */}
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.heading}>CATALOG MANAGER</Text>
-          <Text style={styles.subHeading}>Manage services & pricing for your branch</Text>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {viewingParentId && (
+            <TouchableOpacity onPress={() => setViewingParentId(null)} style={{ padding: 4 }}>
+              <ArrowLeft size={20} color={COLORS.black} strokeWidth={3} />
+            </TouchableOpacity>
+          )}
+          <View>
+            <Text style={styles.heading}>
+              {viewingParentCat ? viewingParentCat.name.toUpperCase() : 'CATALOG MANAGER'}
+            </Text>
+            <Text style={styles.subHeading}>
+              {viewingParentCat ? 'Sub-categories inside this category' : 'Manage services & pricing for your branch'}
+            </Text>
+          </View>
         </View>
         <TouchableOpacity
           style={styles.addBtn}
           activeOpacity={0.85}
-          onPress={() => setAddCatVisible(true)}
+          onPress={() => openAddCategory(viewingParentId)}
         >
           <Plus size={18} color={COLORS.black} strokeWidth={3} />
-          <Text style={styles.addBtnText}>ADD CATEGORY</Text>
+          <Text style={styles.addBtnText}>
+            {viewingParentId ? 'ADD SUB-CAT' : 'ADD CATEGORY'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -133,7 +164,13 @@ export const AdminCatalogScreen: React.FC = () => {
       >
         <View style={styles.grid}>
           {filteredCategories.map((cat) => {
+            const subCats = allShopCats.filter(c => c.parentCategoryId === cat._id);
+            const hasSubCats = subCats.length > 0;
+            // Items directly in this cat
             const catItems = items.filter((i) => i.categoryId === cat._id);
+            // Items in sub-cats
+            const subCatItemCount = items.filter(i => subCats.some(s => s._id === i.categoryId)).length;
+            const totalItemCount = catItems.length + subCatItemCount;
             const isEnabled = cat.isActive ?? true;
 
             return (
@@ -141,7 +178,15 @@ export const AdminCatalogScreen: React.FC = () => {
                 key={cat._id}
                 style={[styles.catCard, !isEnabled && { opacity: 0.55 }]}
                 activeOpacity={0.85}
-                onPress={() => setSelectedCatId(cat._id)}
+                onPress={() => {
+                  if (hasSubCats && !viewingParentId) {
+                    // Drill into sub-categories
+                    setViewingParentId(cat._id);
+                  } else {
+                    // Open item details
+                    setSelectedCatId(cat._id);
+                  }
+                }}
               >
                 {/* Header: Illustration + Toggle */}
                 <View style={styles.catCardTop}>
@@ -152,10 +197,18 @@ export const AdminCatalogScreen: React.FC = () => {
                       size={44}
                     />
                   </View>
-                  <ToggleSwitch
-                    value={isEnabled}
-                    onToggle={() => handleToggleCategory(cat._id, isEnabled)}
-                  />
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <ToggleSwitch
+                      value={isEnabled}
+                      onToggle={() => handleToggleCategory(cat._id, isEnabled)}
+                    />
+                    {hasSubCats && !viewingParentId && (
+                      <View style={styles.subCatBadge}>
+                        <Text style={styles.subCatBadgeText}>{subCats.length} SUBCATS</Text>
+                        <ChevronRight size={10} color={COLORS.black} strokeWidth={3} />
+                      </View>
+                    )}
+                  </View>
                 </View>
 
                 {/* Title and Services Count */}
@@ -165,7 +218,7 @@ export const AdminCatalogScreen: React.FC = () => {
                   </Text>
                   <View style={styles.servicesBadge}>
                     <Text style={styles.servicesBadgeText}>
-                      {catItems.length} SERVICE{catItems.length === 1 ? '' : 'S'}
+                      {totalItemCount} SERVICE{totalItemCount === 1 ? '' : 'S'}
                     </Text>
                   </View>
                 </View>
@@ -199,7 +252,19 @@ export const AdminCatalogScreen: React.FC = () => {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.modalContent}>
-            <Text style={styles.modalHeading}>CREATE NEW CATEGORY</Text>
+            <Text style={styles.modalHeading}>
+              {newCatParentId ? 'CREATE SUB-CATEGORY' : 'CREATE NEW CATEGORY'}
+            </Text>
+
+            {/* Parent context banner */}
+            {newCatParentId && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: '#3B82F6', borderRadius: 8, padding: 10, marginBottom: 12, gap: 6 }}>
+                <ChevronRight size={14} color='#3B82F6' strokeWidth={2.5} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#3B82F6' }}>
+                  Inside: {allShopCats.find(c => c._id === newCatParentId)?.name || ''}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>CATEGORY NAME</Text>
@@ -421,6 +486,24 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.black,
     letterSpacing: 0.5,
+  },
+  subCatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xs,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  subCatBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
   },
   emptyState: {
     alignItems: 'center',

@@ -13,6 +13,7 @@ export interface IUser {
   expoPushToken?: string;
   address?: string;
   image?: string;
+  password?: string;
   selectedWashPreferences?: string[];
   isActive?: boolean;
 }
@@ -64,6 +65,7 @@ export interface ICategory {
   name: string;
   image?: string;
   isActive: boolean;
+  parentCategoryId?: string; // null/undefined = top-level; set = sub-category
 }
 
 export interface IItem {
@@ -74,9 +76,13 @@ export interface IItem {
   description?: string;
   pricePerItem?: number;
   pricePerKg?: number;
+  price?: number;
+  unit?: 'KG' | 'ITEM';
   image?: string;
   isActive: boolean;
+  isBucket?: boolean; // Bucket items shown as large tappable count cards in customer UI
 }
+
 
 export interface IOffer {
   _id: string;
@@ -106,6 +112,8 @@ export interface IOrder {
     unit?: string;
     price: number;
     kgWeight?: number; // set by delivery agent after weighing
+    categoryName?: string;    // human-readable breadcrumb stamped at order creation
+    subCategoryName?: string; // populated only when item belongs to a sub-category
   }[];
   washPreferences?: {
     name: string;

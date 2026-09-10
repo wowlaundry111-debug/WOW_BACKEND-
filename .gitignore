@@ -12,6 +12,8 @@ node_modules/
 # Build output
 dist/
 build/
+*.apk
+*.aab
 
 # Secrets and service account keys
 firebase-service-account.json
@@ -23,6 +25,6 @@ GoogleService-Info.plist
 *.jks
 *.keystore
 
-# OS
-.DS_Store
-Thumbs.db
+# Sub-repos
+Website/
+

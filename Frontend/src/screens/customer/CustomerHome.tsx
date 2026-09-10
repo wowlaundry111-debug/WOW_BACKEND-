@@ -350,8 +350,8 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
     };
   }, []);
 
-  // Filter categories for current shop
-  const shopCategories = categories.filter((c) => !currentTenantId || c.shopId === currentTenantId);
+  // Filter categories for current shop (top-level only)
+  const shopCategories = categories.filter((c) => (!currentTenantId || c.shopId === currentTenantId) && !c.parentCategoryId);
 
   // Dynamic Tabs: ONLY express gets 'New' badge, NEVER winter jackets or coats
   const dynamicTabs = [
@@ -389,9 +389,10 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
 
     if (!isSearching) return true;
 
+    const subCategoryIds = categories.filter(sub => sub.parentCategoryId === c._id).map(s => s._id);
     return (
       c.name.toLowerCase().includes(cleanQuery) ||
-      matchingItems.some((item) => item.categoryId === c._id)
+      matchingItems.some((item) => item.categoryId === c._id || subCategoryIds.includes(item.categoryId))
     );
   });
 
@@ -423,10 +424,16 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
     addToCart(item, diff);
   };
 
+  const homeScrollRef = React.useRef<ScrollView>(null);
+  useEffect(() => {
+    homeScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []);
+
   return (
     <View style={styles.root}>
       <StatusBar style="light" backgroundColor="#061E38" translucent />
       <ScrollView
+        ref={homeScrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}

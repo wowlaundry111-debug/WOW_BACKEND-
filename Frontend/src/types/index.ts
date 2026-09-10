@@ -75,6 +75,8 @@ export interface Category {
   name: string;
   image?: string; // category image URL or base64
   isActive?: boolean;
+  parentCategoryId?: string; // parent category ID for nested sub-categories
+  subCategories?: Category[];
 }
 
 export interface Item {
@@ -86,14 +88,22 @@ export interface Item {
   description?: string;
   pricePerKg?: number;
   pricePerItem?: number;
+  price?: number;
+  unit?: 'KG' | 'ITEM';
+  isBucket?: boolean; // Bucket items shown as large tappable counter cards
 }
+
 
 export interface OrderItem {
   itemId: string;
   name: string;
   quantity: number;
   unit: 'KG' | 'ITEM';
-  price: number; // resolved unit price at order time
+  price: number; // resolved unit price at order time; 0 for KG items until weighed
+  kgWeight?: number; // weighed by delivery agent
+  categoryName?: string; // category breadcrumb
+  subCategoryName?: string; // subcategory breadcrumb
+  isBucket?: boolean;
 }
 
 export interface CartItem {
@@ -103,6 +113,9 @@ export interface CartItem {
   unit: 'KG' | 'ITEM';
   price: number;
   image?: string;
+  categoryName?: string;
+  subCategoryName?: string;
+  isBucket?: boolean;
 }
 
 export interface Order {
@@ -121,9 +134,11 @@ export interface Order {
   }[];
   status: OrderStatus;
   totalAmount: number;
+  kgPriceUpdated?: boolean; // true once delivery agent has weighed & finalized KG item prices
   taxAmount?: number;
   deliveryFee?: number;
   discountAmount?: number;
+
   paymentStatus?: PaymentStatus;
   paymentMode?: PaymentMode;
   pickupAddress?: string;

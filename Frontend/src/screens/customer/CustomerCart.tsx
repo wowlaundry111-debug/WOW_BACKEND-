@@ -235,14 +235,23 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
   const activeWashPreferences = availableWashPrefs.filter((wp) => selectedPrefs.includes(wp.id));
   const washPrefsCost = activeWashPreferences.reduce((sum, wp) => sum + wp.price, 0);
 
-  const subtotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
+  const isKgItem = (c: any) => 
+
+    c.unit === 'KG' || 
+    (typeof c.name === 'string' && (c.name.toLowerCase().includes('per kg') || c.name.toLowerCase().includes('/ kg') || c.name.toLowerCase().includes('per-kg'))) || 
+    Boolean(c.pricePerKg && c.pricePerKg > 0);
+
+  const hasKgItems = cart.some(isKgItem);
+  const perItemSubtotal = cart.filter(c => !isKgItem(c)).reduce((sum, c) => sum + (c.price || 0) * c.quantity, 0);
+  const subtotal = perItemSubtotal;
   const taxPercent = shop?.taxPercent || 5;
-  const deliveryFee = subtotal > 500 ? 0 : (shop?.deliveryFee || 50);
+  const deliveryFee = hasKgItems ? (shop?.deliveryFee || 50) : (subtotal > 500 ? 0 : (shop?.deliveryFee || 50));
   const tax = (subtotal * taxPercent) / 100;
   const discount = activeCoupon
     ? Math.min((subtotal * activeCoupon.discountPercent) / 100, activeCoupon.maxDiscount)
     : 0;
   const total = subtotal + tax + deliveryFee + washPrefsCost - discount;
+
 
   // Structured Precise Delivery Address
   const [addrTag, setAddrTag] = useState<'Home' | 'Work' | 'Other'>('Home');
@@ -432,6 +441,12 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
     );
   }
 
+  const cartScrollRef = React.useRef<ScrollView>(null);
+
+  React.useEffect(() => {
+    cartScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []);
+
   // ─── Filled Cart / Checkout Screen ───────────────────────────────────────
   return (
     <View style={styles.root}>
@@ -441,6 +456,7 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
       <View style={styles.topOverscrollFiller} />
 
       <ScrollView
+        ref={cartScrollRef}
         keyboardShouldPersistTaps="handled"
         style={styles.scrollArea}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 }]}
@@ -630,7 +646,7 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
                     </View>
                     <View style={[styles.addonPriceBadge, isSelected && styles.addonPriceBadgeActive]}>
                       <Text style={[styles.addonPriceText, isSelected && styles.addonPriceTextActive]}>
-                        {isSelected ? '✓ ADDED' : `+₹${pref.price}`}
+                        {isSelected ? 'ADDED' : `+₹${pref.price}`}
                       </Text>
                     </View>
                   </BouncyCard>
@@ -644,59 +660,80 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
             <Text style={styles.cardHeading}>ORDER ITEMS ({cart.length})</Text>
 
             <View style={{ marginTop: 10 }}>
-              {cart.map((item, idx) => (
-                <View key={item.itemId}>
-                  <View style={styles.cartItemRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cartItemName}>{item.name}</Text>
-                      <Text style={styles.cartItemRate}>₹{item.price} per unit</Text>
-                    </View>
+              {cart.map((item, idx) => {
+                const isKg = isKgItem(item);
+                return (
+                  <View key={item.itemId}>
+                    <View style={styles.cartItemRow}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={styles.cartItemName}>{item.name}</Text>
+                        {(item.categoryName || item.subCategoryName) && (
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', marginTop: 1 }}>
+                            {item.categoryName}{item.subCategoryName ? ` › ${item.subCategoryName}` : ''}{item.isBucket ? ' • Bucket' : ''}
+                          </Text>
+                        )}
+                        {item.isBucket && !item.categoryName && (
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: COLORS.black, backgroundColor: COLORS.secondary, alignSelf: 'flex-start', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, marginTop: 1 }}>
+                            Bucket
+                          </Text>
+                        )}
+                        {isKg ? (
+                          <Text style={[styles.cartItemRate, { color: '#0284C7', fontWeight: '800' }]}>Weighed at delivery</Text>
+                        ) : (
+                          <Text style={styles.cartItemRate}>₹{item.price} per unit</Text>
+                        )}
+                      </View>
 
-                    <View style={styles.cartStepper}>
-                      <TouchableOpacity
-                        style={styles.cartStepperBtn}
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          addToCart(
-                            {
-                              _id: item.itemId,
-                              name: item.name,
-                              pricePerItem: item.price,
-                              shopId: currentTenantId || '',
-                              categoryId: '',
-                            } as any,
-                            -1
-                          );
-                        }}
-                      >
-                        <Minus size={12} color={COLORS.black} strokeWidth={3} />
-                      </TouchableOpacity>
-                      <Text style={styles.cartStepperQty}>{item.quantity}</Text>
-                      <TouchableOpacity
-                        style={[styles.cartStepperBtn, { backgroundColor: COLORS.secondary }]}
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          addToCart(
-                            {
-                              _id: item.itemId,
-                              name: item.name,
-                              pricePerItem: item.price,
-                              shopId: currentTenantId || '',
-                              categoryId: '',
-                            } as any,
-                            1
-                          );
-                        }}
-                      >
-                        <Plus size={12} color={COLORS.black} strokeWidth={3} />
-                      </TouchableOpacity>
-                    </View>
+                      <View style={styles.cartStepper}>
+                        <TouchableOpacity
+                          style={styles.cartStepperBtn}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            addToCart(
+                              {
+                                _id: item.itemId,
+                                name: item.name,
+                                pricePerItem: item.price,
+                                unit: item.unit,
+                                shopId: currentTenantId || '',
+                                categoryId: '',
+                              } as any,
+                              -1
+                            );
+                          }}
+                        >
+                          <Minus size={12} color={COLORS.black} strokeWidth={3} />
+                        </TouchableOpacity>
+                        <Text style={styles.cartStepperQty}>{item.quantity}</Text>
+                        <TouchableOpacity
+                          style={[styles.cartStepperBtn, { backgroundColor: COLORS.secondary }]}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            addToCart(
+                              {
+                                _id: item.itemId,
+                                name: item.name,
+                                pricePerItem: item.price,
+                                unit: item.unit,
+                                shopId: currentTenantId || '',
+                                categoryId: '',
+                              } as any,
+                              1
+                            );
+                          }}
+                        >
+                          <Plus size={12} color={COLORS.black} strokeWidth={3} />
+                        </TouchableOpacity>
+                      </View>
 
-                    <Text style={styles.cartItemTotal}>₹{item.price * item.quantity}</Text>
+                      <Text style={[styles.cartItemTotal, isKg && { fontSize: 13, color: '#0284C7' }]}>
+                        {isKg ? 'Pending' : `₹${(item.price || 0) * item.quantity}`}
+                      </Text>
+                    </View>
+                    {idx < cart.length - 1 && <View style={styles.itemDivider} />}
                   </View>
-                  {idx < cart.length - 1 && <View style={styles.itemDivider} />}
-                </View>
-              ))}
+                );
+              })}
             </View>
           </View>
 
@@ -731,8 +768,16 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
 
             <View style={styles.billRow}>
               <Text style={styles.billLabel}>Items Subtotal</Text>
-              <Text style={styles.billVal}>₹{subtotal}</Text>
+              <Text style={styles.billVal}>
+                {perItemSubtotal > 0 ? `₹${perItemSubtotal}` : (hasKgItems ? 'Pending Weighing' : '₹0')}
+              </Text>
             </View>
+            {hasKgItems && (
+              <View style={[styles.billRow, { backgroundColor: '#EFF6FF', padding: 8, borderRadius: 8, marginTop: 4 }]}>
+                <Text style={[styles.billLabel, { color: '#0284C7', fontWeight: '800' }]}>KG Clothes</Text>
+                <Text style={[styles.billVal, { color: '#0284C7', fontWeight: '800' }]}>Weighed at delivery</Text>
+              </View>
+            )}
             {washPrefsCost > 0 && (
               <View style={styles.billRow}>
                 <Text style={styles.billLabel}>Wash Add-ons</Text>
@@ -760,7 +805,9 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
 
             <View style={styles.grandTotalRow}>
               <Text style={styles.grandTotalLabel}>TO PAY</Text>
-              <Text style={styles.grandTotalVal}>₹{total.toFixed(0)}</Text>
+              <Text style={styles.grandTotalVal}>
+                {hasKgItems ? 'Pending Calculation' : `₹${total.toFixed(0)}`}
+              </Text>
             </View>
           </View>
         </View>
@@ -782,16 +829,19 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
                   {isClosed ? 'BRANCH CLOSED' : 'PLACE ORDER'}
                 </Text>
                 <Text style={styles.placeOrderSubText}>
-                  {cart.length} Item{cart.length > 1 ? 's' : ''} · Standard Delivery
+                  {cart.length} Item{cart.length > 1 ? 's' : ''} · {hasKgItems ? 'Pay After Weighing' : 'Standard Delivery'}
                 </Text>
               </View>
               <View style={styles.totalPill}>
-                <Text style={styles.totalPillText}>₹{total.toFixed(0)} →</Text>
+                <Text style={styles.totalPillText}>
+                  {hasKgItems ? 'Pay After Weighing →' : `₹${total.toFixed(0)} →`}
+                </Text>
               </View>
             </>
           )}
         </BouncyCard>
       </View>
+
     </View>
   );
 };

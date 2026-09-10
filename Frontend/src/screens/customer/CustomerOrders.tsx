@@ -278,11 +278,50 @@ export const CustomerOrdersScreen = () => {
                     <StatusBadge status={order.status as any} />
                   </View>
 
-                  {/* Items Summary */}
+                  {/* Items Summary - Split into Per-Item and Per-KG Categories */}
                   <View style={styles.orderBody}>
-                    <Text style={styles.itemsListText}>
-                      {order.items.map((i) => `${i.quantity}× ${i.name}`).join(' • ')}
-                    </Text>
+                    {(() => {
+                      const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                      const perItemProducts = order.items.filter(it => !isKgCheck(it));
+                      const perKgProducts = order.items.filter(isKgCheck);
+
+                      return (
+                        <View style={{ gap: 8 }}>
+                          {perItemProducts.length > 0 && (
+                            <View style={{ backgroundColor: '#F1F5F9', padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                              <Text style={{ fontSize: 11, fontWeight: '900', color: '#334155', marginBottom: 2 }}>PER-ITEM ITEMS ({perItemProducts.length}):</Text>
+                              <Text style={styles.itemsListText}>
+                                {perItemProducts.map((i) => {
+                                  const catBreadcrumb = (i.categoryName || i.subCategoryName) ? ` [${i.categoryName}${i.subCategoryName ? ` › ${i.subCategoryName}` : ''}]` : '';
+                                  const bucketTag = i.isBucket ? ' [Bucket]' : '';
+                                  return `${i.quantity}× ${i.name}${bucketTag}${catBreadcrumb} (₹${(i.price || 0) * i.quantity})`;
+                                }).join(' • ')}
+                              </Text>
+                            </View>
+                          )}
+
+                          {perKgProducts.length > 0 && (
+                            <View style={{ backgroundColor: '#EFF6FF', padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#BAE6FD' }}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                <Text style={{ fontSize: 11, fontWeight: '900', color: '#0369A1' }}>PER-KG CLOTHES ({perKgProducts.length}):</Text>
+                                <View style={{ backgroundColor: order.kgPriceUpdated ? '#B0FF49' : '#FEF08A', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, borderWidth: 1, borderColor: COLORS.black }}>
+                                  <Text style={{ fontSize: 9, fontWeight: '900', color: COLORS.black }}>
+                                    {order.kgPriceUpdated ? 'WEIGHED' : 'PENDING WEIGHING'}
+                                  </Text>
+                                </View>
+                              </View>
+                              <Text style={[styles.itemsListText, { color: '#0369A1' }]}>
+                                {perKgProducts.map((i) => {
+                                  const catBreadcrumb = (i.categoryName || i.subCategoryName) ? ` [${i.categoryName}${i.subCategoryName ? ` › ${i.subCategoryName}` : ''}]` : '';
+                                  const bucketTag = i.isBucket ? ' [Bucket]' : '';
+                                  return `${i.quantity}× ${i.name}${bucketTag}${catBreadcrumb} ${i.kgWeight ? `(${i.kgWeight} KG = ₹${i.price})` : '(Weight taken at delivery)'}`;
+                                }).join(' • ')}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })()}
 
                     {order.pickupTime ? (
                       <View style={styles.slotBadge}>
@@ -334,7 +373,25 @@ export const CustomerOrdersScreen = () => {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <View>
                         <Text style={styles.totalLabel}>TOTAL AMOUNT</Text>
-                        <Text style={styles.totalValue}>₹{order.totalAmount}</Text>
+                        {(() => {
+                          const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                          const hasKg = order.items.some(isKgCheck);
+                          const isPending = hasKg && !order.kgPriceUpdated;
+                          return (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Text style={styles.totalValue}>₹{order.totalAmount}</Text>
+                              {isPending ? (
+                                <View style={{ backgroundColor: '#FEF08A', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, borderWidth: 1, borderColor: COLORS.black }}>
+                                  <Text style={{ fontSize: 9, fontWeight: '900', color: '#854D0E' }}>+ KG PENDING</Text>
+                                </View>
+                              ) : hasKg && order.kgPriceUpdated ? (
+                                <View style={{ backgroundColor: '#B0FF49', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, borderWidth: 1, borderColor: COLORS.black }}>
+                                  <Text style={{ fontSize: 9, fontWeight: '900', color: COLORS.black }}>KG CALCULATED</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          );
+                        })()}
                       </View>
                       {order.paymentMode ? (
                         <View style={styles.paymentPill}>
@@ -358,6 +415,7 @@ export const CustomerOrdersScreen = () => {
                       <Text style={styles.helpBtnText}>Need Help?</Text>
                     </TouchableOpacity>
                   </View>
+
                 </View>
               );
             })

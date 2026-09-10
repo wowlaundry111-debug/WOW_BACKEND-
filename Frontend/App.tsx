@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
-  StatusBar,
   Modal,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -18,6 +17,9 @@ import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold, Outfit_800ExtraBold } from '@expo-google-fonts/outfit';
 import { useAppStore } from './src/store/useAppStore';
+import { usePushNotifications } from './src/hooks/usePushNotifications';
+import { useNotificationStore } from './src/store/useNotificationStore';
+import { SocketManager } from './src/components/SocketManager';
 import { AdminPortal } from './src/screens/admin/AdminPortal';
 import { CustomerPortal } from './src/screens/customer/CustomerPortal';
 import { DeliveryPortal } from './src/screens/delivery/DeliveryPortal';
@@ -27,11 +29,11 @@ import { COLORS, SPACING, RADIUS, TYPO, SHADOW } from './src/components/Theme';
 import type { Role } from './src/components/Theme';
 
 // ─── Role Config ──────────────────────────────────────────────────────────────
-const ROLES: { key: Role; emoji: string; label: string; desc: string; color: string }[] = [
-  { key: 'ShopAdmin',   emoji: '🏪', label: 'Shop Admin',    desc: 'Manage your laundry shop',   color: COLORS.primary },
-  { key: 'Customer',    emoji: '👕', label: 'Customer',      desc: 'Browse & place orders',      color: COLORS.secondary },
-  { key: 'Delivery',    emoji: '🚚', label: 'Delivery Boy',  desc: 'Manage deliveries',          color: '#10B981' },
-  { key: 'SuperAdmin',  emoji: '👑', label: 'Super Admin',   desc: 'Platform oversight',         color: '#F59E0B' },
+const ROLES: { key: Role; label: string; desc: string; color: string }[] = [
+  { key: 'ShopAdmin',   label: 'Shop Admin',    desc: 'Manage your laundry shop',   color: COLORS.primary },
+  { key: 'Customer',    label: 'Customer',      desc: 'Browse & place orders',      color: COLORS.secondary },
+  { key: 'Delivery',    label: 'Delivery Boy',  desc: 'Manage deliveries',          color: '#10B981' },
+  { key: 'SuperAdmin',  label: 'Super Admin',   desc: 'Platform oversight',         color: '#F59E0B' },
 ];
 
 // ─── Switcher Modal ───────────────────────────────────────────────────────────
@@ -50,7 +52,7 @@ const SwitcherModal: React.FC<SwitcherModalProps> = ({ visible, onClose }) => {
         {/* Handle */}
         <View style={styles.sheetHandle} />
         <Text style={[TYPO.headlineMd, { color: COLORS.onSurface, marginBottom: 4 }]}>
-          🧪 Dev Role Switcher
+          Dev Role Switcher
         </Text>
         <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant, marginBottom: SPACING.lg }]}>
           Preview any role and tenant instantly
@@ -67,7 +69,6 @@ const SwitcherModal: React.FC<SwitcherModalProps> = ({ visible, onClose }) => {
             onPress={() => { setCurrentRole(r.key); }}
             activeOpacity={0.8}
           >
-            <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
             <View style={{ flex: 1 }}>
               <Text style={[TYPO.labelLg, { color: COLORS.onSurface }]}>{r.label}</Text>
               <Text style={[TYPO.bodyMd, { color: COLORS.onSurfaceVariant }]}>{r.desc}</Text>
@@ -89,7 +90,6 @@ const SwitcherModal: React.FC<SwitcherModalProps> = ({ visible, onClose }) => {
             onPress={() => setCurrentTenantId(s._id)}
             activeOpacity={0.8}
           >
-            <Text style={{ fontSize: 18 }}>🏬</Text>
             <Text style={[TYPO.labelLg, { color: COLORS.onSurface, flex: 1 }]}>{s.name}</Text>
             {currentTenantId === s._id && (
               <View style={[styles.activeDot, { backgroundColor: COLORS.primary }]} />
@@ -100,10 +100,6 @@ const SwitcherModal: React.FC<SwitcherModalProps> = ({ visible, onClose }) => {
     </Modal>
   );
 };
-
-import { usePushNotifications } from './src/hooks/usePushNotifications';
-import { useNotificationStore } from './src/store/useNotificationStore';
-import { SocketManager } from './src/components/SocketManager';
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {

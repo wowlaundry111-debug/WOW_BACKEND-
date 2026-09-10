@@ -47,8 +47,10 @@ interface AppState {
 
   // Async Data Fetching
   initializeAppData: () => Promise<void>;
-  login: (email: string, otp: string) => Promise<{ success: boolean; message: string }>;
-  register: (name: string, phone: string, email: string) => Promise<{ success: boolean; message: string }>;
+  login: (identifier: string, password?: string) => Promise<{ success: boolean; message: string }>;
+  sendLoginOtp: (identifier: string, password?: string) => Promise<{ success: boolean; requiresOtp?: boolean; message: string }>;
+  verifyLoginOtp: (email: string, otp: string) => Promise<{ success: boolean; message: string }>;
+  register: (name: string, phone: string, email: string, password?: string) => Promise<{ success: boolean; message: string }>;
   fetchCatalog: (overrideShopId?: string) => Promise<void>;
   fetchOrders: (page?: number) => Promise<void>;
   fetchUsers: () => Promise<void>;
@@ -67,10 +69,10 @@ interface AppState {
   updateOrderStatus: (orderId: string, status: OrderStatus, paymentMode?: PaymentMode, paymentStatus?: PaymentStatus) => Promise<void>;
   updateOrderAdminDetails: (orderId: string, updates: { totalAmount?: number, adminNotes?: string }) => Promise<void>;
   assignDeliveryBoy: (orderId: string, deliveryBoyId: string) => Promise<void>;
-  addCategory: (name: string, image?: string, overrideShopId?: string) => Promise<void>;
+  addCategory: (name: string, image?: string, overrideShopId?: string, parentCategoryId?: string) => Promise<void>;
   updateCategory: (categoryId: string, updates: Partial<Category>) => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
-  addCatalogItem: (categoryId: string, name: string, description: string, price: number, unit: 'KG' | 'ITEM', image?: string) => Promise<void>;
+  addCatalogItem: (categoryId: string, name: string, description: string, price: number, unit: 'KG' | 'ITEM', image?: string, isBucket?: boolean) => Promise<void>;
   updateCatalogItem: (itemId: string, updates: Partial<Item>) => Promise<void>;
   updateCatalogItemPrice: (itemId: string, price: number, unit: 'KG' | 'ITEM') => Promise<void>;
   deleteCatalogItem: (itemId: string) => Promise<void>;
@@ -80,7 +82,9 @@ interface AppState {
 
   // Actions - Delivery Boy Operations
   verifyOrderItems: (orderId: string, itemsCount: Record<string, number>) => Promise<void>;
+  updateKgWeight: (orderId: string, items: { itemId: string; kgWeight: number }[]) => Promise<{ success: boolean; message?: string }>;
   recordPayment: (orderId: string, paymentMode: PaymentMode) => Promise<void>;
+
 
   // Actions - Super Admin Operations
   createShop: (name: string, branches: string[], upiId: string, bankName: string, accountNo: string, adminEmail: string) => Promise<void>;
@@ -275,13 +279,17 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      login: async (email, otp) => {
+      login: async (identifier, password) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await api.post('/auth/verify-otp', { email, otp });
+          const response = await api.post('/auth/login', {
+            identifier,
+            email: identifier,
+            password,
+          });
           const { user, token } = response.data;
 
-          setAuthToken(token);
+          if (token) await setAuthToken(token);
 
           const defaultShop = get().shops[0]?._id || '';
           const effectiveShop = user.role === 'SuperAdmin'
@@ -309,6 +317,89 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      // OTP-based login — Step 1: request OTP (matches website flow)
+      // Staff accounts (ShopAdmin, Delivery, SuperAdmin) receive directLogin:true immediately.
+      sendLoginOtp: async (identifier, password) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await api.post('/auth/send-otp', {
+            identifier,
+            email: identifier,
+            password,
+          });
+
+          // Staff or direct login bypass: JWT returned immediately
+          if (response.data.directLogin && response.data.token) {
+            const { user, token } = response.data;
+            if (token) await setAuthToken(token);
+
+            const defaultShop = get().shops[0]?._id || '';
+            const effectiveShop = user.role === 'SuperAdmin'
+              ? ''
+              : (user.shopId || get().currentTenantId || defaultShop);
+
+            set({
+              currentUser: user,
+              currentRole: user.role,
+              currentTenantId: effectiveShop,
+              shopsLastFetched: 0,
+              offersLastFetched: 0,
+              catalogLastFetched: 0,
+              isLoading: false,
+            });
+            await get().initializeAppData();
+            return { success: true, requiresOtp: false, message: 'Logged in successfully' };
+          }
+
+          set({ isLoading: false });
+          return {
+            success: true,
+            requiresOtp: true,
+            message: response.data.message || 'Verification code sent to your email',
+          };
+        } catch (err: any) {
+          const msg = err.response?.data?.error || 'Failed to send verification code';
+          set({ isLoading: false, error: msg });
+          return { success: false, message: msg };
+        }
+      },
+
+      // OTP-based login — Step 2: verify OTP and complete login
+      verifyLoginOtp: async (email, otp) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await api.post('/auth/login', {
+            identifier: email,
+            email,
+            otp,
+          });
+          const { user, token } = response.data;
+
+          if (token) await setAuthToken(token);
+
+          const defaultShop = get().shops[0]?._id || '';
+          const effectiveShop = user.role === 'SuperAdmin'
+            ? ''
+            : (user.shopId || get().currentTenantId || defaultShop);
+
+          set({
+            currentUser: user,
+            currentRole: user.role,
+            currentTenantId: effectiveShop,
+            shopsLastFetched: 0,
+            offersLastFetched: 0,
+            catalogLastFetched: 0,
+            isLoading: false,
+          });
+          await get().initializeAppData();
+          return { success: true, message: 'Authenticated successfully' };
+        } catch (err: any) {
+          const msg = err.response?.data?.error || 'Invalid verification code';
+          set({ isLoading: false, error: msg });
+          return { success: false, message: msg };
+        }
+      },
+
       updateProfile: async (updates) => {
         try {
           const { currentUser } = get();
@@ -327,13 +418,35 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      register: async (name, phone, email) => {
+      register: async (name, phone, email, password) => {
         try {
           set({ isLoading: true, error: null });
-          const response = await api.post('/auth/register', { name, phone, email });
-          set({ isLoading: false });
+          const response = await api.post('/auth/register', { name, phone, email, password });
+          const { user, token } = response.data;
 
-          let message = response.data.message || 'OTP sent successfully!';
+          if (token && user) {
+            await setAuthToken(token);
+            const defaultShop = get().shops[0]?._id || '';
+            const effectiveShop = user.role === 'SuperAdmin'
+              ? ''
+              : (user.shopId || get().currentTenantId || defaultShop);
+
+            set({
+              currentUser: user,
+              currentRole: user.role,
+              currentTenantId: effectiveShop,
+              shopsLastFetched: 0,
+              offersLastFetched: 0,
+              catalogLastFetched: 0,
+              isLoading: false,
+            });
+
+            await get().initializeAppData();
+          } else {
+            set({ isLoading: false });
+          }
+
+          let message = response.data.message || 'Registered successfully!';
           return { success: true, message };
         } catch (err: any) {
           const msg = err.response?.data?.error || 'Registration failed';
@@ -456,8 +569,11 @@ export const useAppStore = create<AppState>()(
       addToCart: (item, quantity) => {
         const { cart } = get();
         const existingIndex = cart.findIndex(c => c.itemId === item._id);
-        const resolvedPrice = item.pricePerKg ?? item.pricePerItem ?? 0;
-        const resolvedUnit = item.pricePerKg ? 'KG' : 'ITEM';
+        const isKg = Boolean(item.pricePerKg && item.pricePerKg > 0) || 
+          item.unit === 'KG' || 
+          (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg')));
+        const resolvedPrice = isKg ? 0 : (item.pricePerItem ?? item.price ?? 0);
+        const resolvedUnit = isKg ? 'KG' : 'ITEM';
 
         if (existingIndex >= 0) {
           const newCart = [...cart];
@@ -468,6 +584,19 @@ export const useAppStore = create<AppState>()(
             set({ cart: newCart });
           }
         } else if (quantity > 0) {
+          const { categories } = get();
+          const cat = categories.find(c => c._id === item.categoryId);
+          let categoryName = '';
+          let subCategoryName = '';
+          if (cat) {
+            if (cat.parentCategoryId) {
+              const parentCat = categories.find(c => c._id === cat.parentCategoryId);
+              categoryName = parentCat?.name || '';
+              subCategoryName = cat.name;
+            } else {
+              categoryName = cat.name;
+            }
+          }
           set({
             cart: [...cart, {
               itemId: item._id,
@@ -476,6 +605,9 @@ export const useAppStore = create<AppState>()(
               price: resolvedPrice,
               unit: resolvedUnit,
               image: item.image,
+              categoryName,
+              subCategoryName,
+              isBucket: !!item.isBucket,
             }]
           });
         }
@@ -485,7 +617,11 @@ export const useAppStore = create<AppState>()(
         set({ cart: get().cart.filter(c => c.itemId !== itemId) });
         const { activeCoupon } = get();
         if (activeCoupon) {
-          const subtotal = get().cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
+          const isKgItemCheck = (c: any) => 
+            c.unit === 'KG' || 
+            (typeof c.name === 'string' && (c.name.toLowerCase().includes('per kg') || c.name.toLowerCase().includes('/ kg'))) || 
+            Boolean(c.pricePerKg && c.pricePerKg > 0);
+          const subtotal = get().cart.filter(c => !isKgItemCheck(c)).reduce((sum, c) => sum + (c.price || 0) * c.quantity, 0);
           if (subtotal < activeCoupon.minOrderValue) {
             set({ activeCoupon: null });
           }
@@ -507,7 +643,11 @@ export const useAppStore = create<AppState>()(
         const coupon = offers.find(o => o.code.toUpperCase() === code.toUpperCase() && o.shopId === currentTenantId);
         if (!coupon) return { success: false, message: 'Invalid coupon code for this shop' };
 
-        const subtotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
+        const isKgItemCheck = (c: any) => 
+          c.unit === 'KG' || 
+          (typeof c.name === 'string' && (c.name.toLowerCase().includes('per kg') || c.name.toLowerCase().includes('/ kg'))) || 
+          Boolean(c.pricePerKg && c.pricePerKg > 0);
+        const subtotal = cart.filter(c => !isKgItemCheck(c)).reduce((sum, c) => sum + (c.price || 0) * c.quantity, 0);
         if (subtotal < coupon.minOrderValue) {
           return { success: false, message: `Minimum order value for this coupon is ₹${coupon.minOrderValue}` };
         }
@@ -525,27 +665,41 @@ export const useAppStore = create<AppState>()(
 
         set({ isLoading: true, error: null });
 
-        const subtotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
+        const isKgItemCheck = (c: any) => 
+          c.unit === 'KG' || 
+          (typeof c.name === 'string' && (c.name.toLowerCase().includes('per kg') || c.name.toLowerCase().includes('/ kg'))) || 
+          Boolean(c.pricePerKg && c.pricePerKg > 0);
+
+        const perItemSubtotal = cart
+          .filter(c => !isKgItemCheck(c))
+          .reduce((sum, c) => sum + (c.price || 0) * c.quantity, 0);
+
         let discount = 0;
         if (activeCoupon) {
-          discount = Math.min((subtotal * activeCoupon.discountPercent) / 100, activeCoupon.maxDiscount);
+          discount = Math.min((perItemSubtotal * activeCoupon.discountPercent) / 100, activeCoupon.maxDiscount);
         }
 
-        const orderItems: OrderItem[] = cart.map(c => ({
-          itemId: c.itemId,
-          name: c.name,
-          quantity: c.quantity,
-          unit: c.unit,
-          price: c.price,
-        }));
+        const orderItems: OrderItem[] = cart.map(c => {
+          const isKg = isKgItemCheck(c);
+          return {
+            itemId: c.itemId,
+            name: c.name,
+            quantity: c.quantity,
+            unit: isKg ? 'KG' : 'ITEM',
+            price: isKg ? 0 : (c.price || 0),
+            categoryName: c.categoryName,
+            subCategoryName: c.subCategoryName,
+            isBucket: c.isBucket,
+          };
+        });
 
         try {
           const shop = get().shops.find(s => s._id === currentTenantId);
           const taxPercent = shop?.taxPercent || 0;
           const deliveryFeeAmt = shop?.deliveryFee || 0;
-          const tax = (subtotal * taxPercent) / 100;
+          const tax = (perItemSubtotal * taxPercent) / 100;
           const washPrefsCost = washPreferences?.reduce((s, w) => s + w.price, 0) || 0;
-          const finalTotal = subtotal - discount + tax + deliveryFeeAmt + washPrefsCost;
+          const finalTotal = perItemSubtotal - discount + tax + deliveryFeeAmt + washPrefsCost;
 
           const res = await api.post('/orders', {
             shopId: currentTenantId,
@@ -562,7 +716,7 @@ export const useAppStore = create<AppState>()(
           const newOrder = res.data;
 
           set(state => ({
-            orders: [newOrder, ...state.orders.filter(o => o._id !== newOrder._id)],
+            orders: [newOrder, ...state.orders],
             cart: [],
             activeCoupon: null,
             deliveryInstructions: '',
@@ -572,7 +726,7 @@ export const useAppStore = create<AppState>()(
           return { success: true, orderId: newOrder._id, message: 'Order placed successfully!' };
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to place order' });
-          return { success: false, orderId: '', message: 'Failed to place order' };
+          return { success: false, orderId: '', message: err.message || 'Failed to place order' };
         }
       },
 
@@ -626,12 +780,16 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      addCategory: async (name, image, overrideShopId) => {
+      addCategory: async (name, image, overrideShopId, parentCategoryId) => {
         const shopId = overrideShopId || get().currentTenantId;
         try {
           let finalImage = image ? await uploadImageToCloudinary(image) : undefined;
-          const res = await api.post('/catalog/categories', { shopId, name, image: finalImage });
-          set(state => ({ categories: [...state.categories, res.data] }));
+          const res = await api.post('/catalog/categories', { shopId, name, image: finalImage, parentCategoryId: parentCategoryId || null });
+          if (res.data) {
+            set(state => ({
+              categories: state.categories.some(c => c._id === res.data._id) ? state.categories : [...state.categories, res.data]
+            }));
+          }
         } catch (err) {
           console.error('Failed to add category', err);
         }
@@ -659,10 +817,13 @@ export const useAppStore = create<AppState>()(
       deleteCategory: async (categoryId) => {
         const prevCategories = get().categories;
         const prevItems = get().items;
-        // Optimistic update
+        // Optimistic update — also remove sub-categories and their items
+        const subCatIds = get().categories
+          .filter(c => c.parentCategoryId === categoryId)
+          .map(c => c._id);
         set(state => ({
-          categories: state.categories.filter(c => c._id !== categoryId),
-          items: state.items.filter(i => i.categoryId !== categoryId),
+          categories: state.categories.filter(c => c._id !== categoryId && c.parentCategoryId !== categoryId),
+          items: state.items.filter(i => i.categoryId !== categoryId && !subCatIds.includes(i.categoryId)),
         }));
         try {
           await api.delete(`/catalog/categories/${categoryId}`);
@@ -673,7 +834,7 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      addCatalogItem: async (categoryId, name, description, price, unit, image) => {
+      addCatalogItem: async (categoryId, name, description, price, unit, image, isBucket) => {
         const { categories, currentTenantId } = get();
         const cat = categories.find(c => c._id === categoryId);
         const shopId = cat ? cat.shopId : currentTenantId;
@@ -685,9 +846,14 @@ export const useAppStore = create<AppState>()(
             name,
             description,
             image: finalImage,
+            isBucket: !!isBucket,
             ...(unit === 'KG' ? { pricePerKg: price } : { pricePerItem: price }),
           });
-          set(state => ({ items: [...state.items, res.data] }));
+          if (res.data) {
+            set(state => ({
+              items: state.items.some(i => i._id === res.data._id) ? state.items : [...state.items, res.data]
+            }));
+          }
         } catch (err) {
           console.error('Failed to add item', err);
         }
@@ -747,11 +913,11 @@ export const useAppStore = create<AppState>()(
       addOffer: async (offerData) => {
         const { currentTenantId } = get();
         try {
-          const res = await api.post('/catalog/offers', {
+          await api.post('/catalog/offers', {
             shopId: currentTenantId,
             ...offerData,
           });
-          set(state => ({ offers: [...state.offers, res.data] }));
+          // Note: Socket event 'offer_created' will update the store
         } catch (err: any) {
           console.error('Failed to add offer:', err);
           throw err;
@@ -818,6 +984,22 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      updateKgWeight: async (orderId, items) => {
+        try {
+          const res = await api.patch(`/orders/${orderId}/kg-weight`, { items });
+          if (res.data) {
+            set(state => ({
+              orders: state.orders.map(o => o._id === orderId ? res.data : o),
+            }));
+            return { success: true };
+          }
+          return { success: false, message: 'Failed to update KG weights' };
+        } catch (err: any) {
+          console.error('Failed to update KG weights:', err);
+          return { success: false, message: err.response?.data?.error || err.message || 'Failed to update KG weights' };
+        }
+      },
+
       // recordPayment — now persists to backend via dedicated endpoint
       recordPayment: async (orderId, paymentMode) => {
         try {
@@ -829,6 +1011,7 @@ export const useAppStore = create<AppState>()(
           console.error('Failed to record payment:', err);
         }
       },
+
 
       // ── Super Admin Actions ──────────────────────────────────────────────────
       createShop: async (name, branches, upiId, bankName, accountNo, adminEmail) => {

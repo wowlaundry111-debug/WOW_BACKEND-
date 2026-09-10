@@ -4,7 +4,6 @@
  */
 import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { AdminTopBar } from '../../components/AdminTopBar';
 import { AdminNavBar } from '../../components/AdminNavBar';
 import { AdminDashboardScreen } from './AdminDashboard';
@@ -56,7 +55,7 @@ export const AdminPortal: React.FC = () => {
   return (
     <View style={styles.root}>
       <AdminTopBar
-        shopName={isSuperAdmin && !currentTenantId ? '👑 Super Admin (All Shops)' : (shop?.name ?? 'WOW Laundry')}
+        shopName={isSuperAdmin && !currentTenantId ? 'Super Admin (All Shops)' : (shop?.name ?? 'WOW Laundry')}
         adminInitials={initials}
         onAvatarPress={() => setActiveTab('shop')}
         onShopPress={() => isSuperAdmin ? setShowShopSwitcher(true) : null}

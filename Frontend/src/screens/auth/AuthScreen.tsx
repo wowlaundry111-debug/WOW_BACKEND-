@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,217 +9,74 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
-  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, ShieldCheck, Clock, Mail, ArrowLeft } from 'lucide-react-native';
+import { ArrowRight, Mail, ShieldCheck, RefreshCw } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
+import { COLORS, SPACING, RADIUS, NEO_SHADOW } from '../../components/Theme';
 import { useAppStore } from '../../store/useAppStore';
 import { RegisterScreen } from './RegisterScreen';
 import { WowLogo } from '../../components/WowLogo';
-import api, { setAuthToken } from '../../services/api';
-
-// ─── OTP Screen ───────────────────────────────────────────────────────────────
-interface OTPScreenProps {
-  email: string;
-  onBack: () => void;
-  onVerify: (otp: string) => Promise<void>;
-  loading: boolean;
-}
-
-const OTPScreen: React.FC<OTPScreenProps> = ({ email, onBack, onVerify, loading }) => {
-  const insets = useSafeAreaInsets();
-  const [digits, setDigits] = useState(['', '', '', '']);
-  const [timer, setTimer] = useState(59);
-  const refs = useRef<(TextInput | null)[]>([]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTimer((t) => (t > 0 ? t - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleDigit = (text: string, index: number) => {
-    const cleaned = text.replace(/[^0-9]/g, '').slice(-1);
-    const next = [...digits];
-    next[index] = cleaned;
-    setDigits(next);
-    if (cleaned && index < 3) refs.current[index + 1]?.focus();
-  };
-
-  const handleKey = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace' && !digits[index] && index > 0) {
-      refs.current[index - 1]?.focus();
-    }
-  };
-
-  const otp = digits.join('');
-  const canVerify = otp.length === 4;
-
-  return (
-    <KeyboardAvoidingView
-      style={styles.kav}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: (insets.top > 0 ? insets.top : 44) + 16 }]}
-        keyboardShouldPersistTaps="handled"
-      >
-        <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
-          <ArrowLeft size={22} color={COLORS.black} strokeWidth={3} />
-        </TouchableOpacity>
-
-        {/* Logo */}
-        <View style={styles.logoWrap}>
-          <WowLogo width={260} height={95} />
-        </View>
-
-        {/* Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>ENTER OTP</Text>
-          <Text style={styles.cardSubtitle}>We've sent a 4-digit code to</Text>
-          <View style={styles.emailBadge}>
-            <Text style={styles.emailBadgeText}>{email}</Text>
-          </View>
-
-          {/* 4 OTP Boxes */}
-          <View style={styles.otpBoxRow}>
-            {digits.map((d, i) => (
-              <TextInput
-                key={i}
-                ref={(el) => {
-                  refs.current[i] = el;
-                }}
-                style={[styles.otpBox, d ? styles.otpBoxFilled : null]}
-                value={d}
-                onChangeText={(t) => handleDigit(t, i)}
-                onKeyPress={(e) => handleKey(e, i)}
-                keyboardType="number-pad"
-                maxLength={1}
-                textAlign="center"
-                selectionColor={COLORS.black}
-                autoFocus={i === 0}
-              />
-            ))}
-          </View>
-
-          {/* Resend Timer */}
-          <View style={styles.timerRow}>
-            <Clock size={14} color="#4B5563" strokeWidth={2.5} />
-            <Text style={styles.timerText}>
-              Resend in <Text style={styles.timerCount}>00:{String(timer).padStart(2, '0')}</Text>
-            </Text>
-          </View>
-
-          {/* Verify Button */}
-          <TouchableOpacity
-            style={[styles.btn, !canVerify && styles.btnDisabled]}
-            onPress={() => onVerify(otp)}
-            disabled={!canVerify || loading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator color={COLORS.black} />
-            ) : (
-              <View style={styles.btnContent}>
-                <Text style={styles.btnText}>VERIFY & LOGIN</Text>
-                <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Resend link */}
-          <TouchableOpacity
-            style={styles.resendBtn}
-            disabled={timer > 0}
-            onPress={() => setTimer(59)}
-          >
-            <Text style={[styles.resendText, timer > 0 && { color: '#9CA3AF' }]}>
-              Resend OTP
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
-};
 
 // ─── Main Auth Screen ─────────────────────────────────────────────────────────
 export const AuthScreen = () => {
   const insets = useSafeAreaInsets();
-  const [screen, setScreen] = useState<'EMAIL' | 'OTP' | 'REGISTER'>('EMAIL');
-  const [email, setEmail] = useState('');
+  const [screen, setScreen] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  const [step, setStep] = useState<'IDENTIFIER' | 'OTP'>('IDENTIFIER');
+  const [identifier, setIdentifier] = useState('');
+  const [otpEmail, setOtpEmail] = useState(''); // email OTP was sent to
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { login } = useAppStore();
+  const { sendLoginOtp, verifyLoginOtp } = useAppStore();
 
-  const handleSendOTP = async () => {
-    if (!email || email.trim().length < 3) return;
+  // Step 1: request OTP or direct login for staff
+  const handleRequestOtp = async () => {
+    if (!identifier || identifier.trim().length < 2) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
-    try {
-      const response = await api.post('/auth/send-otp', { email: email.trim().toLowerCase() });
-      const data = response.data;
 
-      if (data.directLogin && data.token && data.user) {
-        await setAuthToken(data.token);
-        useAppStore.setState({
-          currentUser: data.user,
-          currentRole: data.user.role,
-          currentTenantId: data.user.role === 'SuperAdmin' ? '' : data.user.shopId || '',
-        });
-        useAppStore.getState().fetchCatalog();
-        useAppStore.getState().fetchOrders();
-        if (['SuperAdmin', 'ShopAdmin'].includes(data.user.role)) {
-          useAppStore.getState().fetchUsers();
-        }
-        setLoading(false);
-        return;
-      }
+    const res = await sendLoginOtp(identifier.trim());
+    setLoading(false);
 
-      if (data.autoLogin) {
-        await handleVerifyOTP(data.mockOtp);
-      } else {
-        setLoading(false);
-        setScreen('OTP');
-      }
-    } catch (err: any) {
-      setLoading(false);
-      alert(err.response?.data?.error || 'Failed to authenticate. Please check your email.');
+    if (!res.success) {
+      alert(res.message);
+      return;
+    }
+
+    if (res.requiresOtp) {
+      // Customer OTP sent — move to step 2
+      setOtpEmail(identifier.trim());
+      setOtp('');
+      setStep('OTP');
+    }
+    // If requiresOtp is false, staff directLogin already updated the store — done
+  };
+
+  // Step 2: verify OTP
+  const handleVerifyOtp = async () => {
+    if (otp.trim().length !== 6) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLoading(true);
+
+    const res = await verifyLoginOtp(otpEmail, otp.trim());
+    setLoading(false);
+
+    if (!res.success) {
+      alert(res.message);
     }
   };
 
-  const handleVerifyOTP = async (otp: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setLoading(true);
-    const res = await login(email.trim().toLowerCase(), otp);
-    setLoading(false);
-    if (!res.success) alert(res.message);
-  };
-
-  const isEmailValid = email.trim().length >= 3;
+  const isStep1Valid = identifier.trim().length >= 2;
+  const isStep2Valid = otp.trim().length === 6;
 
   if (screen === 'REGISTER') {
     return (
       <RegisterScreen
-        onBack={() => setScreen('EMAIL')}
-        onRegisterSuccess={(registeredEmail) => {
-          setEmail(registeredEmail);
-          setScreen('OTP');
+        onBack={() => setScreen('LOGIN')}
+        onRegisterSuccess={() => {
+          // Registration already signs in directly and updates store state
         }}
-      />
-    );
-  }
-
-  if (screen === 'OTP') {
-    return (
-      <OTPScreen
-        email={email}
-        onBack={() => setScreen('EMAIL')}
-        onVerify={handleVerifyOTP}
-        loading={loading}
       />
     );
   }
@@ -240,38 +97,95 @@ export const AuthScreen = () => {
 
         {/* Neo-Brutalist Login Card */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>SIGN IN</Text>
-          <Text style={styles.cardSubtitle}>Enter your email to receive OTP</Text>
 
-          <View style={styles.inputWrap}>
-            <Mail size={20} color={COLORS.black} strokeWidth={2.5} />
-            <TextInput
-              style={styles.input}
-              placeholder="name@example.com"
-              placeholderTextColor="#6B7280"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              selectionColor={COLORS.black}
-            />
-          </View>
+          {step === 'IDENTIFIER' ? (
+            <>
+              <Text style={styles.cardTitle}>SIGN IN</Text>
+              <Text style={styles.cardSubtitle}>Enter your email address to sign in</Text>
 
-          <TouchableOpacity
-            style={[styles.btn, !isEmailValid && styles.btnDisabled]}
-            onPress={handleSendOTP}
-            disabled={!isEmailValid || loading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator color={COLORS.black} />
-            ) : (
-              <View style={styles.btnContent}>
-                <Text style={styles.btnText}>CONTINUE</Text>
-                <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
+              {/* Email Input */}
+              <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
+              <View style={styles.inputWrap}>
+                <Mail size={20} color={COLORS.black} strokeWidth={2.5} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="name@example.com"
+                  placeholderTextColor="#6B7280"
+                  value={identifier}
+                  onChangeText={setIdentifier}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  selectionColor={COLORS.black}
+                />
               </View>
-            )}
-          </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.btn, !isStep1Valid && styles.btnDisabled]}
+                onPress={handleRequestOtp}
+                disabled={!isStep1Valid || loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <ActivityIndicator color={COLORS.black} />
+                ) : (
+                  <View style={styles.btnContent}>
+                    <Text style={styles.btnText}>SIGN IN</Text>
+                    <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.cardTitle}>ENTER CODE</Text>
+              <Text style={styles.cardSubtitle}>
+                We sent a 6-digit verification code to{`\n`}{otpEmail}
+              </Text>
+
+              {/* OTP Input */}
+              <Text style={styles.fieldLabel}>VERIFICATION CODE</Text>
+              <View style={styles.inputWrap}>
+                <ShieldCheck size={20} color={COLORS.black} strokeWidth={2.5} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter 6-digit code"
+                  placeholderTextColor="#6B7280"
+                  value={otp}
+                  onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, '').slice(0, 6))}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  autoFocus
+                  selectionColor={COLORS.black}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.btn, !isStep2Valid && styles.btnDisabled]}
+                onPress={handleVerifyOtp}
+                disabled={!isStep2Valid || loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <ActivityIndicator color={COLORS.black} />
+                ) : (
+                  <View style={styles.btnContent}>
+                    <Text style={styles.btnText}>VERIFY & SIGN IN</Text>
+                    <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Resend / Back */}
+              <TouchableOpacity
+                onPress={() => { setStep('IDENTIFIER'); setOtp(''); }}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12 }}
+              >
+                <RefreshCw size={14} color='#6B7280' strokeWidth={2.5} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#6B7280' }}>Wrong email? Go back</Text>
+              </TouchableOpacity>
+            </>
+          )}
 
           <View style={styles.registerRow}>
             <Text style={styles.registerText}>Don't have an account?</Text>
@@ -295,26 +209,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 40,
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'flex-start',
-    marginBottom: SPACING.md,
-    ...NEO_SHADOW.box4,
-  },
   logoWrap: {
     alignItems: 'center',
     marginBottom: SPACING.lg,
-  },
-  logoImg: {
-    width: 220,
-    height: 90,
   },
   card: {
     width: '100%',
@@ -339,20 +236,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: SPACING.md,
   },
-  emailBadge: {
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1.5,
-    borderColor: COLORS.black,
-    borderRadius: RADIUS.md,
-    padding: 8,
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-  },
-  emailBadgeText: {
-    fontSize: 13,
+  fieldLabel: {
+    fontSize: 11,
     fontWeight: '800',
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.black,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    textTransform: 'uppercase',
   },
   inputWrap: {
     flexDirection: 'row',
@@ -363,7 +254,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
     ...NEO_SHADOW.box4,
   },
   input: {
@@ -374,43 +265,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.black,
   },
-  otpBoxRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.md,
-  },
-  otpBox: {
-    width: 60,
-    height: 60,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    borderRadius: RADIUS.lg,
-    fontSize: 24,
-    fontWeight: '900',
-    fontFamily: 'Outfit_800ExtraBold',
-    color: COLORS.black,
-    ...NEO_SHADOW.box4,
-  },
-  otpBoxFilled: {
-    backgroundColor: COLORS.secondary,
-  },
-  timerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginBottom: SPACING.lg,
-  },
-  timerText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#4B5563',
-  },
-  timerCount: {
-    fontWeight: '900',
-    color: COLORS.black,
-  },
   btn: {
     backgroundColor: COLORS.secondary,
     borderWidth: 2,
@@ -419,6 +273,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: SPACING.sm,
     ...NEO_SHADOW.box6,
   },
   btnDisabled: {
@@ -436,18 +291,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.black,
     letterSpacing: 0.8,
-  },
-  resendBtn: {
-    alignItems: 'center',
-    marginTop: SPACING.md,
-    paddingVertical: 4,
-  },
-  resendText: {
-    fontSize: 13,
-    fontWeight: '800',
-    fontFamily: 'Outfit_800ExtraBold',
-    color: COLORS.black,
-    textDecorationLine: 'underline',
   },
   registerRow: {
     flexDirection: 'row',

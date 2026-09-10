@@ -20,10 +20,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Search,
-  Package,
-  Shirt,
   Sparkles,
-  Leaf,
   AlertCircle,
   ShoppingBag,
   Plus,
@@ -38,6 +35,21 @@ import { CategoryVectorIllustration } from '../../components/CategoryVectors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedView = Animated.View as any;
+
+const getCategoryBadge = (name: string) => {
+  if (!name) return 'Care+';
+  const lowerName = name.toLowerCase();
+
+  if (lowerName.includes('formal') || lowerName.includes('interview') || lowerName.includes('suit')) return 'Eco Safe';
+  if (lowerName.includes('curtain')) return 'Express';
+  if (lowerName.includes('rug')) return 'Care+';
+  if (lowerName.includes('bedding') || lowerName.includes('bedsheet') || lowerName.includes('home') || lowerName.includes('linen')) return 'Express';
+  if (lowerName.includes('winter') || lowerName.includes('coat') || lowerName.includes('leather') || lowerName.includes('jacket')) return 'SAVE ₹99';
+  if (lowerName.includes('dryclean') || lowerName.includes('premium')) return 'SANITIZED';
+  if (lowerName.includes('everyday') || lowerName.includes('normal') || lowerName.includes('wash') || lowerName.includes('daily')) return '50% OFF';
+
+  return 'Care+';
+};
 
 /**
  * Blinkit / iOS Style Bouncy Interactive Pressable with Spring Animation
@@ -226,13 +238,31 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
   const isClosed = shop?.isOpen === false;
 
   const tenantCats = categories.filter((c) => c.shopId === currentTenantId);
-  const category = tenantCats.find((c) => c._id === categoryId) || tenantCats[0];
+  const topLevelCats = tenantCats.filter((c) => !c.parentCategoryId);
+  const activeTopCategory = topLevelCats.find((c) => c._id === categoryId) || topLevelCats[0] || tenantCats[0];
+  const category = activeTopCategory;
 
-  const catItems = items.filter(
-    (i) =>
-      (category ? i.categoryId === category._id : true) &&
-      (searchQuery === '' || i.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const subCategories = (activeTopCategory?.subCategories && activeTopCategory.subCategories.length > 0)
+    ? activeTopCategory.subCategories
+    : tenantCats.filter((c) => c.parentCategoryId === activeTopCategory?._id);
+  const [selectedSubCatId, setSelectedSubCatId] = useState<string>('ALL');
+
+  useEffect(() => {
+    setSelectedSubCatId('ALL');
+  }, [activeTopCategory?._id]);
+
+  const subCategoryIds = subCategories.map((s) => s._id);
+  const catItems = items.filter((i) => {
+    if (!activeTopCategory) return true;
+    let matchCat = false;
+    if (selectedSubCatId === 'ALL') {
+      matchCat = i.categoryId === activeTopCategory._id || subCategoryIds.includes(i.categoryId);
+    } else {
+      matchCat = i.categoryId === selectedSubCatId;
+    }
+    const matchSearch = searchQuery === '' || i.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchCat && matchSearch;
+  });
 
   const getQuantity = (itemId: string) => {
     return cart.find((c) => c.itemId === itemId)?.quantity || 0;
@@ -244,6 +274,19 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
   };
 
   const cartTotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
+  const mainScrollRef = React.useRef<ScrollView>(null);
+
+  const handleBack = () => {
+    if (selectedSubCatId !== 'ALL' && subCategories.length > 0) {
+      setSelectedSubCatId('ALL');
+    } else {
+      onBack();
+    }
+  };
+
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [categoryId, activeTopCategory?._id, selectedSubCatId]);
 
   return (
     <View style={styles.root}>
@@ -253,6 +296,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
       <View style={styles.topOverscrollFiller} />
 
       <ScrollView
+        ref={mainScrollRef}
         keyboardShouldPersistTaps="handled"
         style={styles.scrollArea}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: cart.length > 0 ? 100 : 36 }]}
@@ -277,14 +321,16 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
           <AmbientBubble size={22} startX={SCREEN_WIDTH - 60} startY={38} duration={4800} delay={600} />
 
           <View style={styles.headerTopRow}>
-            <BouncyCard onPress={onBack} contentStyle={styles.backBtn}>
+            <BouncyCard onPress={handleBack} contentStyle={styles.backBtn}>
               <ArrowLeft size={20} color={COLORS.black} strokeWidth={3} />
             </BouncyCard>
 
             <View style={{ flex: 1, marginLeft: 12 }}>
               <View style={styles.itemCountBadge}>
                 <Text style={styles.itemCountText}>
-                  {catItems.length} {catItems.length === 1 ? 'ITEM' : 'ITEMS'}
+                  {subCategories.length > 0 && selectedSubCatId === 'ALL' && !searchQuery
+                    ? `${subCategories.length} ${subCategories.length === 1 ? 'WASH PREFERENCE' : 'WASH PREFERENCES'}`
+                    : `${catItems.length} ${catItems.length === 1 ? 'ITEM' : 'ITEMS'}`}
                 </Text>
               </View>
               <Text style={styles.headerTitleText} numberOfLines={1}>
@@ -302,15 +348,15 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
             </BouncyCard>
           </View>
 
-          {/* Horizontal Category Filter Pills */}
-          {tenantCats.length > 1 && (
+          {/* Horizontal Top-Level Category Filter Pills */}
+          {topLevelCats.length > 1 && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.categoryPillsScroll}
               contentContainerStyle={styles.categoryPillsContent}
             >
-              {tenantCats.map((cat) => {
+              {topLevelCats.map((cat) => {
                 const isActive = cat._id === category?._id;
                 return (
                   <BouncyCard
@@ -381,6 +427,184 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
             </View>
           )}
 
+          {/* Wash Preference Cards Grid (when on ALL and subcategories exist) */}
+          {subCategories.length > 0 && selectedSubCatId === 'ALL' && !searchQuery ? (
+            <View style={{ marginBottom: 20 }}>
+              <View style={{ borderBottomWidth: 3, borderBottomColor: COLORS.black, paddingBottom: 10, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <View style={{ backgroundColor: '#F0FDF4', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.black, marginBottom: 6 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#16A34A', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                      WASH PREFERENCE
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Select a Wash Preference
+                  </Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginTop: 2 }}>
+                    Choose a wash preference to view available buckets and items
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: COLORS.secondary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 2, borderColor: COLORS.black }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: COLORS.black }}>
+                    {subCategories.length} {subCategories.length === 1 ? 'OPTION' : 'OPTIONS'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                justifyContent: subCategories.length === 1 ? 'flex-start' : 'space-between',
+                rowGap: 14,
+              }}>
+                {subCategories.map((sub) => {
+                  const badgeText = getCategoryBadge(sub.name);
+                  const subItems = items.filter((i) => i.categoryId === sub._id);
+                  const isSingle = subCategories.length === 1;
+
+                  return (
+                    <TouchableOpacity
+                      key={sub._id}
+                      activeOpacity={0.88}
+                      onPress={() => setSelectedSubCatId(sub._id)}
+                      style={{
+                        width: isSingle ? '100%' : '48%',
+                        backgroundColor: COLORS.white,
+                        borderWidth: 2.5,
+                        borderColor: COLORS.black,
+                        borderRadius: 18,
+                        padding: 14,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 4, height: 4 },
+                        shadowOpacity: 1,
+                        shadowRadius: 0,
+                        elevation: 4,
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      {/* Top Badges Row */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <View style={{ backgroundColor: COLORS.black, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.black }}>
+                          <Text style={{ fontSize: 9, fontWeight: '900', color: COLORS.white, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                            {badgeText}
+                          </Text>
+                        </View>
+                        {isSingle && (
+                          <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' }}>
+                            <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748B', textTransform: 'uppercase' }}>
+                              {subItems.length} {subItems.length === 1 ? 'Item Available' : 'Items Available'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Vector Illustration selected by Admin */}
+                      <View style={{ height: isSingle ? 92 : 80, alignItems: 'center', justifyContent: 'center', marginVertical: 6 }}>
+                        <CategoryVectorIllustration
+                          categoryName={sub.name}
+                          customImage={sub.image}
+                          size={isSingle ? 82 : 72}
+                        />
+                      </View>
+
+                      {/* Footer */}
+                      <View style={{ borderTopWidth: 2, borderTopColor: COLORS.black, paddingTop: 10, marginTop: 4 }}>
+                        <Text style={{ fontSize: isSingle ? 16 : 13, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }} numberOfLines={1}>
+                          {sub.name}
+                        </Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B' }}>
+                            {subItems.length} {subItems.length === 1 ? 'Item' : 'Items'}
+                          </Text>
+                          <View style={{
+                            backgroundColor: COLORS.secondary,
+                            paddingHorizontal: isSingle ? 10 : 7,
+                            paddingVertical: isSingle ? 5 : 3,
+                            borderRadius: 6,
+                            borderWidth: 1.5,
+                            borderColor: COLORS.black,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 3,
+                            shadowColor: '#000',
+                            shadowOffset: { width: 1.5, height: 1.5 },
+                            shadowOpacity: 1,
+                            shadowRadius: 0,
+                            elevation: 2,
+                          }}>
+                            <Text style={{ fontSize: 9, fontWeight: '900', color: COLORS.black }}>
+                              {isSingle ? 'SELECT SERVICE' : 'SELECT'}
+                            </Text>
+                            <ArrowRight size={11} color={COLORS.black} strokeWidth={3} />
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : (
+            <View>
+              {/* Active Sub-Category Header Banner */}
+              {subCategories.length > 0 && selectedSubCatId !== 'ALL' && (
+                <View style={{
+                  backgroundColor: COLORS.white,
+                  borderWidth: 2.5,
+                  borderColor: COLORS.black,
+                  borderRadius: 14,
+                  padding: 12,
+                  marginBottom: 16,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 4, height: 4 },
+                  shadowOpacity: 1,
+                  shadowRadius: 0,
+                  elevation: 4,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B', textTransform: 'uppercase' }}>
+                        {category?.name}
+                      </Text>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#64748B' }}>›</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: '#0D8DE3', textTransform: 'uppercase' }}>
+                        {subCategories.find(s => s._id === selectedSubCatId)?.name}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 16, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>
+                      {subCategories.find(s => s._id === selectedSubCatId)?.name}
+                    </Text>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginTop: 1 }}>
+                      Select your clothes or bucket below
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => setSelectedSubCatId('ALL')}
+                    style={{
+                      backgroundColor: COLORS.secondary,
+                      borderWidth: 2,
+                      borderColor: COLORS.black,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 10,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 2, height: 2 },
+                      shadowOpacity: 1,
+                      shadowRadius: 0,
+                      elevation: 2,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>
+                      ← CHANGE PREFERENCE
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
           {/* Items List */}
           {isLoading && catItems.length === 0 ? (
             <>
@@ -402,8 +626,78 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
           ) : (
             catItems.map((item) => {
               const qty = getQuantity(item._id);
-              const price = (item as any).pricePerKg || (item as any).pricePerItem || (item as any).price || 0;
-              const unit = item.pricePerKg ? 'KG' : 'Item';
+              const isKg = Boolean(item.pricePerKg && item.pricePerKg > 0) || 
+                item.unit === 'KG' || 
+                (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg') || item.name.toLowerCase().includes('per-kg')));
+              const isBucket = Boolean(item.isBucket);
+
+              // ── BUCKET ITEM: Large tappable card to increase clothes count ──
+              if (isBucket) {
+                return (
+                  <TouchableOpacity
+                    key={item._id}
+                    activeOpacity={0.88}
+                    onPress={() => handleAddToCart(item, 1)}
+                    style={styles.bucketCard}
+                  >
+                    <View style={styles.bucketCardInner}>
+                      <View style={styles.bucketImgWrap}>
+                        <Image
+                          source={require('../../../assets/final-bucket-cropped.png')}
+                          style={styles.bucketImg}
+                          contentFit="contain"
+                        />
+                        <View style={styles.bucketTapBadge}>
+                          <Text style={styles.bucketTapBadgeText}>TAP TO ADD</Text>
+                        </View>
+                      </View>
+
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <Text style={styles.bucketTitle}>{item.name}</Text>
+                          <View style={styles.bucketKgBadge}>
+                            <Text style={styles.bucketKgBadgeText}>PER KG</Text>
+                          </View>
+                        </View>
+
+                        <Text style={styles.bucketDesc} numberOfLines={2}>
+                          {item.description || 'Tap bucket to count clothes. Weighed & priced upon delivery.'}
+                        </Text>
+
+                        <View style={styles.bucketCountRow}>
+                          <View style={styles.bucketCountPill}>
+                            <Text style={styles.bucketCountPillText}>{qty} CLOTHES</Text>
+                          </View>
+
+                          {qty > 0 && (
+                            <TouchableOpacity
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                handleAddToCart(item, -1);
+                              }}
+                              style={styles.bucketMinusBtn}
+                            >
+                              <Minus size={14} color={COLORS.black} strokeWidth={3} />
+                            </TouchableOpacity>
+                          )}
+
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleAddToCart(item, 1);
+                            }}
+                            style={styles.bucketAddBtn}
+                          >
+                            <Text style={styles.bucketAddBtnText}>+ ADD ({qty})</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }
+
+              const price = item.pricePerItem || item.price || 0;
 
               return (
                 <View key={item._id} style={styles.itemCard}>
@@ -426,10 +720,19 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
                       </Text>
                     ) : null}
 
-                    <View style={styles.priceRow}>
-                      <Text style={styles.itemPrice}>₹{price}</Text>
-                      <Text style={styles.itemUnit}>/{unit}</Text>
-                    </View>
+                    {isKg ? (
+                      <View style={{ marginTop: 4 }}>
+                        <View style={{ backgroundColor: '#0284C7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, alignSelf: 'flex-start' }}>
+                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>PER KG</Text>
+                        </View>
+                        <Text style={{ fontSize: 9, color: '#6B7280', fontWeight: '800', marginTop: 2 }}>Priced at delivery</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.priceRow}>
+                        <Text style={styles.itemPrice}>₹{price}</Text>
+                        <Text style={styles.itemUnit}>/Item</Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Stepper / ADD CTA */}
@@ -465,6 +768,8 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
               );
             })
           )}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -476,7 +781,18 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
               <Text style={styles.cartItemsCount}>
                 {cart.length} ITEM{cart.length > 1 ? 'S' : ''} ADDED
               </Text>
-              <Text style={styles.cartTotalPrice}>₹{cartTotal}</Text>
+              {(() => {
+                const isKgCheck = (c: any) => c.unit === 'KG' || Boolean(c.pricePerKg && c.pricePerKg > 0) || (typeof c.name === 'string' && (c.name.toLowerCase().includes('per kg') || c.name.toLowerCase().includes('/ kg')));
+                const hasKg = cart.some(isKgCheck);
+                const perItemTotal = cart.filter(c => !isKgCheck(c)).reduce((s, c) => s + (c.price || 0) * c.quantity, 0);
+                return hasKg ? (
+                  <Text style={styles.cartTotalPrice}>
+                    {perItemTotal > 0 ? `₹${perItemTotal} + KG Pending` : 'Pending Weighing'}
+                  </Text>
+                ) : (
+                  <Text style={styles.cartTotalPrice}>₹{cartTotal}</Text>
+                );
+              })()}
             </View>
             <View style={styles.cartCheckoutBtn}>
               <Text style={styles.cartCheckoutText}>Checkout</Text>
@@ -487,6 +803,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
           </BouncyCard>
         </View>
       )}
+
     </View>
   );
 };
@@ -847,5 +1164,120 @@ const styles = StyleSheet.create({
     borderColor: COLORS.black,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bucketCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.xl,
+    padding: 14,
+    marginBottom: 12,
+    ...NEO_SHADOW.box4,
+  },
+  bucketCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bucketImgWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: RADIUS.lg,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 4,
+    position: 'relative',
+  },
+  bucketImg: {
+    width: '100%',
+    height: '100%',
+  },
+  bucketTapBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  bucketTapBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: COLORS.black,
+  },
+  bucketTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+  },
+  bucketKgBadge: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+  },
+  bucketKgBadgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  bucketDesc: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  bucketCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  bucketCountPill: {
+    backgroundColor: COLORS.secondary,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  bucketCountPillText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+  },
+  bucketMinusBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bucketAddBtn: {
+    backgroundColor: COLORS.black,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  bucketAddBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: COLORS.secondary,
+    textTransform: 'uppercase',
   },
 });

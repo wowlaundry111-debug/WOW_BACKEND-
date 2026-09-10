@@ -23,7 +23,12 @@ import uploadRouter from './uploadRoute';
 const app = express();
 const server = http.createServer(app);
 
+// Trust the first reverse proxy hop (Render, Cloudflare, Nginx load balancers)
+// Essential for correct X-Forwarded-For IP resolution and express-rate-limit
+app.set('trust proxy', 1);
+
 // CORS configuration — dynamically allows requests from Vercel preview domains, production domains, and localhost
+
 const isOriginAllowed = (origin: string | undefined): boolean => {
   if (!origin) return true;
   if (!process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS === '*') return true;
@@ -42,7 +47,7 @@ const corsOptions: cors.CorsOptions = {
     if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
-      callback(null, true);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -151,7 +156,7 @@ const otpVerifyLimiter = rateLimit({
   validate: { keyGeneratorIpFallback: false },
 });
 
-// 3. Order creation — 30 orders per minute per IP (burst protection)
+// 3. Order creation — 30 orders per minute per IP (burst protection, POST only)
 const orderCreateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
@@ -159,6 +164,7 @@ const orderCreateLimiter = rateLimit({
   legacyHeaders: false,
   handler: rateLimitHandler,
   validate: { keyGeneratorIpFallback: false },
+  skip: (req) => req.method !== 'POST',
 });
 
 // 4. Global API fallback — 300 requests per minute per IP

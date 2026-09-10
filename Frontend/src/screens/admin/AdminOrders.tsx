@@ -11,6 +11,7 @@ import {
   TextInput,
   RefreshControl,
   Alert,
+  Dimensions,
 } from 'react-native';
 import {
   User,
@@ -25,6 +26,9 @@ import {
   CheckCircle,
   ClipboardList,
   Filter,
+  CreditCard,
+  Sparkles,
+  Package,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
@@ -32,6 +36,17 @@ import { StatusBadge } from '../../components/UIPack';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadOrdersCsv } from '../../utils/exportCsv';
 import type { Order, OrderStatus } from '../../types';
+
+const formatCatTitle = (it: any) => {
+  const cat = (it?.categoryName || '').trim();
+  const sub = (it?.subCategoryName || '').trim();
+  if (cat && sub && cat.toLowerCase() !== sub.toLowerCase()) {
+    return `${cat.toUpperCase()} › ${sub.toUpperCase()}`;
+  }
+  if (cat) return cat.toUpperCase();
+  if (sub) return sub.toUpperCase();
+  return 'GENERAL LAUNDRY';
+};
 
 const FILTERS: {
   key: 'new' | 'washing' | 'delivery' | 'history';
@@ -68,6 +83,20 @@ export const AdminOrdersScreen: React.FC = () => {
 
   const [editPrice, setEditPrice] = useState('');
   const [editNotes, setEditNotes] = useState('');
+
+  const modalCustomer = selectedOrder ? users.find((u) => u._id === selectedOrder.customerId) : null;
+  const modalCustomerName = modalCustomer?.name || selectedOrder?.customerName || 'Customer';
+  const modalCustomerPhone = modalCustomer?.phone || selectedOrder?.customerPhone || '';
+
+  const itemsByCat = useMemo(() => {
+    if (!selectedOrder?.items) return {};
+    return selectedOrder.items.reduce((acc: Record<string, any[]>, it: any) => {
+      const title = formatCatTitle(it);
+      if (!acc[title]) acc[title] = [];
+      acc[title].push(it);
+      return acc;
+    }, {});
+  }, [selectedOrder]);
 
   const activeShopId = currentTenantId || currentUser?.shopId || '';
   const tenantOrders = activeShopId
@@ -286,6 +315,18 @@ export const AdminOrdersScreen: React.FC = () => {
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.orderTotal}>₹{order.totalAmount || 0}</Text>
+                  {(() => {
+                    const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                    const hasKg = order.items?.some(isKgCheck);
+                    if (!hasKg) return null;
+                    return (
+                      <View style={{ backgroundColor: order.kgPriceUpdated ? '#DCFCE7' : '#FEF08A', borderWidth: 1, borderColor: COLORS.black, paddingHorizontal: 4, paddingVertical: 1, borderRadius: RADIUS.sm, marginTop: 2 }}>
+                        <Text style={{ fontSize: 8, fontWeight: '900', color: COLORS.black }}>
+                          {order.kgPriceUpdated ? 'KG WEIGHED' : '+ KG PENDING'}
+                        </Text>
+                      </View>
+                    );
+                  })()}
                   {order.paymentMode ? (
                     <View style={{ backgroundColor: order.paymentMode === 'COD' ? COLORS.secondary : COLORS.primary, borderWidth: 1, borderColor: COLORS.black, paddingHorizontal: 5, paddingVertical: 1, borderRadius: RADIUS.sm, marginTop: 2 }}>
                       <Text style={{ fontSize: 9, fontWeight: '900', color: COLORS.black }}>
@@ -294,15 +335,31 @@ export const AdminOrdersScreen: React.FC = () => {
                     </View>
                   ) : null}
                 </View>
+
               </View>
 
-              {/* Items Summary */}
-              <View style={styles.itemsBox}>
-                <Text style={styles.itemsSummaryText} numberOfLines={2}>
-                  {order.items?.map((i) => `${i.quantity}x ${i.name}`).join(' · ') ||
-                    'Standard Laundry'}
-                </Text>
-              </View>
+              {/* Items Summary & Category */}
+              {(() => {
+                const primaryCat = order.items?.find((i: any) => i.categoryName || i.subCategoryName);
+                const catText = primaryCat ? formatCatTitle(primaryCat) : '';
+                return (
+                  <View style={styles.itemsBox}>
+                    {catText && catText !== 'GENERAL LAUNDRY' ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <View style={{ backgroundColor: '#0D8DE3', paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: COLORS.black }}>
+                          <Text style={{ fontSize: 9, fontWeight: '900', color: COLORS.white, letterSpacing: 0.5 }}>
+                            {catText}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+                    <Text style={styles.itemsSummaryText} numberOfLines={2}>
+                      {order.items?.map((i) => `${i.quantity}x ${i.name}`).join(' · ') ||
+                        'Standard Laundry'}
+                    </Text>
+                  </View>
+                );
+              })()}
 
               {/* Action Buttons Row */}
               <View style={styles.cardActionsRow}>
@@ -388,60 +445,315 @@ export const AdminOrdersScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalHeading}>
-                ORDER #{selectedOrder?._id.slice(-6).toUpperCase()}
-              </Text>
-              <TouchableOpacity onPress={() => setSelectedOrder(null)}>
-                <X size={24} color={COLORS.black} strokeWidth={3} />
+              <View>
+                <Text style={styles.modalPreHeading}>ORDER DETAILS</Text>
+                <Text style={styles.modalHeading}>
+                  #{selectedOrder?._id.slice(-6).toUpperCase()}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedOrder(null)} style={styles.modalCloseBtn}>
+                <X size={22} color={COLORS.black} strokeWidth={3} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 380 }}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>TOTAL AMOUNT (₹)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={editPrice}
-                  onChangeText={setEditPrice}
-                  keyboardType="numeric"
-                  placeholder="0"
-                />
-              </View>
+            <ScrollView 
+              style={{ maxHeight: Math.min(540, Dimensions.get('window').height * 0.72) }} 
+              showsVerticalScrollIndicator={false}
+            >
+              {selectedOrder && (
+                <View style={{ gap: 14, paddingBottom: 10 }}>
+                  {/* ─── 1. ORDER ITEMS SECTION (UP) ─────────────────────── */}
+                  <View style={styles.orderSectionCard}>
+                    <View style={styles.orderSectionHeader}>
+                      <View>
+                        <Text style={styles.sectionSuperHeader}>ORDER PROCESSING</Text>
+                        <Text style={styles.sectionMainHeader}>
+                          ITEMS TO PROCESS ({selectedOrder.items?.length || 0})
+                        </Text>
+                      </View>
+                      {selectedOrder.items?.some((it: any) => it.unit === 'KG') && (
+                        <View style={[styles.kgStatusPill, { backgroundColor: selectedOrder.kgPriceUpdated ? '#9AE600' : '#FEF08A' }]}>
+                          <Text style={styles.kgStatusPillText}>
+                            {selectedOrder.kgPriceUpdated ? 'KG WEIGHED' : 'KG PENDING'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>ADMIN NOTES</Text>
-                <TextInput
-                  style={[styles.modalInput, { height: 70 }]}
-                  value={editNotes}
-                  onChangeText={setEditNotes}
-                  placeholder="Special instructions or notes"
-                  multiline
-                />
-              </View>
+                    <View style={{ padding: 12, gap: 12, backgroundColor: '#FFFFFF' }}>
+                      {/* Category Groups with BIG WORDS header */}
+                      {(Object.entries(itemsByCat) as [string, any[]][]).map(([catTitle, catItems], groupIdx) => (
+                        <View key={groupIdx} style={styles.catGroupCard}>
+                          {/* Big Words Category Header Banner */}
+                          <View style={styles.catHeaderBanner}>
+                            <View style={styles.catBadge}>
+                              <Text style={styles.catBadgeText}>CATEGORY</Text>
+                            </View>
+                            <Text style={styles.catBannerTitle} numberOfLines={1}>
+                              {catTitle}
+                            </Text>
+                            <View style={styles.catCountBadge}>
+                              <Text style={styles.catCountBadgeText}>
+                                {catItems.length} {catItems.length === 1 ? 'ITEM' : 'ITEMS'}
+                              </Text>
+                            </View>
+                          </View>
 
-              {selectedOrder?.customerPhone && (
-                <View style={styles.contactRow}>
-                  <TouchableOpacity
-                    style={styles.callBtn}
-                    onPress={() => Linking.openURL(`tel:${selectedOrder.customerPhone}`)}
-                  >
-                    <Phone size={16} color={COLORS.black} strokeWidth={2.5} />
-                    <Text style={styles.contactBtnText}>CALL CUSTOMER</Text>
-                  </TouchableOpacity>
+                          {/* Items in this Category */}
+                          <View style={styles.catItemsList}>
+                            {catItems.map((it: any, idx: number) => {
+                              const isKg = it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                              const linePrice = (it.price || 0) * (isKg ? (it.kgWeight || 1) : it.quantity);
+                              return (
+                                <View key={`${it.itemId || idx}-${idx}`} style={[styles.catItemRow, idx > 0 && styles.catItemDivider]}>
+                                  <View style={{ flex: 1, paddingRight: 8 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                      <Text style={styles.catItemName}>
+                                        {it.quantity}x {it.name}
+                                      </Text>
+                                      {it.isBucket && (
+                                        <View style={styles.bucketBadge}>
+                                          <Text style={styles.bucketBadgeText}>BUCKET (PER KG)</Text>
+                                        </View>
+                                      )}
+                                    </View>
 
-                  <TouchableOpacity
-                    style={[styles.callBtn, { backgroundColor: '#25D366' }]}
-                    onPress={() =>
-                      Linking.openURL(
-                        `https://wa.me/${selectedOrder.customerPhone?.replace(/[^0-9]/g, '')}`
-                      )
-                    }
-                  >
-                    <MessageCircle size={16} color={COLORS.white} strokeWidth={2.5} />
-                    <Text style={[styles.contactBtnText, { color: COLORS.white }]}>
-                      WHATSAPP
-                    </Text>
-                  </TouchableOpacity>
+                                    {isKg ? (
+                                      <View style={{ marginTop: 3 }}>
+                                        <Text style={styles.catItemSubtext}>
+                                          {it.kgWeight ? `MEASURED WEIGHT: ${it.kgWeight} KG` : 'AWAITING AGENT WEIGHT ENTRY'}
+                                        </Text>
+                                        {it.isBucket && (
+                                          <Text style={styles.catItemCountText}>
+                                            CLOTHES COUNT: {it.quantity}
+                                          </Text>
+                                        )}
+                                      </View>
+                                    ) : (
+                                      <Text style={styles.catItemPriceUnit}>
+                                        ₹{it.price} / ITEM
+                                      </Text>
+                                    )}
+                                  </View>
+
+                                  <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                                    {isKg ? (
+                                      selectedOrder.kgPriceUpdated && it.price > 0 ? (
+                                        <View style={styles.itemPriceBadge}>
+                                          <Text style={styles.itemPriceBadgeText}>₹{linePrice}</Text>
+                                        </View>
+                                      ) : (
+                                        <View style={styles.itemPendingBadge}>
+                                          <Text style={styles.itemPendingBadgeText}>PENDING</Text>
+                                        </View>
+                                      )
+                                    ) : (
+                                      <View style={styles.itemPriceBadge}>
+                                        <Text style={styles.itemPriceBadgeText}>₹{linePrice}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      ))}
+
+                      {/* Selected Wash Add-ons & Preferences */}
+                      {selectedOrder.washPreferences && selectedOrder.washPreferences.length > 0 && (
+                        <View style={styles.addonsCard}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                            <Sparkles size={14} color="#0D8DE3" strokeWidth={2.5} />
+                            <Text style={styles.addonsHeader}>WASH ADD-ONS & PREFERENCES</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {selectedOrder.washPreferences.map((pref: any, idx: number) => (
+                              <View key={idx} style={styles.addonChip}>
+                                <Text style={styles.addonChipName}>{pref.name}</Text>
+                                <Text style={styles.addonChipPrice}>+₹{pref.price}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Financial / Billing Summary Card */}
+                      <View style={styles.breakdownCard}>
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>Items Subtotal</Text>
+                          <Text style={styles.breakdownValue}>
+                            ₹{selectedOrder.items
+                              ?.filter((it: any) => it.unit !== 'KG')
+                              .reduce((s: number, it: any) => s + ((it.price || 0) * it.quantity), 0)}
+                            {selectedOrder.items?.some((it: any) => it.unit === 'KG') && (
+                              <Text style={{ color: '#0D8DE3', fontSize: 11 }}>
+                                {selectedOrder.kgPriceUpdated ? ' (+ KG)' : ' (+ KG Pending)'}
+                              </Text>
+                            )}
+                          </Text>
+                        </View>
+                        {selectedOrder.washPreferences && selectedOrder.washPreferences.length > 0 && (
+                          <View style={styles.breakdownRow}>
+                            <Text style={styles.breakdownLabel}>Wash Add-ons</Text>
+                            <Text style={styles.breakdownValue}>
+                              +₹{selectedOrder.washPreferences.reduce((s: number, p: any) => s + (p.price || 0), 0)}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>Delivery Fee</Text>
+                          <Text style={styles.breakdownValue}>₹{selectedOrder.deliveryFee || 0}</Text>
+                        </View>
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>Tax</Text>
+                          <Text style={styles.breakdownValue}>₹{selectedOrder.taxAmount || 0}</Text>
+                        </View>
+                        {selectedOrder.discountAmount ? (
+                          <View style={styles.breakdownRow}>
+                            <Text style={[styles.breakdownLabel, { color: '#16A34A' }]}>Discount</Text>
+                            <Text style={[styles.breakdownValue, { color: '#16A34A' }]}>-₹{selectedOrder.discountAmount}</Text>
+                          </View>
+                        ) : null}
+                        <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
+                          <Text style={styles.breakdownTotalLabel}>TOTAL AMOUNT</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.breakdownTotalValue}>₹{selectedOrder.totalAmount}</Text>
+                            {selectedOrder.items?.some((it: any) => it.unit === 'KG') && !selectedOrder.kgPriceUpdated && (
+                              <View style={styles.kgPendingTag}>
+                                <Text style={styles.kgPendingTagText}>KG PENDING</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* ─── 2. ADDRESS & CONTACT DETAILS SECTION (DOWN) ─────── */}
+                  <View style={styles.addressSectionCard}>
+                    <View style={styles.addressSectionHeader}>
+                      <Text style={styles.sectionSuperHeader}>CONTACT & LOGISTICS</Text>
+                      <Text style={styles.sectionMainHeader}>CUSTOMER & DELIVERY DETAILS</Text>
+                    </View>
+
+                    <View style={{ padding: 12, gap: 10 }}>
+                      {/* Customer Contact Card */}
+                      <View style={styles.detailBox}>
+                        <Text style={styles.detailBoxLabel}>CUSTOMER CONTACT</Text>
+                        <Text style={styles.customerDetailName}>{modalCustomerName}</Text>
+                        <Text style={styles.customerDetailPhone}>
+                          {modalCustomerPhone ? `+91 ${modalCustomerPhone}` : 'No phone provided'}
+                        </Text>
+                        
+                        {modalCustomerPhone ? (
+                          <View style={styles.contactActionRow}>
+                            <TouchableOpacity
+                              style={styles.actionCallBtn}
+                              onPress={() => Linking.openURL(`tel:${modalCustomerPhone}`)}
+                            >
+                              <Phone size={14} color={COLORS.black} strokeWidth={2.5} />
+                              <Text style={styles.actionBtnTextSmall}>CALL</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.actionWaBtn}
+                              onPress={() =>
+                                Linking.openURL(
+                                  `https://wa.me/${modalCustomerPhone.replace(/[^0-9]/g, '')}`
+                                )
+                              }
+                            >
+                              <MessageCircle size={14} color={COLORS.white} strokeWidth={2.5} />
+                              <Text style={[styles.actionBtnTextSmall, { color: COLORS.white }]}>
+                                WHATSAPP
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {/* Pickup Address Card */}
+                      <View style={styles.detailBox}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <MapPin size={15} color="#0D8DE3" strokeWidth={2.5} />
+                          <Text style={styles.detailBoxLabel}>PICKUP ADDRESS</Text>
+                        </View>
+                        <Text style={styles.addressText}>
+                          {selectedOrder.pickupAddress || 'Shop Branch'}
+                        </Text>
+                      </View>
+
+                      {/* Delivery Address Card */}
+                      <View style={styles.detailBox}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <MapPin size={15} color="#10B981" strokeWidth={2.5} />
+                          <Text style={styles.detailBoxLabel}>DELIVERY ADDRESS</Text>
+                        </View>
+                        <Text style={styles.addressText}>
+                          {selectedOrder.deliveryAddress || 'Customer Address'}
+                        </Text>
+                      </View>
+
+                      {/* Payment Mode & Status Card */}
+                      <View style={styles.detailBox}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <View>
+                            <Text style={styles.detailBoxLabel}>PAYMENT METHOD</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                              <CreditCard size={14} color={COLORS.black} strokeWidth={2.5} />
+                              <Text style={styles.paymentMethodText}>
+                                {selectedOrder.paymentMode === 'COD'
+                                  ? 'Cash on Delivery (COD)'
+                                  : selectedOrder.paymentMode
+                                  ? `Online (${selectedOrder.paymentMode})`
+                                  : 'Pending Payment Mode'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View
+                            style={[
+                              styles.paymentStatusBadge,
+                              {
+                                backgroundColor:
+                                  selectedOrder.paymentStatus === 'SUCCESS' || selectedOrder.status === 'DELIVERED'
+                                    ? '#9AE600'
+                                    : '#FEF08A',
+                              },
+                            ]}
+                          >
+                            <Text style={styles.paymentStatusBadgeText}>
+                              {selectedOrder.paymentStatus || (selectedOrder.status === 'DELIVERED' ? 'SUCCESS' : 'PENDING')}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Admin Editable Overrides */}
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>OVERRIDE TOTAL AMOUNT (₹)</Text>
+                        <TextInput
+                          style={styles.modalInput}
+                          value={editPrice}
+                          onChangeText={setEditPrice}
+                          keyboardType="numeric"
+                          placeholder="0"
+                        />
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>ADMIN NOTES & INSTRUCTIONS</Text>
+                        <TextInput
+                          style={[styles.modalInput, { height: 65 }]}
+                          value={editNotes}
+                          onChangeText={setEditNotes}
+                          placeholder="Special instructions or notes"
+                          multiline
+                        />
+                      </View>
+                    </View>
+                  </View>
                 </View>
               )}
             </ScrollView>
@@ -813,6 +1125,380 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.black,
+  },
+  modalPreHeading: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#64748B',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  orderSectionCard: {
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    overflow: 'hidden',
+    ...NEO_SHADOW.box2,
+  },
+  orderSectionHeader: {
+    backgroundColor: COLORS.black,
+    padding: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionSuperHeader: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#9AE600',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  sectionMainHeader: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  kgStatusPill: {
+    borderWidth: 1,
+    borderColor: COLORS.black,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  kgStatusPillText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: COLORS.black,
+  },
+  catGroupCard: {
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+    backgroundColor: COLORS.white,
+    ...NEO_SHADOW.box2,
+  },
+  catHeaderBanner: {
+    backgroundColor: '#0D8DE3',
+    padding: 9,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderColor: COLORS.black,
+  },
+  catBadge: {
+    backgroundColor: '#9AE600',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+    marginRight: 6,
+  },
+  catBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  catBannerTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '900',
+    color: COLORS.white,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  catCountBadge: {
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+  },
+  catCountBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: COLORS.black,
+  },
+  catItemsList: {
+    padding: 10,
+    backgroundColor: '#FAF9F6',
+  },
+  catItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  catItemDivider: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  catItemName: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+  },
+  bucketBadge: {
+    backgroundColor: '#0D8DE3',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+  },
+  bucketBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: 0.5,
+  },
+  catItemSubtext: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+  },
+  catItemCountText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#0D8DE3',
+    textTransform: 'uppercase',
+    marginTop: 1,
+  },
+  catItemPriceUnit: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  itemPriceBadge: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+    ...NEO_SHADOW.box2,
+  },
+  itemPriceBadgeText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.black,
+  },
+  itemPendingBadge: {
+    backgroundColor: '#FEF08A',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+  },
+  itemPendingBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#854D0E',
+  },
+  addonsCard: {
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 10,
+    backgroundColor: '#F0FDF4',
+  },
+  addonsHeader: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  addonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+  },
+  addonChipName: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  addonChipPrice: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#16A34A',
+  },
+  breakdownCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 10,
+    gap: 5,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  breakdownLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  breakdownValue: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.black,
+  },
+  breakdownTotalRow: {
+    borderTopWidth: 1.5,
+    borderTopColor: COLORS.black,
+    paddingTop: 6,
+    marginTop: 3,
+  },
+  breakdownTotalLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  breakdownTotalValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#0D8DE3',
+  },
+  kgPendingTag: {
+    backgroundColor: '#FEF08A',
+    borderWidth: 1,
+    borderColor: COLORS.black,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  kgPendingTagText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: '#854D0E',
+  },
+  addressSectionCard: {
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    overflow: 'hidden',
+    backgroundColor: COLORS.white,
+    ...NEO_SHADOW.box2,
+  },
+  addressSectionHeader: {
+    backgroundColor: '#F1F5F9',
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.black,
+    padding: 10,
+    paddingHorizontal: 12,
+  },
+  detailBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 10,
+  },
+  detailBoxLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  customerDetailName: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: COLORS.black,
+    marginTop: 2,
+  },
+  customerDetailPhone: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginTop: 1,
+  },
+  contactActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  actionCallBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.sm,
+    paddingVertical: 7,
+    ...NEO_SHADOW.box2,
+  },
+  actionWaBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#25D366',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.sm,
+    paddingVertical: 7,
+    ...NEO_SHADOW.box2,
+  },
+  actionBtnTextSmall: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: COLORS.black,
+  },
+  addressText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.black,
+    lineHeight: 16,
+  },
+  paymentMethodText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+  },
+  paymentStatusBadge: {
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+  },
+  paymentStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: COLORS.black,
+    textTransform: 'uppercase',
   },
   inputGroup: {
     marginBottom: SPACING.md,

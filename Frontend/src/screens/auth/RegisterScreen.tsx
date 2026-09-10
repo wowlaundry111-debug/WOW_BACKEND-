@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, ArrowLeft, User, Phone, Mail } from 'lucide-react-native';
+import { ArrowRight, ArrowLeft, User, Phone, Mail, Lock } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { useAppStore } from '../../store/useAppStore';
@@ -28,7 +28,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [accountExists, setAccountExists] = useState(false);
 
   const isValid = name.trim().length >= 2 && phone.length === 10 && email.includes('@');
   const { register } = useAppStore();
@@ -37,14 +40,19 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
     if (!isValid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setLoading(true);
+    setError('');
+    setAccountExists(false);
 
-    const res = await register(name, phone, email);
+    const res = await register(name, phone, email, password ? password.trim() : undefined);
     setLoading(false);
 
     if (res.success) {
       onRegisterSuccess(email);
     } else {
-      alert(res.message);
+      // Check for 409 "account already exists" error from the backend
+      const isExists = res.message.toLowerCase().includes('already exists');
+      setAccountExists(isExists);
+      setError(res.message);
     }
   };
 
@@ -117,6 +125,37 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
             />
           </View>
 
+          {/* Password (Optional) */}
+          <Text style={styles.inputLabel}>PASSWORD (OPTIONAL)</Text>
+          <View style={styles.inputWrap}>
+            <Lock size={18} color={COLORS.black} strokeWidth={2.5} />
+            <TextInput
+              style={styles.input}
+              placeholder="Create password (optional)"
+              placeholderTextColor="#6B7280"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+
+          {/* Error Banner */}
+          {error ? (
+            <View style={accountExists ? styles.errorBoxExists : styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+              {accountExists && (
+                <TouchableOpacity
+                  onPress={onBack}
+                  style={styles.signInBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.signInBtnText}>Sign In Instead →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : null}
+
           {/* Submit */}
           <TouchableOpacity
             style={[styles.btn, !isValid && styles.btnDisabled]}
@@ -128,7 +167,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegist
               <ActivityIndicator color={COLORS.black} />
             ) : (
               <View style={styles.btnContent}>
-                <Text style={styles.btnText}>REGISTER & CONTINUE</Text>
+                <Text style={styles.btnText}>REGISTER & SIGN IN</Text>
                 <ArrowRight size={18} color={COLORS.black} strokeWidth={3} />
               </View>
             )}
@@ -283,6 +322,45 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.primary,
+    letterSpacing: 0.5,
+  },
+  errorBox: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    ...NEO_SHADOW.box4,
+  },
+  errorBoxExists: {
+    backgroundColor: '#FEF9C3',
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    ...NEO_SHADOW.box4,
+  },
+  errorText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  signInBtn: {
+    backgroundColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  signInBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.secondary,
     letterSpacing: 0.5,
   },
 });

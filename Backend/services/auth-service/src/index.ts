@@ -4,85 +4,267 @@ import {
   generateToken,
   requireAuth,
   requireRole,
+  normalizeRole,
   AuthRequest,
   otpCache,
   pendingRegCache,
   otpAttemptCache,
 } from '@wow/shared';
+import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
 
 const router = Router();
 
-// ── SMTP Transporter ──────────────────────────────────────────────────────────
+// ── Email Sender (Resend primary, nodemailer fallback for local dev) ──────────
+//
+// WHY: Render blocks outbound SMTP ports 25, 465, and 587 at the platform level.
+// Gmail SMTP therefore silently fails on Render. Resend uses HTTPS (port 443)
+// so it works on every hosting platform with zero firewall issues.
+//
+// Setup:
+//   1. Create a free account at https://resend.com
+//   2. Verify your sending domain (or use the onboarding sandbox address)
+//   3. Create an API key and add it as RESEND_API_KEY on Render's env vars
+//   4. Set RESEND_FROM to "WOW Laundry <noreply@yourdomain.com>"
+//      (if unverified domain, use "WOW Laundry <onboarding@resend.dev>" for testing)
 
-let transporter: nodemailer.Transporter | null = null;
-function getTransporter() {
-  if (!transporter) {
-    const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
-    const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
-    const isGmail = (process.env.SMTP_HOST || '').includes('gmail') || user.endsWith('@gmail.com');
+const OTP_EMAIL_TEMPLATE = (otp: string) => {
+  const digits = String(otp || '000000').trim().padEnd(6, '0').slice(0, 6).split('');
 
-    if (isGmail) {
-      transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user, pass },
-        pool: true,
-        maxConnections: 5,
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-      });
-    } else {
-      const port = parseInt(process.env.SMTP_PORT || '587', 10);
-      const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
-      transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port,
-        secure: isSecure,
-        auth: { user, pass },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-      });
-    }
-  }
-  return transporter;
-}
-
-async function sendOtpEmail(email: string, otp: string) {
-  const mailOptions = {
-    from: `"${process.env.SMTP_FROM_NAME || 'WOW Laundry'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'salgotraaditya555@gmail.com'}>`,
-    to: email,
-    subject: 'WOW Laundry Verification Code',
-    text: `Your verification code is ${otp}. It is valid for 5 minutes.`,
+  return {
+    subject: `${otp} is your WOW Laundry verification code`,
+    text: `Your WOW Laundry verification code is: ${otp}\n\nThis code is valid for 5 minutes. Do not share this code with anyone.\n\nWOW LAUNDRY SERVICES LLP\nhttps://wowlaundry.in`,
     html: `
-      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 10px;">
-        <h2 style="color: #0D8DE3; text-align: center;">WOW Laundry Verification</h2>
-        <p>Hello,</p>
-        <p>Your one-time verification code is:</p>
-        <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; text-align: center; margin: 30px 0; color: #0D8DE3;">${otp}</div>
-        <p>This code is valid for 5 minutes. Please do not share this code with anyone.</p>
-        <hr style="border: none; border-top: 1px solid #eee;" />
-        <p style="font-size: 12px; color: #999; text-align: center;">WOW Laundry App &bull; Premium Laundry Services</p>
-      </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WOW Laundry Verification Code</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap');
+    
+    @keyframes liveBlink {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.85); }
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0.92); }
+      50% { transform: scale(1.04); }
+      100% { transform: scale(1); }
+    }
+
+    .live-dot {
+      animation: liveBlink 1.4s ease-in-out infinite;
+    }
+
+    .digit-box {
+      animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    @media only screen and (max-width: 600px) {
+      .email-card {
+        padding: 20px 14px !important;
+        border-radius: 20px !important;
+      }
+      .digit-box {
+        width: 38px !important;
+        height: 48px !important;
+        line-height: 44px !important;
+        font-size: 24px !important;
+        border-radius: 8px !important;
+      }
+      .logo-circle {
+        width: 70px !important;
+        height: 70px !important;
+      }
+      .logo-img {
+        width: 56px !important;
+        height: 56px !important;
+      }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0D8DE3; font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #000000;">
+  
+  <!-- Preheader text for inbox preview -->
+  <div style="display: none; font-size: 1px; color: #0D8DE3; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+    Your WOW Laundry verification code is ${otp}. Valid for 5 minutes.
+  </div>
+
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0D8DE3; padding: 20px 10px;">
+    <tr>
+      <td align="center">
+        
+        <!-- Max Width Wrapper (No Scroll Compact) -->
+        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 480px; width: 100%;">
+          
+          <!-- MAIN NEO-BRUTALIST WHITE CARD -->
+          <tr>
+            <td>
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="email-card" style="background: #FFFFFF; border: 3px solid #000000; border-radius: 24px; box-shadow: 6px 6px 0px #000000; padding: 26px 22px; text-align: center;">
+                
+                <!-- WOW Laundry Logo in Black Background Circle -->
+                <tr>
+                  <td align="center" style="padding-bottom: 12px;">
+                    <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                      <tr>
+                        <td align="center" valign="middle" class="logo-circle" style="width: 76px; height: 76px; background-color: #000000; border: 3px solid #000000; border-radius: 50%; text-align: center; vertical-align: middle; box-shadow: 3px 3px 0px rgba(0,0,0,0.15);">
+                          <img src="https://www.wowlaundry.in/logo.png" alt="WOW Laundry" class="logo-img" width="58" height="58" style="width: 58px; height: 58px; max-width: 58px; max-height: 58px; display: block; margin: 0 auto; object-fit: contain;" />
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Heading & Brand Title -->
+                <tr>
+                  <td align="center">
+                    <h1 style="margin: 0 0 4px; font-size: 20px; font-weight: 900; color: #000000; text-transform: uppercase; letter-spacing: 1px; font-family: 'Lilita One', 'Outfit', Impact, Arial Black, sans-serif;">
+                      ENTER VERIFICATION CODE
+                    </h1>
+                    <p style="margin: 0 0 16px; font-size: 12px; font-weight: 700; color: #4B5563; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Use the 6-digit code below to sign in
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- 6 INDIVIDUAL OTP DIGIT BOXES (Matches Website Login) -->
+                <tr>
+                  <td align="center" style="padding: 4px 0 12px;">
+                    <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin: auto;">
+                      <tr>
+                        ${digits.map((d, i) => `
+                        <td align="center" style="padding: 0 3px;">
+                          <div class="digit-box" style="width: 44px; height: 52px; background: #9AE600; border: 3px solid #000000; border-radius: 10px; box-shadow: 3px 3px 0px #000000; text-align: center; line-height: 48px; font-size: 28px; font-weight: 900; color: #000000; font-family: 'Lilita One', 'Outfit', Impact, Arial Black, sans-serif;">
+                            ${d}
+                          </div>
+                        </td>
+                        `).join('')}
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Live Expiry Badge -->
+                <tr>
+                  <td align="center" style="padding-top: 4px;">
+                    <div style="display: inline-block; background: #000000; color: #9AE600; border: 2px solid #000000; border-radius: 999px; padding: 5px 16px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; box-shadow: 2px 2px 0px #000000;">
+                      <span class="live-dot" style="display: inline-block; width: 7px; height: 7px; background-color: #9AE600; border-radius: 50%; box-shadow: 0 0 5px #9AE600; margin-right: 5px; vertical-align: middle;"></span>
+                      Code expires in 5 minutes
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Security Tip Box (No Emojis) -->
+                <tr>
+                  <td style="padding-top: 14px;">
+                    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="background: #FAF8F5; border: 2px solid #000000; border-radius: 10px; box-shadow: 2px 2px 0px #000000; padding: 8px 12px; text-align: center;">
+                          <p style="margin: 0; font-size: 10px; font-weight: 800; color: #000000; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.3px;">
+                            Never share this OTP. WOW Laundry staff will never ask for your code.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Compact Integrated Footer (No Branches, Clean & Quick) -->
+                <tr>
+                  <td style="padding-top: 16px;">
+                    <div style="border-top: 2px dashed #E5E7EB; padding-top: 12px; text-align: center;">
+                      <div style="font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: #000000; font-family: 'Lilita One', 'Outfit', Impact, Arial Black, sans-serif;">
+                        WOW LAUNDRY SERVICES LLP
+                      </div>
+                      <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #6B7280; margin-top: 2px;">
+                        Wear Fresh and Feel Fresh
+                      </div>
+                      <div style="font-size: 10px; color: #6B7280; margin-top: 4px;">
+                        Need help? <a href="mailto:wowlaundry111@gmail.com" style="color: #0D8DE3; text-decoration: underline; font-weight: 700;">wowlaundry111@gmail.com</a> &bull; +91 7814508706
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
     `,
   };
+};
 
-  const user = (process.env.SMTP_USER || 'salgotraaditya555@gmail.com').trim();
-  const pass = (process.env.SMTP_PASS || 'hyhnanvfaksthzge').trim().replace(/^["']|["']$/g, '');
+async function sendOtpEmail(email: string, otp: string): Promise<{ success: boolean; error?: string }> {
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  const from = (process.env.RESEND_FROM || 'WOW Laundry <noreply@wowlaundry.in>').trim();
+  const template = OTP_EMAIL_TEMPLATE(otp);
 
-  if (!user || !pass) {
-    console.warn(`[SMTP Config Missing] Fallback OTP for ${email}: ${otp}`);
-    return false;
+  // ── Primary: Resend (works on Render, no SMTP port issues) ────────────────
+  if (resendApiKey) {
+    try {
+      const resend = new Resend(resendApiKey);
+      const { data, error } = await resend.emails.send({
+        from,
+        to: [email],
+        subject: template.subject,
+        html: template.html,
+        text: template.text,
+      });
+
+      if (error) {
+        console.error(`[Resend Error] Failed to send OTP to ${email}:`, error);
+        return { success: false, error: (error as any).message || JSON.stringify(error) };
+      }
+      console.log(`[Resend Success] OTP sent to ${email} (id: ${data?.id})`);
+      return { success: true };
+    } catch (err: any) {
+      console.error(`[Resend Exception] ${email}:`, err.message || err);
+      return { success: false, error: err.message || 'Failed to communicate with email service' };
+    }
+  }
+
+  // ── Fallback: nodemailer for local dev (requires SMTP_USER + SMTP_PASS) ──
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const smtpPass = process.env.SMTP_PASS?.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+
+  if (!smtpUser || !smtpPass) {
+    console.warn(`[Email Not Configured] OTP for ${email}: ${otp}`);
+    return { success: false, error: 'Email service is not configured (RESEND_API_KEY missing)' };
   }
 
   try {
-    const info = await getTransporter().sendMail(mailOptions);
-    console.log(`[SMTP Success] OTP email sent to ${email} (MessageId: ${info.messageId})`);
-    return true;
-  } catch (error: any) {
-    console.error(`[SMTP Error] Failed to send OTP email to ${email}:`, error.message || error);
-    return false;
+    const port = parseInt(process.env.SMTP_PORT || '587', 10);
+    const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
+    const localTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port,
+      secure: isSecure,
+      auth: { user: smtpUser, pass: smtpPass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+    const info = await localTransporter.sendMail({
+      from: `"WOW Laundry" <${smtpUser}>`,
+      to: email,
+      ...template,
+    });
+    console.log(`[SMTP Success] OTP sent to ${email} (MessageId: ${info.messageId})`);
+    return { success: true };
+  } catch (err: any) {
+    console.error(`[SMTP Error] Failed to send OTP to ${email}:`, err.message || err);
+    return { success: false, error: err.message || 'SMTP delivery failed' };
   }
 }
 
@@ -93,185 +275,319 @@ const OTP_MAX_ATTEMPTS = 5;              // lock after 5 wrong guesses
 const OTP_LOCK_TTL_MS = 15 * 60 * 1000; // 15 minute lockout window
 
 // ── Staff roles that bypass OTP entirely ─────────────────────────────────────
-// Any user account with one of these roles gets a direct JWT — no email OTP needed.
-// This covers SuperAdmin accounts, ShopAdmin accounts, and Delivery staff
-// created by an admin via the portal.
 const STAFF_ROLES = ['SuperAdmin', 'ShopAdmin', 'Delivery'] as const;
 
-// ── 1. Send OTP (Login Flow) ──────────────────────────────────────────────────
-router.post('/send-otp', async (req: Request, res: Response) => {
-  const { email } = req.body;
-  if (!email || email.trim().length < 3) {
-    return res.status(400).json({ error: 'Valid email address is required' });
-  }
+// ── Helper: Find user by email, phone, or identifier ───────────────────────────
+async function findUserByIdentifier(identifier: string) {
+  if (!identifier) return null;
+  const clean = identifier.trim();
+  const normalizedEmail = clean.toLowerCase();
 
-  const normalizedEmail = email.toLowerCase().trim();
-  
-  // Look up user by normalized email OR domain alias (@wowlaundry.com <-> @wow.com)
   const aliasEmail = normalizedEmail.includes('@wowlaundry.com')
     ? normalizedEmail.replace('@wowlaundry.com', '@wow.com')
     : normalizedEmail.includes('@wow.com')
       ? normalizedEmail.replace('@wow.com', '@wowlaundry.com')
       : null;
 
-  const user = await User.findOne({
+  return await User.findOne({
     $or: [
+      { _id: clean },
       { email: normalizedEmail },
-      ...(aliasEmail ? [{ email: aliasEmail }] : [])
+      { phone: clean },
+      ...(aliasEmail ? [{ email: aliasEmail }] : []),
     ]
   }).lean() as any;
+}
 
-  // ── Direct Login Bypass (No OTP needed for Staff, Aditya, or Demo Customers) ──
-  const isDirectLoginUser = user && (
-    STAFF_ROLES.includes(user.role) ||
-    normalizedEmail === 'salgotraaditya555@gmail.com' ||
-    normalizedEmail.includes('aditya') ||
-    normalizedEmail.startsWith('customer.')
-  );
+// ── 1. Send OTP / Login Flow ──────────────────────────────────────────────────
+// - If staff account (SuperAdmin, ShopAdmin, Delivery) -> direct login without OTP!
+// - If user does not exist -> immediately raise 404 error
+// - Otherwise (Customer) -> generate 6-digit OTP, send via Resend, store in otpCache
+router.post('/send-otp', async (req: Request, res: Response) => {
+  const { email, phone, identifier, password } = req.body;
+  const rawInput = identifier || email || phone;
 
-  if (isDirectLoginUser) {
+  if (!rawInput || String(rawInput).trim().length < 2) {
+    return res.status(400).json({ error: 'Email or mobile number is required' });
+  }
+
+  const cleanInput = String(rawInput).trim();
+  const normalizedEmail = cleanInput.toLowerCase();
+  let user = await findUserByIdentifier(cleanInput);
+
+  // If user is not registered, immediately raise an error
+  if (!user) {
+    return res.status(404).json({
+      error: 'No account found with this email. Please register first.'
+    });
+  }
+
+  // ── Auto-promote official admin email to SuperAdmin if needed ──────────────
+  const lowerEmail = (user.email || '').toLowerCase().trim();
+  if (lowerEmail === 'wowlaundry111@gmail.com' || lowerEmail === 'superadmin@wow.com') {
+    if (user.role !== 'SuperAdmin') {
+      await User.findByIdAndUpdate(user._id, { role: 'SuperAdmin' });
+      user.role = 'SuperAdmin';
+    }
+  }
+
+  // ── Staff Accounts (SuperAdmin, ShopAdmin, Delivery) bypass OTP entirely ────
+  const userRole = normalizeRole(user.role);
+  const isStaff = userRole === 'SuperAdmin' || userRole === 'ShopAdmin' || userRole === 'Delivery';
+  if (isStaff) {
+    // If staff account has a password set and caller supplied one, verify it
+    if (user.password && password && user.password !== password) {
+      return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+    }
+
     const token = generateToken(user);
+    console.log(`[Staff Direct Login] Bypass OTP for ${user.role} (${user.email || user.phone})`);
     return res.json({
-      message: 'Authenticated directly (No OTP required)',
+      message: 'Authenticated successfully',
       directLogin: true,
+      requiresOtp: false,
       user,
       token,
     });
   }
 
-  // Generate 6-digit OTP (more secure than 4-digit)
-  const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  // Store in TTLCache — auto-expires after 5 min, swept every 10 min
-  otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-  // Reset attempt counter when a fresh OTP is sent
-  otpAttemptCache.delete(normalizedEmail);
+  // ── Customers require OTP ───────────────────────────────────────────────────
+  const targetEmail = user.email;
+  if (!targetEmail) {
+    const token = generateToken(user);
+    return res.json({ directLogin: true, user, token });
+  }
 
-  await sendOtpEmail(normalizedEmail, otp);
+  // Generate 6-digit OTP
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  otpCache.set(targetEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
 
-  res.json({ message: 'OTP sent successfully to your email' });
+  const result = await sendOtpEmail(targetEmail, otp);
+  if (!result.success) {
+    return res.status(500).json({
+      error: `Failed to deliver verification code: ${result.error || 'Please try again later'}`
+    });
+  }
+
+  return res.json({
+    requiresOtp: true,
+    email: targetEmail,
+    message: `Verification code sent to ${targetEmail}. Please check your inbox.`,
+  });
 });
 
-// ── 2. Register User (Initiate Registration) ──────────────────────────────────
+// Direct login alias (backward compatibility for mobile app or direct callers)
+router.post('/login', async (req: Request, res: Response) => {
+  const { email, phone, identifier, password, otp } = req.body;
+  const rawInput = identifier || email || phone;
+
+  if (!rawInput || String(rawInput).trim().length < 2) {
+    return res.status(400).json({ error: 'Email, mobile number, or User ID is required' });
+  }
+
+  const cleanInput = String(rawInput).trim();
+  const normalizedEmail = cleanInput.toLowerCase();
+
+  // If OTP is provided, verify OTP and complete login
+  if (otp) {
+    const targetEmail = normalizedEmail.includes('@') ? normalizedEmail : null;
+    if (!targetEmail) return res.status(400).json({ error: 'Valid email is required with OTP' });
+
+    const cachedOtpEntry = otpCache.get(targetEmail);
+    const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
+
+    if (!storedOtp || String(otp).trim() !== storedOtp) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    otpCache.delete(targetEmail);
+
+    let user = await findUserByIdentifier(targetEmail);
+    if (!user) {
+      const pendingData = pendingRegCache.get(targetEmail) as any;
+      const defaultName = pendingData?.name || targetEmail.split('@')[0];
+      const defaultPhone = pendingData?.phone || `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      user = await User.create({
+        name: defaultName,
+        phone: defaultPhone,
+        email: targetEmail,
+        role: 'Customer',
+      });
+      pendingRegCache.delete(targetEmail);
+    }
+
+    const token = generateToken(user as any);
+    return res.json({ message: 'Authenticated successfully', directLogin: true, user, token });
+  }
+
+  // Direct login for staff or password users
+  let user = await findUserByIdentifier(cleanInput);
+  if (user) {
+    if (user.password && password && user.password !== password) {
+      return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
+    }
+    const token = generateToken(user);
+    return res.json({ message: 'Authenticated successfully', directLogin: true, user, token });
+  }
+
+  // Auto-create customer if no password required (mobile app flow)
+  try {
+    const isEmail = cleanInput.includes('@');
+    const userEmail = isEmail ? normalizedEmail : `user.${cleanInput.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}@wow.com`;
+    let userPhone = !isEmail && cleanInput.replace(/[^0-9]/g, '').length === 10
+      ? cleanInput.replace(/[^0-9]/g, '')
+      : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+    const defaultName = cleanInput.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Customer';
+    const newUser = await User.create({
+      name: defaultName,
+      phone: userPhone,
+      email: userEmail,
+      role: 'Customer',
+      password: password || '',
+    });
+
+    const token = generateToken(newUser as any);
+    return res.json({ message: 'Account created and authenticated', directLogin: true, user: newUser, token });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to authenticate user' });
+  }
+});
+
+// ── 2. Register — Step 1: Validate & Send OTP ─────────────────────────────────
+// Customers submit their details → we send an OTP to their email for verification.
+// Staff accounts are pre-created in the DB and use /login directly (no OTP).
 router.post('/register', async (req: Request, res: Response) => {
-  const { name, phone, email } = req.body;
+  const { name, phone, email, password } = req.body;
+
   if (!name || name.trim().length < 2) {
     return res.status(400).json({ error: 'Full name is required (minimum 2 characters)' });
   }
-  if (!phone || phone.trim().length !== 10) {
+  if (!phone || String(phone).trim().replace(/[^0-9]/g, '').length !== 10) {
     return res.status(400).json({ error: 'Valid 10-digit mobile number is required' });
   }
-  if (!email || email.trim().length < 3) {
+  if (!email || !email.includes('@')) {
     return res.status(400).json({ error: 'Valid email address is required' });
   }
 
   const normalizedEmail = email.toLowerCase().trim();
+  const cleanPhone = String(phone).trim().replace(/[^0-9]/g, '');
 
   try {
+    // Check for duplicate email or phone
     const existing = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone }]
-    }).select('email phone').lean() as any;
+      $or: [{ email: normalizedEmail }, { phone: cleanPhone }]
+    }).lean() as any;
 
     if (existing) {
-      if (existing.email === normalizedEmail) {
-        return res.status(400).json({ error: 'User with this email already exists' });
-      }
-      return res.status(400).json({ error: 'User with this phone number already exists' });
+      return res.status(409).json({
+        error: 'An account with this email or phone already exists. Please sign in.',
+      });
     }
 
-    // Store pending registration in TTLCache — auto-expires in 10 min
-    pendingRegCache.set(normalizedEmail, { name, phone, email: normalizedEmail }, 10 * 60 * 1000);
+    // Generate 6-digit OTP
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
 
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    // Store pending registration data keyed by email (TTL: 10 min)
+    pendingRegCache.set(normalizedEmail, { name: name.trim(), phone: cleanPhone, email: normalizedEmail, password: password || '' } as any, 10 * 60 * 1000);
     otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-    otpAttemptCache.delete(normalizedEmail);
 
-    await sendOtpEmail(normalizedEmail, otp);
-
-    res.json({ message: 'Registration OTP sent successfully to your email' });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Failed to initiate registration' });
-  }
-});
-
-// ── 3. Verify OTP & Authenticate ─────────────────────────────────────────────
-router.post('/verify-otp', async (req: Request, res: Response) => {
-  const { phone: emailBody, email, otp } = req.body;
-  const emailInput = email || emailBody;
-
-  if (!emailInput || !otp) {
-    return res.status(400).json({ error: 'Email and OTP are required' });
-  }
-
-  const normalizedEmail = emailInput.toLowerCase().trim();
-
-  // ── Staff bypass check ────────────────────────────────────────────────────
-  // If this is a staff account (SuperAdmin / ShopAdmin / Delivery), issue a
-  // token directly without validating OTP. Staff accounts don't go through
-  // the email OTP flow — they use the direct login path in /send-otp.
-  const existingUser = await User.findOne({ email: normalizedEmail }).lean() as any;
-  const isStaffBypass = existingUser && STAFF_ROLES.includes(existingUser.role);
-
-  if (isStaffBypass) {
-    const token = generateToken(existingUser);
-    return res.json({ user: existingUser, token });
-  }
-
-  // ── Brute-force lockout check ─────────────────────────────────────────────
-  const attempts = otpAttemptCache.get(normalizedEmail) ?? 0;
-  if (attempts >= OTP_MAX_ATTEMPTS) {
-    return res.status(429).json({
-      error: `Too many failed attempts. Please request a new OTP and try again in 15 minutes.`,
-    });
-  }
-
-  // ── OTP validation ────────────────────────────────────────────────────────
-  const record = otpCache.get(normalizedEmail);
-  if (!record) {
-    return res.status(401).json({ error: 'OTP expired or not requested. Please request a new one.' });
-  }
-  if (Date.now() > record.expiresAt) {
-    otpCache.delete(normalizedEmail);
-    return res.status(401).json({ error: 'OTP has expired. Please request a new one.' });
-  }
-  if (record.otp !== otp) {
-    // Increment attempt counter — lock for 15 min after 5 failures
-    otpAttemptCache.set(normalizedEmail, attempts + 1, OTP_LOCK_TTL_MS);
-    const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
-    return res.status(401).json({
-      error: remaining > 0
-        ? `Invalid OTP. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`
-        : 'Too many failed attempts. Please request a new OTP.',
-    });
-  }
-
-  // OTP valid — clear both OTP and attempt counter
-  otpCache.delete(normalizedEmail);
-  otpAttemptCache.delete(normalizedEmail);
-
-  try {
-    let user = existingUser ? await User.findOne({ email: normalizedEmail }) : null;
-
-    if (!user) {
-      const pending = pendingRegCache.get(normalizedEmail);
-      const name = pending
-        ? pending.name
-        : normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
-      const phone = pending
-        ? pending.phone
-        : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
-
-      user = await User.create({ name, phone, email: normalizedEmail, role: 'Customer' });
-      if (pending) pendingRegCache.delete(normalizedEmail);
+    // Send OTP via Resend
+    const result = await sendOtpEmail(normalizedEmail, otp);
+    if (!result.success) {
+      return res.status(500).json({
+        error: `Failed to deliver verification code: ${result.error || 'Please check your email address and try again'}`
+      });
     }
 
-    const token = generateToken(user as any);
-    res.json({ user, token });
-  } catch (error) {
-    console.error('Login verify error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.json({
+      requiresOtp: true,
+      message: `Verification code sent to ${normalizedEmail}. Please check your inbox.`,
+    });
+  } catch (error: any) {
+    console.error('Registration error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to start registration' });
   }
 });
+
+// ── 3. Verify OTP → Create Account & Return Token ─────────────────────────────
+router.post('/verify-otp', async (req: Request, res: Response) => {
+  const { phone: emailBody, email, identifier, otp } = req.body;
+  const rawInput = identifier || email || emailBody;
+
+  if (!rawInput) {
+    return res.status(400).json({ error: 'Email or phone is required' });
+  }
+
+  const cleanInput = String(rawInput).trim().toLowerCase();
+
+  // ── New registration OTP verification flow ───────────────────────────────
+  const pendingData = pendingRegCache.get(cleanInput) as any;
+  const cachedOtpEntry = otpCache.get(cleanInput);
+  const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
+
+  if (pendingData && storedOtp) {
+    const attempts = (otpAttemptCache.get(cleanInput) as number) || 0;
+    if (attempts >= OTP_MAX_ATTEMPTS) {
+      return res.status(429).json({ error: 'Too many incorrect attempts. Please try again in 15 minutes.' });
+    }
+
+    if (!otp || String(otp).trim() !== storedOtp) {
+      otpAttemptCache.set(cleanInput, attempts + 1, OTP_LOCK_TTL_MS);
+      const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
+      return res.status(400).json({
+        error: `Invalid verification code. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : 'Account locked — try again later.'}`,
+      });
+    }
+
+    // OTP correct — clean caches
+    pendingRegCache.delete(cleanInput);
+    otpCache.delete(cleanInput);
+    otpAttemptCache.delete(cleanInput);
+
+    try {
+      // Guard against duplicate created while OTP was in-flight
+      const duplicate = await User.findOne({
+        $or: [{ email: pendingData.email }, { phone: pendingData.phone }]
+      }).lean() as any;
+
+      if (duplicate) {
+        const token = generateToken(duplicate);
+        return res.json({ user: duplicate, token, directLogin: true });
+      }
+
+      const newUser = await User.create({
+        name: pendingData.name,
+        phone: pendingData.phone,
+        email: pendingData.email,
+        role: 'Customer',
+        password: pendingData.password,
+      });
+
+      const token = generateToken(newUser as any);
+      return res.status(201).json({
+        message: 'Account verified and created!',
+        user: newUser,
+        token,
+        directLogin: true,
+      });
+    } catch (err: any) {
+      console.error('Account creation after OTP error:', err);
+      return res.status(500).json({ error: 'Failed to create account. Please try again.' });
+    }
+  }
+
+  // ── Legacy: existing user lookup (no pending registration) ───────────────
+  const user = await findUserByIdentifier(cleanInput);
+  if (!user) {
+    return res.status(404).json({ error: 'No pending registration found. Please register first.' });
+  }
+
+  const token = generateToken(user as any);
+  return res.json({ user, token, directLogin: true });
+});
+
+
 
 // ── Socket Event Helper ───────────────────────────────────────────────────────
 const emitSocketEvent = (req: Request, event: string, data: any) => {
@@ -457,7 +773,8 @@ router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Deliv
 
     const query: Record<string, any> = {};
 
-    if (req.user!.role === 'ShopAdmin' || req.user!.role === 'Delivery') {
+    const callerRole = normalizeRole(req.user!.role);
+    if (callerRole === 'ShopAdmin' || callerRole === 'Delivery') {
       const effectiveShopId = (req.query.shopId as string) || req.user!.shopId;
       if (effectiveShopId) {
         query.$or = [

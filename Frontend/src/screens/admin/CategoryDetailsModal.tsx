@@ -53,8 +53,14 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemUnit, setNewItemUnit] = useState<'KG' | 'ITEM'>('ITEM');
   const [newItemImage, setNewItemImage] = useState('');
+  const [newItemIsBucket, setNewItemIsBucket] = useState(false);
   const [isVectorPickerOpen, setVectorPickerOpen] = useState(false);
   const [vectorTarget, setVectorTarget] = useState<'item' | 'category'>('item');
+
+  // Parent category (for breadcrumb display)
+  const parentCategory = category?.parentCategoryId
+    ? categories.find(c => c._id === category.parentCategoryId)
+    : null;
 
   // Category Edit State
   const [isEditingCategory, setIsEditingCategory] = useState(false);
@@ -64,6 +70,10 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
   if (!category) return null;
 
   const handleAddItem = () => {
+    if (!category?.parentCategoryId) {
+      Alert.alert('Sub-Category Required', 'Items can only be created inside a sub-category. Please select or create a sub-category first.');
+      return;
+    }
     if (!newItemName.trim() || !newItemPrice.trim()) {
       Alert.alert('Required', 'Please enter a name and price');
       return;
@@ -79,6 +89,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
         name: newItemName.trim(),
         description: newItemDesc.trim(),
         image: newItemImage || undefined,
+        isBucket: newItemIsBucket,
         ...(newItemUnit === 'KG'
           ? { pricePerKg: price, pricePerItem: undefined }
           : { pricePerItem: price, pricePerKg: undefined }),
@@ -91,7 +102,8 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
         newItemDesc.trim(),
         price,
         newItemUnit,
-        newItemImage || undefined
+        newItemImage || undefined,
+        newItemIsBucket,
       );
     }
 
@@ -109,6 +121,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
     setNewItemImage(item.image || '');
     setNewItemPrice(String(item.pricePerKg || item.pricePerItem || ''));
     setNewItemUnit(item.pricePerKg ? 'KG' : 'ITEM');
+    setNewItemIsBucket(!!item.isBucket);
     setIsAdding(true);
   };
 
@@ -166,6 +179,12 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
             </TouchableOpacity>
 
             <View style={{ flex: 1, marginHorizontal: 12 }}>
+              {/* Breadcrumb */}
+              {parentCategory && (
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#6B7280', letterSpacing: 0.5, marginBottom: 2, textTransform: 'uppercase' }}>
+                  {parentCategory.name} ›
+                </Text>
+              )}
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {category.name}
               </Text>
@@ -239,8 +258,17 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
               </View>
             )}
 
-            {/* Add Service Section / Button */}
-            {!isAdding ? (
+            {/* Add Service Section / Button — strictly allowed in sub-categories only */}
+            {!category.parentCategoryId ? (
+              <View style={{ marginVertical: 12, padding: 14, backgroundColor: '#FEF3C7', borderColor: '#D97706', borderWidth: 2, borderRadius: 14 }}>
+                <Text style={{ fontSize: 12, fontWeight: '900', color: '#92400E', textTransform: 'uppercase' }}>
+                  Items are only valid in sub-categories
+                </Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#78350F', marginTop: 3 }}>
+                  Individual service items must belong to a sub-category. Please open a sub-category to create and manage items.
+                </Text>
+              </View>
+            ) : !isAdding ? (
               <TouchableOpacity
                 style={styles.addServiceCTA}
                 activeOpacity={0.85}
@@ -361,6 +389,27 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
+                {/* Bucket Item Toggle */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: COLORS.black, borderRadius: RADIUS.md, padding: 12, marginTop: 8 }}>
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '900', fontFamily: 'Outfit_800ExtraBold', color: COLORS.black, letterSpacing: 0.5 }}>BUCKET ITEM</Text>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#6B7280', marginTop: 2 }}>Large tap card in customer shop view</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setNewItemIsBucket(!newItemIsBucket)}
+                    style={{
+                      width: 44, height: 24, borderRadius: 12, borderWidth: 2, borderColor: COLORS.black,
+                      backgroundColor: newItemIsBucket ? '#F97316' : '#E5E7EB',
+                      justifyContent: 'center', paddingHorizontal: 2,
+                    }}
+                  >
+                    <View style={{
+                      width: 16, height: 16, borderRadius: 8, backgroundColor: COLORS.white, borderWidth: 1.5, borderColor: COLORS.black,
+                      alignSelf: newItemIsBucket ? 'flex-end' : 'flex-start',
+                    }} />
+                  </TouchableOpacity>
+                </View>
+
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                   <TouchableOpacity
                     style={styles.cancelSmallBtn}
@@ -396,7 +445,14 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                   </View>
 
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.itemName}>{item.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={styles.itemName}>{item.name}</Text>
+                      {item.isBucket && (
+                        <View style={{ backgroundColor: '#FED7AA', borderWidth: 1, borderColor: COLORS.black, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 8, fontWeight: '900', color: COLORS.black }}>BUCKET</Text>
+                        </View>
+                      )}
+                    </View>
                     {item.description ? (
                       <Text style={styles.itemDesc} numberOfLines={1}>
                         {item.description}
@@ -404,6 +460,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                     ) : null}
                     <Text style={styles.itemPriceText}>
                       ₹{price} <Text style={styles.itemPriceUnit}>/ {unit}</Text>
+                      {item.pricePerKg ? <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '700' }}> · Final at delivery</Text> : null}
                     </Text>
                   </View>
 
