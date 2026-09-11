@@ -37,32 +37,44 @@ const USERS = [
 ];
 
 const CATEGORIES = [
-  // Lawgate Categories
+  // Lawgate Top-Level Categories
   { _id: 'cat_lawgate_1', shopId: 'shop_lawgate', name: 'Everyday Wear' },
   { _id: 'cat_lawgate_2', shopId: 'shop_lawgate', name: 'Winter Jackets & Coats' },
   { _id: 'cat_lawgate_3', shopId: 'shop_lawgate', name: 'Premium Drycleaning' },
   { _id: 'cat_lawgate_4', shopId: 'shop_lawgate', name: 'Bedsheets & Curtains' },
 
-  // AGI Categories
+  // Lawgate Sub-Categories
+  { _id: 'cat_lawgate_sub1', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_1', name: 'Standard Wash & Iron' },
+  { _id: 'cat_lawgate_sub2', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_1', name: 'Regular Mixed Wash' },
+  { _id: 'cat_lawgate_sub3', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_2', name: 'Heavy Winter Wear' },
+  { _id: 'cat_lawgate_sub4', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_3', name: 'Designer & Silk Care' },
+  { _id: 'cat_lawgate_sub5', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_4', name: 'Bedding & Linen' },
+
+  // AGI Top-Level Categories
   { _id: 'cat_agi_1', shopId: 'shop_agi', name: 'Student Wash & Fold' },
   { _id: 'cat_agi_2', shopId: 'shop_agi', name: 'Formals & Interview Wear' },
   { _id: 'cat_agi_3', shopId: 'shop_agi', name: 'Hostel Bedding' },
+
+  // AGI Sub-Categories
+  { _id: 'cat_agi_sub1', shopId: 'shop_agi', parentCategoryId: 'cat_agi_1', name: 'Budget Hostel Wash' },
+  { _id: 'cat_agi_sub2', shopId: 'shop_agi', parentCategoryId: 'cat_agi_2', name: 'Placement Formals' },
+  { _id: 'cat_agi_sub3', shopId: 'shop_agi', parentCategoryId: 'cat_agi_3', name: 'Hostel Blanket Care' },
 ];
 
 const ITEMS = [
   // Lawgate Items
-  { _id: 'item_lg_1', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_1', name: 'T-Shirt Wash & Iron', description: 'Standard wash, fabric softener, and steam iron.', pricePerItem: 20 },
-  { _id: 'item_lg_2', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_1', name: 'Denim Jeans', description: 'Tough wash for denims with color protection.', pricePerItem: 40 },
-  { _id: 'item_lg_3', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_1', name: 'Regular Wash (Per KG)', description: 'Everyday clothing mixed wash. Max 5kg per cycle.', pricePerKg: 60 },
-  { _id: 'item_lg_4', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_2', name: 'Heavy Winter Jacket', description: 'Dry cleaning for heavy winter coats and jackets.', pricePerItem: 250 },
-  { _id: 'item_lg_5', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_3', name: 'Designer Dress Dryclean', description: 'Premium care for delicate and designer wear.', pricePerItem: 350 },
-  { _id: 'item_lg_6', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_4', name: 'Double Bedsheet Set', description: 'Includes 1 double bedsheet and 2 pillow covers.', pricePerItem: 120 },
+  { _id: 'item_lg_1', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub1', name: 'T-Shirt Wash & Iron', description: 'Standard wash, fabric softener, and steam iron.', pricePerItem: 20 },
+  { _id: 'item_lg_2', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub1', name: 'Denim Jeans', description: 'Tough wash for denims with color protection.', pricePerItem: 40 },
+  { _id: 'item_lg_3', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub2', name: 'Regular Wash (Per KG)', description: 'Everyday clothing mixed wash. Max 5kg per cycle.', pricePerKg: 60, isBucket: true },
+  { _id: 'item_lg_4', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub3', name: 'Heavy Winter Jacket', description: 'Dry cleaning for heavy winter coats and jackets.', pricePerItem: 250 },
+  { _id: 'item_lg_5', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub4', name: 'Designer Dress Dryclean', description: 'Premium care for delicate and designer wear.', pricePerItem: 350 },
+  { _id: 'item_lg_6', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub5', name: 'Double Bedsheet Set', description: 'Includes 1 double bedsheet and 2 pillow covers.', pricePerItem: 120 },
 
   // AGI Items
-  { _id: 'item_agi_1', shopId: 'shop_agi', categoryId: 'cat_agi_1', name: 'Student Budget Wash (Per KG)', description: 'Affordable wash and fold for everyday hostel clothes.', pricePerKg: 50 },
-  { _id: 'item_agi_2', shopId: 'shop_agi', categoryId: 'cat_agi_1', name: 'T-Shirt / Top', description: 'Single item wash and fold.', pricePerItem: 15 },
-  { _id: 'item_agi_3', shopId: 'shop_agi', categoryId: 'cat_agi_2', name: 'Two-Piece Suit Dryclean', description: 'Perfect for placements and interviews.', pricePerItem: 200 },
-  { _id: 'item_agi_4', shopId: 'shop_agi', categoryId: 'cat_agi_2', name: 'Formal Shirt Steam Press', description: 'Crisp steam ironing for formal shirts.', pricePerItem: 25 },
+  { _id: 'item_agi_1', shopId: 'shop_agi', categoryId: 'cat_agi_sub1', name: 'Student Budget Wash (Per KG)', description: 'Affordable wash and fold for everyday hostel clothes.', pricePerKg: 50, isBucket: true },
+  { _id: 'item_agi_2', shopId: 'shop_agi', categoryId: 'cat_agi_sub1', name: 'T-Shirt / Top', description: 'Single item wash and fold.', pricePerItem: 15 },
+  { _id: 'item_agi_3', shopId: 'shop_agi', categoryId: 'cat_agi_sub2', name: 'Two-Piece Suit Dryclean', description: 'Perfect for placements and interviews.', pricePerItem: 200 },
+  { _id: 'item_agi_4', shopId: 'shop_agi', categoryId: 'cat_agi_sub2', name: 'Formal Shirt Steam Press', description: 'Crisp steam ironing for formal shirts.', pricePerItem: 25 },
   { _id: 'item_agi_5', shopId: 'shop_agi', categoryId: 'cat_agi_3', name: 'Hostel Blanket Wash', description: 'Deep clean for single hostel blankets.', pricePerItem: 150 },
 ];
 
