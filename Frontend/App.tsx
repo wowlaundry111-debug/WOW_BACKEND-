@@ -150,11 +150,15 @@ export default function App() {
         <ExpoStatusBar style="dark" />
         {renderCurrentPortal()}
 
-        {/* Dev Role Switcher FAB - Hidden for production UI */}
-        {/* <TouchableOpacity style={styles.devFab} onPress={() => setSwitcherOpen(true)} activeOpacity={0.85}>
-          <Text style={styles.devFabText}>⇄</Text>
-        </TouchableOpacity>
-        <SwitcherModal visible={switcherOpen} onClose={() => setSwitcherOpen(false)} /> */}
+        {/* Dev Role Switcher FAB in Development mode */}
+        {__DEV__ && (
+          <>
+            <TouchableOpacity style={styles.devFab} onPress={() => setSwitcherOpen(true)} activeOpacity={0.85}>
+              <Text style={styles.devFabText}>⇄</Text>
+            </TouchableOpacity>
+            <SwitcherModal visible={switcherOpen} onClose={() => setSwitcherOpen(false)} />
+          </>
+        )}
       </View>
     </SafeAreaProvider>
   );

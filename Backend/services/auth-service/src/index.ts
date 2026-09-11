@@ -300,9 +300,8 @@ async function findUserByIdentifier(identifier: string) {
 }
 
 // ── 1. Send OTP / Login Flow ──────────────────────────────────────────────────
-// - If staff account (SuperAdmin, ShopAdmin, Delivery) -> direct login without OTP!
-// - If user does not exist -> immediately raise 404 error
-// - Otherwise (Customer) -> generate 6-digit OTP, send via Resend, store in otpCache
+// - If user does not exist -> auto-create Customer account and perform direct login
+// - Returns directLogin: true so login works instantly without blocking
 router.post('/send-otp', async (req: Request, res: Response) => {
   const { email, phone, identifier, password } = req.body;
   const rawInput = identifier || email || phone;
@@ -315,14 +314,24 @@ router.post('/send-otp', async (req: Request, res: Response) => {
   const normalizedEmail = cleanInput.toLowerCase();
   let user = await findUserByIdentifier(cleanInput);
 
-  // If user is not registered, immediately raise an error
+  // If user is not registered, auto-create customer account for instant sign-in
   if (!user) {
-    return res.status(404).json({
-      error: 'No account found with this email. Please register first.'
+    const isEmail = cleanInput.includes('@');
+    const userEmail = isEmail ? normalizedEmail : `${cleanInput.replace(/[^0-9]/g, '')}@wow.com`;
+    const userPhone = !isEmail && cleanInput.replace(/[^0-9]/g, '').length === 10
+      ? cleanInput.replace(/[^0-9]/g, '')
+      : `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+    const defaultName = cleanInput.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Customer';
+    user = await User.create({
+      name: defaultName,
+      phone: userPhone,
+      email: userEmail,
+      role: 'Customer',
     });
   }
 
-  // ── Auto-promote official admin email to SuperAdmin if needed ──────────────
+  // Auto-promote official admin email to SuperAdmin if needed
   const lowerEmail = (user.email || '').toLowerCase().trim();
   if (lowerEmail === 'wowlaundry111@gmail.com' || lowerEmail === 'superadmin@wow.com') {
     if (user.role !== 'SuperAdmin') {
@@ -331,48 +340,19 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     }
   }
 
-  // ── Staff Accounts (SuperAdmin, ShopAdmin, Delivery) bypass OTP entirely ────
-  const userRole = normalizeRole(user.role);
-  const isStaff = userRole === 'SuperAdmin' || userRole === 'ShopAdmin' || userRole === 'Delivery';
-  if (isStaff) {
-    // If staff account has a password set and caller supplied one, verify it
-    if (user.password && password && user.password !== password) {
-      return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
-    }
-
-    const token = generateToken(user);
-    console.log(`[Staff Direct Login] Bypass OTP for ${user.role} (${user.email || user.phone})`);
-    return res.json({
-      message: 'Authenticated successfully',
-      directLogin: true,
-      requiresOtp: false,
-      user,
-      token,
-    });
+  // Direct login for staff or password users
+  if (user.password && password && user.password !== password) {
+    return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
   }
 
-  // ── Customers require OTP ───────────────────────────────────────────────────
-  const targetEmail = user.email;
-  if (!targetEmail) {
-    const token = generateToken(user);
-    return res.json({ directLogin: true, user, token });
-  }
-
-  // Generate 6-digit OTP
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
-  otpCache.set(targetEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-
-  const result = await sendOtpEmail(targetEmail, otp);
-  if (!result.success) {
-    return res.status(500).json({
-      error: `Failed to deliver verification code: ${result.error || 'Please try again later'}`
-    });
-  }
-
+  const token = generateToken(user);
+  console.log(`[Direct Login] Direct login for ${user.role} (${user.email || user.phone})`);
   return res.json({
-    requiresOtp: true,
-    email: targetEmail,
-    message: `Verification code sent to ${targetEmail}. Please check your inbox.`,
+    message: 'Authenticated successfully',
+    directLogin: true,
+    requiresOtp: false,
+    user,
+    token,
   });
 });
 
@@ -454,9 +434,8 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// ── 2. Register — Step 1: Validate & Send OTP ─────────────────────────────────
-// Customers submit their details → we send an OTP to their email for verification.
-// Staff accounts are pre-created in the DB and use /login directly (no OTP).
+// ── 2. Register Flow ─────────────────────────────────────────────────────────
+// Creates user in DB and returns directLogin: true instantly
 router.post('/register', async (req: Request, res: Response) => {
   const { name, phone, email, password } = req.body;
 
@@ -474,39 +453,31 @@ router.post('/register', async (req: Request, res: Response) => {
   const cleanPhone = String(phone).trim().replace(/[^0-9]/g, '');
 
   try {
-    // Check for duplicate email or phone
-    const existing = await User.findOne({
+    let user = await User.findOne({
       $or: [{ email: normalizedEmail }, { phone: cleanPhone }]
     }).lean() as any;
 
-    if (existing) {
-      return res.status(409).json({
-        error: 'An account with this email or phone already exists. Please sign in.',
+    if (!user) {
+      user = await User.create({
+        name: name.trim(),
+        phone: cleanPhone,
+        email: normalizedEmail,
+        role: 'Customer',
+        password: password || '',
       });
     }
 
-    // Generate 6-digit OTP
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-
-    // Store pending registration data keyed by email (TTL: 10 min)
-    pendingRegCache.set(normalizedEmail, { name: name.trim(), phone: cleanPhone, email: normalizedEmail, password: password || '' } as any, 10 * 60 * 1000);
-    otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-
-    // Send OTP via Resend
-    const result = await sendOtpEmail(normalizedEmail, otp);
-    if (!result.success) {
-      return res.status(500).json({
-        error: `Failed to deliver verification code: ${result.error || 'Please check your email address and try again'}`
-      });
-    }
-
+    const token = generateToken(user);
     return res.json({
-      requiresOtp: true,
-      message: `Verification code sent to ${normalizedEmail}. Please check your inbox.`,
+      message: 'Account created and authenticated',
+      directLogin: true,
+      requiresOtp: false,
+      user,
+      token,
     });
   } catch (error: any) {
     console.error('Registration error:', error);
-    return res.status(500).json({ error: error.message || 'Failed to start registration' });
+    return res.status(500).json({ error: error.message || 'Failed to complete registration' });
   }
 });
 

@@ -13,7 +13,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Search, Plus, X, ArrowLeft, Image as ImageIcon, Sparkles, Package, ChevronRight } from 'lucide-react-native';
+import { Search, Plus, X, ArrowLeft, Image as ImageIcon, Sparkles, Package, ChevronRight, Edit2, Trash2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
 import { ToggleSwitch } from '../../components/UIPack';
@@ -23,7 +23,7 @@ import { CategoryVectorIllustration } from '../../components/CategoryVectors';
 import { VectorPickerModal } from '../../components/VectorPickerModal';
 
 export const AdminCatalogScreen: React.FC = () => {
-  const { categories, items, currentTenantId, currentUser, fetchCatalog, addCategory, updateCategory } = useAppStore();
+  const { categories, items, currentTenantId, currentUser, fetchCatalog, addCategory, updateCategory, deleteCategory } = useAppStore();
 
   const [search, setSearch] = useState('');
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
@@ -31,28 +31,35 @@ export const AdminCatalogScreen: React.FC = () => {
   const [isAddCatVisible, setAddCatVisible] = useState(false);
   const [newCatParentId, setNewCatParentId] = useState<string | null>(null);
   const [isVectorPickerOpen, setVectorPickerOpen] = useState(false);
+  const [vectorPickerTarget, setVectorPickerTarget] = useState<'create' | 'edit'>('create');
   const [newCatName, setNewCatName] = useState('');
   const [newCatImage, setNewCatImage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Category Edit State
+  const [editingCat, setEditingCat] = useState<any | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+  const [editCatImage, setEditCatImage] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
   const activeShopId = currentTenantId || currentUser?.shopId || '';
   const allShopCats = activeShopId
-    ? categories.filter((c) => c.shopId === activeShopId)
+    ? categories.filter((c) => String(c.shopId) === String(activeShopId))
     : categories;
 
   // Top-level categories (no parent)
   const topLevelCats = allShopCats.filter(c => !c.parentCategoryId);
   // Sub-categories of the currently viewed parent
   const visibleCategories = viewingParentId
-    ? allShopCats.filter(c => c.parentCategoryId === viewingParentId)
+    ? allShopCats.filter(c => String(c.parentCategoryId) === String(viewingParentId))
     : topLevelCats;
 
   const filteredCategories = visibleCategories.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const viewingParentCat = viewingParentId ? allShopCats.find(c => c._id === viewingParentId) : null;
+  const viewingParentCat = viewingParentId ? allShopCats.find(c => String(c._id) === String(viewingParentId)) : null;
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -86,19 +93,67 @@ export const AdminCatalogScreen: React.FC = () => {
     }
   };
 
-  const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      setNewCatImage(result.assets[0].uri);
+  const handleStartEditCat = (cat: any) => {
+    setEditingCat(cat);
+    setEditCatName(cat.name || '');
+    setEditCatImage(cat.image || '');
+  };
+
+  const handleSaveCatEdit = async () => {
+    if (!editCatName.trim()) {
+      Alert.alert('Required', 'Category name cannot be empty');
+      return;
+    }
+    setIsSavingEdit(true);
+    try {
+      await updateCategory(editingCat._id, {
+        name: editCatName.trim(),
+        image: editCatImage || undefined,
+      });
+      setEditingCat(null);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to update category');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
-  const selectedCategory = categories.find((c) => c._id === selectedCatId) || null;
+  const handleDeleteCat = (cat: any) => {
+    const subCats = allShopCats.filter(c => String(c.parentCategoryId) === String(cat._id));
+    const directItems = items.filter(i => String(i.categoryId) === String(cat._id));
+    const subCatItemCount = items.filter(i => subCats.some(s => String(s._id) === String(i.categoryId))).length;
+    const totalItems = directItems.length + subCatItemCount;
+
+    const confirmMsg = totalItems > 0 || subCats.length > 0
+      ? `Delete "${cat.name}"? This will also remove ${subCats.length} sub-categories and ${totalItems} service item(s).`
+      : `Are you sure you want to delete "${cat.name}"?`;
+
+    const doDelete = async () => {
+      try {
+        await deleteCategory(cat._id);
+        if (String(viewingParentId) === String(cat._id)) {
+          setViewingParentId(null);
+        }
+      } catch (e: any) {
+        if (Platform.OS === 'web') {
+          alert(e.message || 'Failed to delete category');
+        } else {
+          Alert.alert('Error', e.message || 'Failed to delete category');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMsg)) {
+        doDelete();
+      }
+    } else {
+      Alert.alert('Delete Category', confirmMsg, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: doDelete },
+      ]);
+    }
+  };
 
   const openAddCategory = (parentId: string | null = null) => {
     setNewCatParentId(parentId);
@@ -106,6 +161,26 @@ export const AdminCatalogScreen: React.FC = () => {
     setNewCatImage('');
     setAddCatVisible(true);
   };
+
+  const pickImage = async (target: 'create' | 'edit' = 'create') => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      if (target === 'create') {
+        setNewCatImage(result.assets[0].uri);
+      } else {
+        setEditCatImage(result.assets[0].uri);
+      }
+    }
+  };
+
+  const selectedCategory = selectedCatId
+    ? allShopCats.find((c) => String(c._id) === String(selectedCatId))
+    : null;
 
   return (
     <View style={styles.root}>
@@ -117,10 +192,28 @@ export const AdminCatalogScreen: React.FC = () => {
               <ArrowLeft size={20} color={COLORS.black} strokeWidth={3} />
             </TouchableOpacity>
           )}
-          <View>
-            <Text style={styles.heading}>
-              {viewingParentCat ? viewingParentCat.name.toUpperCase() : 'CATALOG MANAGER'}
-            </Text>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={styles.heading}>
+                {viewingParentCat ? viewingParentCat.name.toUpperCase() : 'CATALOG MANAGER'}
+              </Text>
+              {viewingParentCat && (
+                <View style={{ flexDirection: 'row', gap: 4 }}>
+                  <TouchableOpacity
+                    onPress={() => handleStartEditCat(viewingParentCat)}
+                    style={{ padding: 4, backgroundColor: '#F1F5F9', borderWidth: 1.5, borderColor: COLORS.black, borderRadius: 6 }}
+                  >
+                    <Edit2 size={12} color={COLORS.black} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteCat(viewingParentCat)}
+                    style={{ padding: 4, backgroundColor: '#FEE2E2', borderWidth: 1.5, borderColor: COLORS.black, borderRadius: 6 }}
+                  >
+                    <Trash2 size={12} color="#DC2626" strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
             <Text style={styles.subHeading}>
               {viewingParentCat ? 'Sub-categories inside this category' : 'Manage services & pricing for your branch'}
             </Text>
@@ -164,44 +257,57 @@ export const AdminCatalogScreen: React.FC = () => {
       >
         <View style={styles.grid}>
           {filteredCategories.map((cat) => {
-            const subCats = allShopCats.filter(c => c.parentCategoryId === cat._id);
+            const subCats = allShopCats.filter(c => String(c.parentCategoryId) === String(cat._id));
             const hasSubCats = subCats.length > 0;
             // Items directly in this cat
-            const catItems = items.filter((i) => i.categoryId === cat._id);
+            const catItems = items.filter((i) => String(i.categoryId) === String(cat._id));
             // Items in sub-cats
-            const subCatItemCount = items.filter(i => subCats.some(s => s._id === i.categoryId)).length;
+            const subCatItemCount = items.filter(i => subCats.some(s => String(s._id) === String(i.categoryId))).length;
             const totalItemCount = catItems.length + subCatItemCount;
             const isEnabled = cat.isActive ?? true;
 
             return (
-              <TouchableOpacity
+              <View
                 key={cat._id}
                 style={[styles.catCard, !isEnabled && { opacity: 0.55 }]}
-                activeOpacity={0.85}
-                onPress={() => {
-                  if (hasSubCats && !viewingParentId) {
-                    // Drill into sub-categories
-                    setViewingParentId(cat._id);
-                  } else {
-                    // Open item details
-                    setSelectedCatId(cat._id);
-                  }
-                }}
               >
-                {/* Header: Illustration + Toggle */}
+                {/* Top Row: Illustration + Active Toggle */}
                 <View style={styles.catCardTop}>
                   <View style={styles.catImgBox}>
                     <CategoryVectorIllustration
                       categoryName={cat.name}
                       customImage={cat.image}
-                      size={44}
+                      size={42}
                     />
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                    <ToggleSwitch
-                      value={isEnabled}
-                      onToggle={() => handleToggleCategory(cat._id, isEnabled)}
-                    />
+
+                  <ToggleSwitch
+                    value={isEnabled}
+                    onToggle={() => handleToggleCategory(cat._id, isEnabled)}
+                  />
+                </View>
+
+                {/* Middle: Title & Badges */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={{ flex: 1, marginVertical: 8 }}
+                  onPress={() => {
+                    if (hasSubCats && !viewingParentId) {
+                      setViewingParentId(cat._id);
+                    } else {
+                      setSelectedCatId(cat._id);
+                    }
+                  }}
+                >
+                  <Text style={styles.catName} numberOfLines={2}>
+                    {cat.name}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                    <View style={styles.servicesBadge}>
+                      <Text style={styles.servicesBadgeText}>
+                        {totalItemCount} SERVICE{totalItemCount === 1 ? '' : 'S'}
+                      </Text>
+                    </View>
                     {hasSubCats && !viewingParentId && (
                       <View style={styles.subCatBadge}>
                         <Text style={styles.subCatBadgeText}>{subCats.length} SUBCATS</Text>
@@ -209,20 +315,44 @@ export const AdminCatalogScreen: React.FC = () => {
                       </View>
                     )}
                   </View>
-                </View>
+                </TouchableOpacity>
 
-                {/* Title and Services Count */}
-                <View style={styles.catCardBottom}>
-                  <Text style={styles.catName} numberOfLines={2}>
-                    {cat.name}
-                  </Text>
-                  <View style={styles.servicesBadge}>
-                    <Text style={styles.servicesBadgeText}>
-                      {totalItemCount} SERVICE{totalItemCount === 1 ? '' : 'S'}
-                    </Text>
-                  </View>
+                {/* Bottom Action Bar: Edit, Delete, Open Icons Only */}
+                <View style={styles.cardActionBar}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => handleStartEditCat(cat)}
+                    style={[styles.cardActionIconBtn, { backgroundColor: '#F1F5F9' }]}
+                    title="Edit Category"
+                  >
+                    <Edit2 size={15} color={COLORS.black} strokeWidth={2.5} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => handleDeleteCat(cat)}
+                    style={[styles.cardActionIconBtn, { backgroundColor: '#FEE2E2' }]}
+                    title="Delete Category"
+                  >
+                    <Trash2 size={15} color="#DC2626" strokeWidth={2.5} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      if (hasSubCats && !viewingParentId) {
+                        setViewingParentId(cat._id);
+                      } else {
+                        setSelectedCatId(cat._id);
+                      }
+                    }}
+                    style={[styles.cardActionIconBtn, { backgroundColor: COLORS.secondary }]}
+                    title="Open Category"
+                  >
+                    <ChevronRight size={16} color={COLORS.black} strokeWidth={3} />
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })}
         </View>
@@ -300,7 +430,10 @@ export const AdminCatalogScreen: React.FC = () => {
                 <TouchableOpacity
                   style={[styles.imagePickerBtn, { flex: 1, backgroundColor: COLORS.secondary }]}
                   activeOpacity={0.8}
-                  onPress={() => setVectorPickerOpen(true)}
+                  onPress={() => {
+                    setVectorPickerTarget('create');
+                    setVectorPickerOpen(true);
+                  }}
                 >
                   <Sparkles size={16} color={COLORS.black} strokeWidth={2.5} />
                   <Text style={styles.imagePickerText}>Pick Vector</Text>
@@ -309,7 +442,7 @@ export const AdminCatalogScreen: React.FC = () => {
                 <TouchableOpacity
                   style={[styles.imagePickerBtn, { flex: 1 }]}
                   activeOpacity={0.8}
-                  onPress={pickImage}
+                  onPress={() => pickImage('create')}
                 >
                   <ImageIcon size={16} color={COLORS.black} strokeWidth={2.5} />
                   <Text style={styles.imagePickerText}>Upload File</Text>
@@ -341,11 +474,110 @@ export const AdminCatalogScreen: React.FC = () => {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Edit Category Modal */}
+      <Modal visible={!!editingCat} transparent animationType="slide">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalContent}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={styles.modalHeading}>
+                {editingCat?.parentCategoryId ? 'EDIT SUB-CATEGORY' : 'EDIT CATEGORY'}
+              </Text>
+              <TouchableOpacity onPress={() => setEditingCat(null)}>
+                <X size={20} color={COLORS.black} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>CATEGORY NAME</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Category Name"
+                placeholderTextColor="#6B7280"
+                value={editCatName}
+                onChangeText={setEditCatName}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>CATEGORY ICON / ILLUSTRATION</Text>
+              {editCatImage ? (
+                <View style={styles.selectedImgPreview}>
+                  <Image
+                    source={{ uri: editCatImage }}
+                    style={{ width: 44, height: 44 }}
+                    contentFit="contain"
+                  />
+                  <Text style={styles.selectedImgText} numberOfLines={1}>
+                    Selected Icon Active
+                  </Text>
+                  <TouchableOpacity onPress={() => setEditCatImage('')}>
+                    <X size={16} color={COLORS.black} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <TouchableOpacity
+                  style={[styles.imagePickerBtn, { flex: 1, backgroundColor: COLORS.secondary }]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    setVectorPickerTarget('edit');
+                    setVectorPickerOpen(true);
+                  }}
+                >
+                  <Sparkles size={16} color={COLORS.black} strokeWidth={2.5} />
+                  <Text style={styles.imagePickerText}>Pick Vector</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.imagePickerBtn, { flex: 1 }]}
+                  activeOpacity={0.8}
+                  onPress={() => pickImage('edit')}
+                >
+                  <ImageIcon size={16} color={COLORS.black} strokeWidth={2.5} />
+                  <Text style={styles.imagePickerText}>Upload File</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setEditingCat(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalCancelText}>CANCEL</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                onPress={handleSaveCatEdit}
+                disabled={isSavingEdit}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalSaveText}>
+                  {isSavingEdit ? 'SAVING...' : 'SAVE CHANGES'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* Vector Picker Gallery Sheet */}
       <VectorPickerModal
         visible={isVectorPickerOpen}
-        selectedUrl={newCatImage}
-        onSelect={(url) => setNewCatImage(url)}
+        selectedUrl={vectorPickerTarget === 'create' ? newCatImage : editCatImage}
+        onSelect={(url) => {
+          if (vectorPickerTarget === 'create') {
+            setNewCatImage(url);
+          } else {
+            setEditCatImage(url);
+          }
+        }}
         onClose={() => setVectorPickerOpen(false)}
       />
     </View>
@@ -389,6 +621,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    flexShrink: 0,
     ...NEO_SHADOW.box2,
   },
   addBtnText: {
@@ -443,7 +676,26 @@ const styles = StyleSheet.create({
   catCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+  },
+  cardActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingTop: 8,
+    marginTop: 6,
+    borderTopWidth: 1.5,
+    borderTopColor: '#E2E8F0',
+  },
+  cardActionIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   catImgBox: {
     width: 60,

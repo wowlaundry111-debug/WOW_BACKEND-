@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
   Dimensions,
   Animated,
   Easing,
@@ -35,6 +36,9 @@ import {
   Mail,
   Headphones,
   Edit3,
+  Store,
+  Check,
+  X,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
@@ -199,13 +203,16 @@ const AmbientBubble: React.FC<{
 };
 
 export const CustomerProfileScreen = ({ onNavigateToOrders }: { onNavigateToOrders?: () => void }) => {
-  const { currentUser, setCurrentUser, updateProfile, orders } = useAppStore();
+  const { currentUser, setCurrentUser, updateProfile, orders, shops, currentTenantId, setCurrentTenantId } = useAppStore();
   const insets = useSafeAreaInsets();
 
   const [isEditProfileVisible, setEditProfileVisible] = useState(false);
   const [isAddressVisible, setAddressVisible] = useState(false);
+  const [isShopModalVisible, setIsShopModalVisible] = useState(false);
   const [editName, setEditName] = useState(currentUser?.name || '');
   const [editEmail, setEditEmail] = useState(currentUser?.email || '');
+
+  const currentShop = shops.find((s) => String(s._id) === String(currentTenantId)) || shops[0];
 
   // Structured Precise Address State (Food App Style)
   const [addressTag, setAddressTag] = useState<'Home' | 'Work' | 'Other'>('Home');
@@ -244,8 +251,17 @@ export const CustomerProfileScreen = ({ onNavigateToOrders }: { onNavigateToOrde
   }, [isAddressVisible, currentUser]);
 
   const handleLogout = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setCurrentUser(null);
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to log out?')) {
+        setCurrentUser(null);
+      }
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      Alert.alert('Logout', 'Are you sure you want to log out?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Logout', style: 'destructive', onPress: () => setCurrentUser(null) },
+      ]);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -435,6 +451,30 @@ export const CustomerProfileScreen = ({ onNavigateToOrders }: { onNavigateToOrde
               {currentUser?.address || 'No default delivery address set. Tap to add one.'}
             </Text>
           </View>
+
+          {/* Selected Branch / Shop Card */}
+          {shops.length > 0 && (
+            <View style={[styles.addressPreviewBox, { backgroundColor: '#F0FDF4', borderColor: COLORS.black }]}>
+              <View style={styles.addressPreviewHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Store size={16} color={COLORS.black} strokeWidth={2.5} />
+                  <Text style={styles.addressPreviewTitle}>SELECTED LAUNDRY BRANCH</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setIsShopModalVisible(true);
+                  }}
+                  style={[styles.changeAddressBtn, { backgroundColor: '#9AE600' }]}
+                >
+                  <Text style={styles.changeAddressText}>SWITCH BRANCH</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.addressPreviewBody, { fontWeight: '900', color: COLORS.black }]} numberOfLines={1}>
+                {currentShop?.name || 'No Branch Selected'}
+              </Text>
+            </View>
+          )}
 
           {/* Account Settings List */}
           <View style={styles.section}>
@@ -634,6 +674,71 @@ export const CustomerProfileScreen = ({ onNavigateToOrders }: { onNavigateToOrde
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── Shop / Branch Selection Modal ─── */}
+      <Modal
+        visible={isShopModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsShopModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ width: '100%', maxWidth: 400, backgroundColor: COLORS.white, borderRadius: 20, borderWidth: 3, borderColor: COLORS.black, padding: 20, shadowColor: '#000', shadowOffset: { width: 6, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottomWidth: 2, borderBottomColor: COLORS.black, paddingBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Store size={20} color={COLORS.black} strokeWidth={2.5} />
+                <Text style={{ fontSize: 18, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>Select Branch / Shop</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsShopModalVisible(false)} style={{ padding: 4 }}>
+                <X size={20} color={COLORS.black} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+
+            {shops.map((s) => {
+              const isSelected = String(s._id) === String(currentTenantId || currentShop?._id);
+              return (
+                <TouchableOpacity
+                  key={s._id}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    setCurrentTenantId(s._id);
+                    setIsShopModalVisible(false);
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: 14,
+                    borderRadius: 14,
+                    borderWidth: 2.5,
+                    borderColor: COLORS.black,
+                    backgroundColor: isSelected ? '#9AE600' : '#F8FAFC',
+                    marginBottom: 10,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 3, height: 3 },
+                    shadowOpacity: 1,
+                    shadowRadius: 0,
+                    elevation: 3,
+                  }}
+                >
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>{s.name}</Text>
+                    {Boolean(s.branches && s.branches.length > 0) && (
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', marginTop: 2 }}>{s.branches.join(', ')}</Text>
+                    )}
+                  </View>
+                  {isSelected && (
+                    <View style={{ backgroundColor: COLORS.black, borderRadius: 10, padding: 4 }}>
+                      <Check size={14} color="#9AE600" strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </Modal>
     </View>
   );

@@ -15,6 +15,7 @@ import { Image } from 'expo-image';
 import { X, Plus, Trash2, Edit2, Image as ImageIcon, ArrowLeft, Sparkles } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
+import { ToggleSwitch } from '../../components/UIPack';
 import { useAppStore } from '../../store/useAppStore';
 import { CategoryVectorIllustration } from '../../components/CategoryVectors';
 import { VectorPickerModal } from '../../components/VectorPickerModal';
@@ -126,34 +127,64 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
   };
 
   const handleDeleteItem = (itemId: string) => {
-    Alert.alert('Delete Service', 'Are you sure you want to delete this service?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteCatalogItem(itemId) },
-    ]);
+    const item = catItems.find(i => String(i._id) === String(itemId));
+    const itemName = item?.name || 'this service';
+    const confirmMsg = `Are you sure you want to delete "${itemName}"?`;
+
+    const doDelete = async () => {
+      try {
+        await deleteCatalogItem(itemId);
+      } catch (e: any) {
+        if (Platform.OS === 'web') alert(e.message || 'Failed to delete service');
+        else Alert.alert('Error', e.message || 'Failed to delete service');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMsg)) {
+        doDelete();
+      }
+    } else {
+      Alert.alert('Delete Service', confirmMsg, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: doDelete },
+      ]);
+    }
   };
 
   const handleSaveCategoryEdit = () => {
-    if (!editCatName.trim()) return Alert.alert('Required', 'Category name cannot be empty');
+    if (!editCatName.trim()) {
+      if (Platform.OS === 'web') alert('Category name cannot be empty');
+      else Alert.alert('Required', 'Category name cannot be empty');
+      return;
+    }
     updateCategory(catId!, { name: editCatName.trim(), image: editCatImage || undefined });
     setIsEditingCategory(false);
   };
 
   const handleDeleteCategory = () => {
-    Alert.alert(
-      'Delete Category',
-      `Delete "${category.name}" and all its services?`,
-      [
+    const confirmMsg = `Delete "${category.name}" and all its services?`;
+
+    const doDelete = async () => {
+      try {
+        await deleteCategory(catId!);
+        onClose();
+      } catch (e: any) {
+        if (Platform.OS === 'web') alert(e.message || 'Failed to delete category');
+        else Alert.alert('Error', e.message || 'Failed to delete category');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMsg)) {
+        doDelete();
+      }
+    } else {
+      Alert.alert('Delete Category', confirmMsg, [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Category',
-          style: 'destructive',
-          onPress: () => {
-            deleteCategory(catId!);
-            onClose();
-          },
-        },
-      ]
-    );
+        { text: 'Delete Category', style: 'destructive', onPress: doDelete },
+      ]);
+    }
   };
 
   const pickItemImage = async () => {
@@ -269,21 +300,45 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                 </Text>
               </View>
             ) : !isAdding ? (
-              <TouchableOpacity
-                style={styles.addServiceCTA}
-                activeOpacity={0.85}
-                onPress={() => {
-                  setEditingItemId(null);
-                  setNewItemName('');
-                  setNewItemDesc('');
-                  setNewItemPrice('');
-                  setNewItemImage('');
-                  setIsAdding(true);
-                }}
-              >
-                <Plus size={20} color={COLORS.black} strokeWidth={3} />
-                <Text style={styles.addServiceCTAText}>ADD NEW SERVICE</Text>
-              </TouchableOpacity>
+              <View style={{ gap: 10, marginBottom: SPACING.lg }}>
+                <TouchableOpacity
+                  style={[styles.addServiceCTA, { backgroundColor: '#F97316' }]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setEditingItemId(null);
+                    setNewItemName(`${category.name} Bucket (Per KG)`);
+                    setNewItemDesc('Drop your clothes in a bucket. Weighed and priced upon delivery.');
+                    setNewItemPrice('');
+                    setNewItemUnit('KG');
+                    setNewItemIsBucket(true);
+                    setNewItemImage('');
+                    setIsAdding(true);
+                  }}
+                >
+                  <Sparkles size={18} color={COLORS.white} strokeWidth={3} />
+                  <Text style={[styles.addServiceCTAText, { color: COLORS.white }]}>
+                    + ADD BUCKET SERVICE (PER KG)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.addServiceCTA}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setEditingItemId(null);
+                    setNewItemName('');
+                    setNewItemDesc('');
+                    setNewItemPrice('');
+                    setNewItemUnit('ITEM');
+                    setNewItemIsBucket(false);
+                    setNewItemImage('');
+                    setIsAdding(true);
+                  }}
+                >
+                  <Plus size={20} color={COLORS.black} strokeWidth={3} />
+                  <Text style={styles.addServiceCTAText}>+ ADD REGULAR SERVICE ITEM</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <View style={styles.addFormBox}>
                 <Text style={styles.formHeading}>
@@ -294,7 +349,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                   <Text style={styles.inputLabel}>SERVICE NAME</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="e.g. Denim Jeans Wash"
+                    placeholder="e.g. Denim Jeans Wash or Wash & Iron Bucket"
                     placeholderTextColor="#6B7280"
                     value={newItemName}
                     onChangeText={setNewItemName}
@@ -317,7 +372,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                     <Text style={styles.inputLabel}>PRICE (₹)</Text>
                     <TextInput
                       style={styles.input}
-                      placeholder="e.g. 50"
+                      placeholder={newItemIsBucket ? "e.g. 40 (per kg)" : "e.g. 50 (per item)"}
                       placeholderTextColor="#6B7280"
                       value={newItemPrice}
                       onChangeText={setNewItemPrice}
@@ -331,14 +386,17 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                       <TouchableOpacity
                         style={[
                           styles.unitBtn,
-                          newItemUnit === 'ITEM' && styles.unitBtnActive,
+                          newItemUnit === 'ITEM' && !newItemIsBucket && styles.unitBtnActive,
                         ]}
-                        onPress={() => setNewItemUnit('ITEM')}
+                        onPress={() => {
+                          setNewItemUnit('ITEM');
+                          setNewItemIsBucket(false);
+                        }}
                       >
                         <Text
                           style={[
                             styles.unitBtnText,
-                            newItemUnit === 'ITEM' && { color: COLORS.black },
+                            newItemUnit === 'ITEM' && !newItemIsBucket && { color: COLORS.black },
                           ]}
                         >
                           ITEM
@@ -347,14 +405,17 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                       <TouchableOpacity
                         style={[
                           styles.unitBtn,
-                          newItemUnit === 'KG' && styles.unitBtnActive,
+                          (newItemUnit === 'KG' || newItemIsBucket) && styles.unitBtnActive,
                         ]}
-                        onPress={() => setNewItemUnit('KG')}
+                        onPress={() => {
+                          setNewItemUnit('KG');
+                          setNewItemIsBucket(true);
+                        }}
                       >
                         <Text
                           style={[
                             styles.unitBtnText,
-                            newItemUnit === 'KG' && { color: COLORS.black },
+                            (newItemUnit === 'KG' || newItemIsBucket) && { color: COLORS.black },
                           ]}
                         >
                           KG
@@ -362,6 +423,26 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                       </TouchableOpacity>
                     </View>
                   </View>
+                </View>
+
+                {/* Laundry Bucket Toggle Switch */}
+                <View style={{ marginTop: 12, padding: 12, backgroundColor: newItemIsBucket ? '#FFF7ED' : '#F8FAFC', borderWidth: 2, borderColor: COLORS.black, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>
+                      LAUNDRY BUCKET SERVICE (PER KG)?
+                    </Text>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginTop: 2 }}>
+                      Enable to offer as a tap-to-add Bucket card in mobile app.
+                    </Text>
+                  </View>
+                  <ToggleSwitch
+                    value={newItemIsBucket}
+                    onToggle={() => {
+                      const next = !newItemIsBucket;
+                      setNewItemIsBucket(next);
+                      if (next) setNewItemUnit('KG');
+                    }}
+                  />
                 </View>
 
                 {/* Service Vector Icon Picker */}
@@ -386,27 +467,6 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                   >
                     <Sparkles size={16} color={COLORS.black} strokeWidth={2.5} />
                     <Text style={styles.imagePickerText}>Choose From Vector Gallery</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Bucket Item Toggle */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: COLORS.black, borderRadius: RADIUS.md, padding: 12, marginTop: 8 }}>
-                  <View>
-                    <Text style={{ fontSize: 11, fontWeight: '900', fontFamily: 'Outfit_800ExtraBold', color: COLORS.black, letterSpacing: 0.5 }}>BUCKET ITEM</Text>
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#6B7280', marginTop: 2 }}>Large tap card in customer shop view</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => setNewItemIsBucket(!newItemIsBucket)}
-                    style={{
-                      width: 44, height: 24, borderRadius: 12, borderWidth: 2, borderColor: COLORS.black,
-                      backgroundColor: newItemIsBucket ? '#F97316' : '#E5E7EB',
-                      justifyContent: 'center', paddingHorizontal: 2,
-                    }}
-                  >
-                    <View style={{
-                      width: 16, height: 16, borderRadius: 8, backgroundColor: COLORS.white, borderWidth: 1.5, borderColor: COLORS.black,
-                      alignSelf: newItemIsBucket ? 'flex-end' : 'flex-start',
-                    }} />
                   </TouchableOpacity>
                 </View>
 

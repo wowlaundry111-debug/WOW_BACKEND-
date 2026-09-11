@@ -12,6 +12,7 @@ import {
   Dimensions,
   Animated,
   Easing,
+  Modal,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
@@ -47,6 +48,8 @@ import {
   Plus,
   Minus,
   ShoppingBag,
+  Store,
+  Check,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
@@ -311,6 +314,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
     categories,
     items,
     currentTenantId,
+    setCurrentTenantId,
     cart,
     addToCart,
     isLoading,
@@ -324,6 +328,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
   const [selectedCategoryTab, setSelectedCategoryTab] = useState('all');
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isShopModalVisible, setIsShopModalVisible] = useState(false);
 
   const currentShop = shops.find((s) => s._id === currentTenantId) || shops[0];
   const promo1 = currentShop?.promoBanners?.[0] || { badge: 'PROMO', title: '50% OFF', subtitle: 'Winter Wear Deep Dryclean' };
@@ -351,7 +356,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
   }, []);
 
   // Filter categories for current shop (top-level only)
-  const shopCategories = categories.filter((c) => (!currentTenantId || c.shopId === currentTenantId) && !c.parentCategoryId);
+  const shopCategories = categories.filter((c) => (!currentTenantId || String(c.shopId) === String(currentTenantId)) && !c.parentCategoryId);
 
   // Dynamic Tabs: ONLY express gets 'New' badge, NEVER winter jackets or coats
   const dynamicTabs = [
@@ -361,7 +366,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
       const isExpress = lower === 'express' || lower.includes('fast') || lower.includes('speed');
       const isWinter = lower.includes('winter') || lower.includes('jacket') || lower.includes('coat');
       return {
-        id: c._id,
+        id: String(c._id),
         label: c.name,
         icon: getCategoryIcon(c.name),
         hasNew: isExpress && !isWinter,
@@ -374,7 +379,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
 
   // Search matching items across all categories for this shop
   const matchingItems = items.filter((item) => {
-    if (item.shopId && currentTenantId && item.shopId !== currentTenantId) return false;
+    if (item.shopId && currentTenantId && String(item.shopId) !== String(currentTenantId)) return false;
     if (!isSearching) return false;
     return (
       item.name.toLowerCase().includes(cleanQuery) ||
@@ -383,16 +388,16 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
   });
 
   const tenantCats = shopCategories.filter((c) => {
-    if (!isSearching && selectedCategoryTab !== 'all' && c._id !== selectedCategoryTab) {
+    if (!isSearching && selectedCategoryTab !== 'all' && String(c._id) !== String(selectedCategoryTab)) {
       return false;
     }
 
     if (!isSearching) return true;
 
-    const subCategoryIds = categories.filter(sub => sub.parentCategoryId === c._id).map(s => s._id);
+    const subCategoryIds = categories.filter(sub => String(sub.parentCategoryId) === String(c._id)).map(s => String(s._id));
     return (
       c.name.toLowerCase().includes(cleanQuery) ||
-      matchingItems.some((item) => item.categoryId === c._id || subCategoryIds.includes(item.categoryId))
+      matchingItems.some((item) => String(item.categoryId) === String(c._id) || subCategoryIds.includes(String(item.categoryId)))
     );
   });
 
@@ -400,28 +405,28 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
   const activeStepIndex = activeOrder ? ORDER_STEPS.findIndex((s) => s.key === activeOrder.status) : -1;
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 18) return 'Good Afternoon';
-    return 'Good Evening';
-  };
-
-  const handleTabPress = (tabId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedCategoryTab(tabId);
-    if (isSearching) {
-      setSearchQuery('');
-    }
+  const handleAddToCart = (item: any, diff: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    addToCart(item, diff);
   };
 
   const getQuantity = (itemId: string) => {
     return cart.find((c) => c.itemId === itemId)?.quantity || 0;
   };
 
-  const handleAddToCart = (item: any, diff: number) => {
+  const handleTabPress = (tabId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    addToCart(item, diff);
+    if (isSearching) {
+      setSearchQuery('');
+    }
+    setSelectedCategoryTab(tabId);
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
   };
 
   const homeScrollRef = React.useRef<ScrollView>(null);
@@ -432,20 +437,29 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
   return (
     <View style={styles.root}>
       <StatusBar style="light" backgroundColor="#061E38" translucent />
+
+      {/* Top Overscroll Blue Background Filler */}
+      <View style={styles.topOverscrollFiller} />
+
       <ScrollView
         ref={homeScrollRef}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.scrollContent}
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: cart.length > 0 ? 100 : 36 }]}
         showsVerticalScrollIndicator={false}
         bounces={true}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} tintColor="#90CAF9" />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.secondary]}
+            tintColor="#B0FF49"
+          />
+        }
       >
-        {/* Top Overscroll Blue Background Filler */}
-        <View style={styles.topOverscrollFiller} />
-
-        {/* ─── Seamless Royal Blue Header Wrap with Floating Bubbles & Wave Partition ─── */}
+        {/* ─── Hero Royal Blue Header with Ambient Bubbles & Wave Curve ─── */}
         <LinearGradient
-          colors={['#061E38', '#0A2E54', '#0E3E6E', '#092547']}
+          colors={['#061E38', '#0A2B4C', '#0E3A66', '#082340']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.headerGradientWrap, { paddingTop: (insets.top > 0 ? insets.top : 44) + 6 }]}
@@ -475,6 +489,35 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
                   {currentUser?.name || 'Guest'}
                 </Text>
               </View>
+
+              {/* Shop Switcher Branch Pill */}
+              {shops.length > 0 && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setIsShopModalVisible(true);
+                  }}
+                  style={{
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    borderColor: 'rgba(255, 255, 255, 0.4)',
+                    borderWidth: 1.5,
+                    borderRadius: 12,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    marginRight: 8,
+                  }}
+                >
+                  <Store size={13} color="#90CAF9" strokeWidth={2.5} />
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: COLORS.white, textTransform: 'uppercase' }} numberOfLines={1}>
+                    {currentShop?.name ? (currentShop.name.replace('WOW Laundry ', '')) : 'Branch'}
+                  </Text>
+                  <ChevronDown size={13} color="#90CAF9" strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
 
               {/* Circular Dark Glass Bell */}
               <View style={styles.bellWrap}>
@@ -881,6 +924,71 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Shop Selector Branch Modal */}
+      <Modal
+        visible={isShopModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsShopModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ width: '100%', maxWidth: 400, backgroundColor: COLORS.white, borderRadius: 20, borderWidth: 3, borderColor: COLORS.black, padding: 20, shadowColor: '#000', shadowOffset: { width: 6, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottomWidth: 2, borderBottomColor: COLORS.black, paddingBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Store size={20} color={COLORS.black} strokeWidth={2.5} />
+                <Text style={{ fontSize: 18, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>Select Branch / Shop</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsShopModalVisible(false)} style={{ padding: 4 }}>
+                <X size={20} color={COLORS.black} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+
+            {shops.map((s) => {
+              const isSelected = String(s._id) === String(currentTenantId || currentShop?._id);
+              return (
+                <TouchableOpacity
+                  key={s._id}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    setCurrentTenantId(s._id);
+                    setIsShopModalVisible(false);
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: 14,
+                    borderRadius: 14,
+                    borderWidth: 2.5,
+                    borderColor: COLORS.black,
+                    backgroundColor: isSelected ? '#9AE600' : '#F8FAFC',
+                    marginBottom: 10,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 3, height: 3 },
+                    shadowOpacity: 1,
+                    shadowRadius: 0,
+                    elevation: 3,
+                  }}
+                >
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>{s.name}</Text>
+                    {Boolean(s.branches && s.branches.length > 0) && (
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', marginTop: 2 }}>{s.branches.join(', ')}</Text>
+                    )}
+                  </View>
+                  {isSelected && (
+                    <View style={{ backgroundColor: COLORS.black, borderRadius: 10, padding: 4 }}>
+                      <Check size={14} color="#9AE600" strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

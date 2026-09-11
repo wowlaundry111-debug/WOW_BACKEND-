@@ -21,13 +21,14 @@ import { WowLogo } from '../../components/WowLogo';
 interface RegisterScreenProps {
   onBack: () => void;
   onRegisterSuccess: (email: string) => void;
+  initialEmail?: string;
 }
 
-export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegisterSuccess }) => {
+export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onBack, onRegisterSuccess, initialEmail = '' }) => {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

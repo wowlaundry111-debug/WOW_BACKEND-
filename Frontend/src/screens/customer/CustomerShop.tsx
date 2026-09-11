@@ -237,28 +237,31 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
   const shop = shops.find((s) => s._id === currentTenantId);
   const isClosed = shop?.isOpen === false;
 
-  const tenantCats = categories.filter((c) => c.shopId === currentTenantId);
+  const tenantCats = categories.filter((c) => !currentTenantId || String(c.shopId) === String(currentTenantId));
   const topLevelCats = tenantCats.filter((c) => !c.parentCategoryId);
-  const activeTopCategory = topLevelCats.find((c) => c._id === categoryId) || topLevelCats[0] || tenantCats[0];
+  const activeTopCategory = topLevelCats.find((c) => String(c._id) === String(categoryId)) ||
+                           tenantCats.find((c) => String(c._id) === String(categoryId)) ||
+                           topLevelCats[0] ||
+                           tenantCats[0];
   const category = activeTopCategory;
 
   const subCategories = (activeTopCategory?.subCategories && activeTopCategory.subCategories.length > 0)
     ? activeTopCategory.subCategories
-    : tenantCats.filter((c) => c.parentCategoryId === activeTopCategory?._id);
+    : tenantCats.filter((c) => String(c.parentCategoryId) === String(activeTopCategory?._id));
   const [selectedSubCatId, setSelectedSubCatId] = useState<string>('ALL');
 
   useEffect(() => {
     setSelectedSubCatId('ALL');
   }, [activeTopCategory?._id]);
 
-  const subCategoryIds = subCategories.map((s) => s._id);
+  const subCategoryIds = subCategories.map((s) => String(s._id));
   const catItems = items.filter((i) => {
     if (!activeTopCategory) return true;
     let matchCat = false;
     if (selectedSubCatId === 'ALL') {
-      matchCat = i.categoryId === activeTopCategory._id || subCategoryIds.includes(i.categoryId);
+      matchCat = String(i.categoryId) === String(activeTopCategory._id) || subCategoryIds.includes(String(i.categoryId));
     } else {
-      matchCat = i.categoryId === selectedSubCatId;
+      matchCat = String(i.categoryId) === String(selectedSubCatId);
     }
     const matchSearch = searchQuery === '' || i.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchCat && matchSearch;
@@ -459,7 +462,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
               }}>
                 {subCategories.map((sub) => {
                   const badgeText = getCategoryBadge(sub.name);
-                  const subItems = items.filter((i) => i.categoryId === sub._id);
+                  const subItems = items.filter((i) => String(i.categoryId) === String(sub._id));
                   const isSingle = subCategories.length === 1;
 
                   return (
@@ -629,7 +632,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
               const isKg = Boolean(item.pricePerKg && item.pricePerKg > 0) || 
                 item.unit === 'KG' || 
                 (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg') || item.name.toLowerCase().includes('per-kg')));
-              const isBucket = Boolean(item.isBucket);
+              const isBucket = Boolean(item.isBucket || (item.pricePerKg && item.pricePerKg > 0) || (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg') || item.name.toLowerCase().includes('per-kg'))));
 
               // ── BUCKET ITEM: Large tappable card to increase clothes count ──
               if (isBucket) {

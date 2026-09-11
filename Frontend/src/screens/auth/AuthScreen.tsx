@@ -7,6 +7,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
@@ -24,6 +25,7 @@ export const AuthScreen = () => {
   const [screen, setScreen] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   const [step, setStep] = useState<'IDENTIFIER' | 'OTP'>('IDENTIFIER');
   const [identifier, setIdentifier] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
   const [otpEmail, setOtpEmail] = useState(''); // email OTP was sent to
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,7 +42,31 @@ export const AuthScreen = () => {
     setLoading(false);
 
     if (!res.success) {
-      alert(res.message);
+      const msg = res.message || '';
+      if (msg.toLowerCase().includes('register first') || msg.toLowerCase().includes('no account found')) {
+        const emailToPass = identifier.trim();
+        setRegisterEmail(emailToPass);
+        if (Platform.OS === 'web') {
+          if (typeof window !== 'undefined' && window.confirm(`No account found for "${emailToPass}".\n\nWould you like to open the Registration screen now?`)) {
+            setScreen('REGISTER');
+          }
+        } else {
+          Alert.alert(
+            'Account Not Found',
+            `No account found for "${emailToPass}". Would you like to register a new account?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Register Now', onPress: () => setScreen('REGISTER') },
+            ]
+          );
+        }
+      } else {
+        if (Platform.OS === 'web') {
+          alert(msg);
+        } else {
+          Alert.alert('Sign In', msg);
+        }
+      }
       return;
     }
 
@@ -50,7 +76,6 @@ export const AuthScreen = () => {
       setOtp('');
       setStep('OTP');
     }
-    // If requiresOtp is false, staff directLogin already updated the store — done
   };
 
   // Step 2: verify OTP
@@ -63,7 +88,11 @@ export const AuthScreen = () => {
     setLoading(false);
 
     if (!res.success) {
-      alert(res.message);
+      if (Platform.OS === 'web') {
+        alert(res.message);
+      } else {
+        Alert.alert('Verification Failed', res.message);
+      }
     }
   };
 
@@ -73,6 +102,7 @@ export const AuthScreen = () => {
   if (screen === 'REGISTER') {
     return (
       <RegisterScreen
+        initialEmail={registerEmail || identifier}
         onBack={() => setScreen('LOGIN')}
         onRegisterSuccess={() => {
           // Registration already signs in directly and updates store state
@@ -143,20 +173,27 @@ export const AuthScreen = () => {
                 We sent a 6-digit verification code to{`\n`}{otpEmail}
               </Text>
 
-              {/* OTP Input */}
+              {/* 6-Digit OTP Input Boxes */}
               <Text style={styles.fieldLabel}>VERIFICATION CODE</Text>
-              <View style={styles.inputWrap}>
-                <ShieldCheck size={20} color={COLORS.black} strokeWidth={2.5} />
+              <View style={styles.otpContainer}>
+                {[0, 1, 2, 3, 4, 5].map((idx) => {
+                  const digit = otp[idx] || '';
+                  return (
+                    <View
+                      key={idx}
+                      style={[styles.otpBox, digit ? styles.otpBoxActive : null]}
+                    >
+                      <Text style={styles.otpBoxText}>{digit}</Text>
+                    </View>
+                  );
+                })}
                 <TextInput
-                  style={styles.input}
-                  placeholder="Enter 6-digit code"
-                  placeholderTextColor="#6B7280"
+                  style={styles.hiddenOtpInput}
                   value={otp}
                   onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, '').slice(0, 6))}
                   keyboardType="number-pad"
                   maxLength={6}
                   autoFocus
-                  selectionColor={COLORS.black}
                 />
               </View>
 
@@ -309,5 +346,40 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.primary,
     letterSpacing: 0.5,
+  },
+  otpContainer: {
+    position: 'relative',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: SPACING.sm,
+    gap: 6,
+  },
+  otpBox: {
+    flex: 1,
+    height: 52,
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...NEO_SHADOW.box2,
+  },
+  otpBoxActive: {
+    backgroundColor: COLORS.secondary,
+  },
+  otpBoxText: {
+    fontSize: 22,
+    fontWeight: '900',
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  hiddenOtpInput: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    opacity: 0.01,
   },
 });

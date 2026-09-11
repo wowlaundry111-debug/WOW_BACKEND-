@@ -240,9 +240,12 @@ export const useAppStore = create<AppState>()(
           if (!get().currentTenantId && activeShopId && !isSuper) {
             set({ currentTenantId: activeShopId });
           }
-          const promises: Promise<any>[] = [get().fetchCatalog(activeShopId), get().fetchOrders()];
-          if (get().currentUser && ['SuperAdmin', 'ShopAdmin'].includes(get().currentUser!.role)) {
-            promises.push(get().fetchUsers());
+          const promises: Promise<any>[] = [get().fetchCatalog(activeShopId)];
+          if (get().currentUser) {
+            promises.push(get().fetchOrders());
+            if (['SuperAdmin', 'ShopAdmin'].includes(get().currentUser.role)) {
+              promises.push(get().fetchUsers());
+            }
           }
           await Promise.all(promises);
           return;
@@ -266,12 +269,12 @@ export const useAppStore = create<AppState>()(
           });
 
           // Fetch catalog, orders, and users for active role
-          const promises: Promise<any>[] = [
-            get().fetchCatalog(activeShopId),
-            get().fetchOrders()
-          ];
-          if (get().currentUser && ['SuperAdmin', 'ShopAdmin'].includes(get().currentUser!.role)) {
-            promises.push(get().fetchUsers());
+          const promises: Promise<any>[] = [get().fetchCatalog(activeShopId)];
+          if (get().currentUser) {
+            promises.push(get().fetchOrders());
+            if (['SuperAdmin', 'ShopAdmin'].includes(get().currentUser.role)) {
+              promises.push(get().fetchUsers());
+            }
           }
           await Promise.all(promises);
         } catch (err: any) {
@@ -492,6 +495,7 @@ export const useAppStore = create<AppState>()(
 
       // Paginated orders fetch with strict shop partitioning
       fetchOrders: async (page = 1) => {
+        if (!get().currentUser) return;
         set({ isOrdersLoading: true, error: null });
         try {
           const shopId = get().currentTenantId || get().currentUser?.shopId;
@@ -820,16 +824,21 @@ export const useAppStore = create<AppState>()(
       deleteCategory: async (categoryId) => {
         const prevCategories = get().categories;
         const prevItems = get().items;
+        const shopId = get().currentTenantId || get().currentUser?.shopId || get().shops[0]?._id;
         // Optimistic update — also remove sub-categories and their items
         const subCatIds = get().categories
-          .filter(c => c.parentCategoryId === categoryId)
-          .map(c => c._id);
+          .filter(c => String(c.parentCategoryId) === String(categoryId))
+          .map(c => String(c._id));
         set(state => ({
-          categories: state.categories.filter(c => c._id !== categoryId && c.parentCategoryId !== categoryId),
-          items: state.items.filter(i => i.categoryId !== categoryId && !subCatIds.includes(i.categoryId)),
+          categories: state.categories.filter(c => String(c._id) !== String(categoryId) && String(c.parentCategoryId) !== String(categoryId)),
+          items: state.items.filter(i => String(i.categoryId) !== String(categoryId) && !subCatIds.includes(String(i.categoryId))),
+          catalogLastFetched: 0,
         }));
         try {
           await api.delete(`/catalog/categories/${categoryId}`);
+          if (shopId) {
+            await get().fetchCatalog(shopId);
+          }
         } catch (err) {
           set({ categories: prevCategories, items: prevItems });
           console.error('Failed to delete category', err);
@@ -839,7 +848,7 @@ export const useAppStore = create<AppState>()(
 
       addCatalogItem: async (categoryId, name, description, price, unit, image, isBucket) => {
         const { categories, currentTenantId } = get();
-        const cat = categories.find(c => c._id === categoryId);
+        const cat = categories.find(c => String(c._id) === String(categoryId));
         const shopId = cat ? cat.shopId : currentTenantId;
         try {
           let finalImage = image ? await uploadImageToCloudinary(image) : undefined;
@@ -854,8 +863,12 @@ export const useAppStore = create<AppState>()(
           });
           if (res.data) {
             set(state => ({
-              items: state.items.some(i => i._id === res.data._id) ? state.items : [...state.items, res.data]
+              items: state.items.some(i => String(i._id) === String(res.data._id)) ? state.items : [...state.items, res.data],
+              catalogLastFetched: 0,
             }));
+            if (shopId) {
+              await get().fetchCatalog(shopId);
+            }
           }
         } catch (err) {
           console.error('Failed to add item', err);
@@ -864,6 +877,7 @@ export const useAppStore = create<AppState>()(
 
       updateCatalogItem: async (itemId, updates) => {
         const prevItems = get().items;
+        const shopId = get().currentTenantId || get().currentUser?.shopId || get().shops[0]?._id;
         try {
           let finalUpdates = { ...updates };
           if (finalUpdates.image) {
@@ -871,9 +885,13 @@ export const useAppStore = create<AppState>()(
           }
           // Optimistic update
           set(state => ({
-            items: state.items.map(item => item._id === itemId ? { ...item, ...finalUpdates } : item),
+            items: state.items.map(item => String(item._id) === String(itemId) ? { ...item, ...finalUpdates } : item),
+            catalogLastFetched: 0,
           }));
           await api.patch(`/catalog/items/${itemId}`, finalUpdates);
+          if (shopId) {
+            await get().fetchCatalog(shopId);
+          }
         } catch (err) {
           set({ items: prevItems });
           console.error('Failed to update item', err);
@@ -886,15 +904,20 @@ export const useAppStore = create<AppState>()(
           pricePerKg: unit === 'KG' ? price : undefined,
           pricePerItem: unit === 'ITEM' ? price : undefined,
         };
+        const shopId = get().currentTenantId || get().currentUser?.shopId || get().shops[0]?._id;
         set(state => ({
           items: state.items.map(item =>
-            item._id === itemId
+            String(item._id) === String(itemId)
               ? { ...item, pricePerKg: updates.pricePerKg as any, pricePerItem: updates.pricePerItem as any }
               : item
           ),
+          catalogLastFetched: 0,
         }));
         try {
           await api.patch(`/catalog/items/${itemId}`, updates);
+          if (shopId) {
+            await get().fetchCatalog(shopId);
+          }
         } catch (err) {
           console.error('Failed to update price', err);
         }
@@ -902,9 +925,16 @@ export const useAppStore = create<AppState>()(
 
       deleteCatalogItem: async (itemId) => {
         const prevItems = get().items;
-        set(state => ({ items: state.items.filter(item => item._id !== itemId) }));
+        const shopId = get().currentTenantId || get().currentUser?.shopId || get().shops[0]?._id;
+        set(state => ({
+          items: state.items.filter(item => String(item._id) !== String(itemId)),
+          catalogLastFetched: 0,
+        }));
         try {
           await api.delete(`/catalog/items/${itemId}`);
+          if (shopId) {
+            await get().fetchCatalog(shopId);
+          }
         } catch (err) {
           set({ items: prevItems });
           console.error('Failed to delete item', err);

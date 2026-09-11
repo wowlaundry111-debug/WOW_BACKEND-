@@ -16,7 +16,7 @@ const getBaseUrl = (): string => {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
-  return 'http://192.168.1.141:3000/api';
+  return 'http://192.168.1.5:3000/api';
 };
 
 export const BASE_URL = getBaseUrl();
@@ -76,6 +76,12 @@ api.interceptors.response.use(
       console.warn('Unauthorized — token may be expired');
       memoryToken = null;
       AsyncStorage.removeItem('auth_token').catch(console.error);
+      try {
+        const { useAppStore } = require('../store/useAppStore');
+        useAppStore.getState().setCurrentUser(null);
+      } catch (e) {
+        // Guard against circular import issues during init
+      }
       return Promise.reject(error);
     }
 

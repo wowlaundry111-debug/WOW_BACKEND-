@@ -305,15 +305,10 @@ router.post('/items', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), asy
       return res.status(400).json({ error: 'Target sub-category ID is required' });
     }
 
-    // Items are ONLY allowed inside a sub-category (category that has a parentCategoryId)
+    // Items can be created inside sub-categories or direct categories
     const targetCategory = await Category.findById(categoryId).lean() as any;
     if (!targetCategory) {
       return res.status(404).json({ error: 'Selected category does not exist' });
-    }
-    if (!targetCategory.parentCategoryId) {
-      return res.status(400).json({
-        error: 'Items can only be created inside a sub-category. Please select a valid sub-category under a parent category.'
-      });
     }
 
     const item = await Item.create({ shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image, isActive: true, isBucket: !!isBucket });

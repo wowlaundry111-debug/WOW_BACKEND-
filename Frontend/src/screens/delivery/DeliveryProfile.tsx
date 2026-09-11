@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Animated, Easing, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -137,8 +137,17 @@ export const DeliveryProfileScreen = () => {
   ).length;
 
   const handleLogout = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setCurrentUser(null);
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to end shift and log out?')) {
+        setCurrentUser(null);
+      }
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      Alert.alert('Logout', 'Are you sure you want to end shift and log out?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Logout', style: 'destructive', onPress: () => setCurrentUser(null) },
+      ]);
+    }
   };
 
   return (

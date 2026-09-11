@@ -277,25 +277,37 @@ export const AdminShopScreen: React.FC = () => {
   };
 
   const handleDeleteStaff = (userId: string, name: string) => {
-    Alert.alert('Remove Staff', `Remove "${name}" from delivery fleet?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => deleteUser(userId),
-      },
-    ]);
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`Remove "${name}" from delivery fleet?`)) {
+        deleteUser(userId);
+      }
+    } else {
+      Alert.alert('Remove Staff', `Remove "${name}" from delivery fleet?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => deleteUser(userId),
+        },
+      ]);
+    }
   };
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: () => setCurrentUser(null),
-      },
-    ]);
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to log out of the admin panel?')) {
+        setCurrentUser(null);
+      }
+    } else {
+      Alert.alert('Logout', 'Are you sure you want to log out?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => setCurrentUser(null),
+        },
+      ]);
+    }
   };
 
   const shouldShowSection = (id: SectionId) => activeTab === 'all' || activeTab === id;
@@ -304,9 +316,9 @@ export const AdminShopScreen: React.FC = () => {
     <View style={styles.root}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.heading}>SHOP SETTINGS</Text>
-          <Text style={styles.subHeading}>Configure operations for {currentShop?.name || 'Branch'}</Text>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text style={styles.heading} numberOfLines={1}>SHOP SETTINGS</Text>
+          <Text style={styles.subHeading} numberOfLines={1}>Configure operations for {currentShop?.name || 'Branch'}</Text>
         </View>
         <TouchableOpacity
           style={[styles.globalSaveBtn, isSaving && { opacity: 0.7 }]}
@@ -896,6 +908,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     paddingHorizontal: 14,
     paddingVertical: 7,
+    flexShrink: 0,
     ...NEO_SHADOW.box2,
   },
   globalSaveBtnText: {
@@ -911,7 +924,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   categoryBarContent: {
-    paddingHorizontal: SPACING.mobile,
+    paddingLeft: SPACING.mobile,
+    paddingRight: 28,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,

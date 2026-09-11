@@ -27,6 +27,8 @@ export function usePushNotifications() {
   const currentUser = useAppStore((state: any) => state.currentUser); // To know if user is logged in
 
   useEffect(() => {
+    if (Platform.OS === 'web') return; // Push notification listeners are unsupported on Web
+
     registerForPushNotificationsAsync().then(pushToken => {
       setExpoPushToken(pushToken);
       
@@ -48,7 +50,6 @@ export function usePushNotifications() {
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('Notification response:', response);
-      // Here you could handle deep linking or navigation based on response.notification.request.content.data
     });
 
     return () => {
