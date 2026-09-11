@@ -849,7 +849,7 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: COLORS.background,
   },
   topOverscrollFiller: {
     position: 'absolute',

@@ -811,7 +811,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: COLORS.background,
   },
   topOverscrollFiller: {
     position: 'absolute',

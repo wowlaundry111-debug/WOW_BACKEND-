@@ -888,7 +888,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: COLORS.background,
   },
   topOverscrollFiller: {
     position: 'absolute',
@@ -1198,7 +1198,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   bodyContent: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: COLORS.background,
     flex: 1,
     paddingHorizontal: SPACING.mobile,
     paddingTop: 4,

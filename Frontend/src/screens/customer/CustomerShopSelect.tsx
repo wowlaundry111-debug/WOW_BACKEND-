@@ -92,12 +92,12 @@ export const CustomerShopSelectScreen: React.FC<CustomerShopSelectProps> = ({ on
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.background,
   },
   header: {
     paddingHorizontal: SPACING.mobile,
     paddingBottom: SPACING.lg,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.background,
     borderBottomWidth: 2,
     borderBottomColor: COLORS.black,
   },

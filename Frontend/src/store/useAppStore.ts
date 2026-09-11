@@ -524,7 +524,7 @@ export const useAppStore = create<AppState>()(
 
       fetchUsers: async () => {
         const role = get().currentUser?.role;
-        if (!['SuperAdmin', 'ShopAdmin'].includes(role || '')) {
+        if (!['SuperAdmin', 'ShopAdmin', 'Admin'].includes(role || '')) {
           return;
         }
         try {
@@ -781,7 +781,7 @@ export const useAppStore = create<AppState>()(
       },
 
       addCategory: async (name, image, overrideShopId, parentCategoryId) => {
-        const shopId = overrideShopId || get().currentTenantId;
+        const shopId = overrideShopId || get().currentTenantId || get().currentUser?.shopId || get().shops[0]?._id;
         try {
           let finalImage = image ? await uploadImageToCloudinary(image) : undefined;
           const res = await api.post('/catalog/categories', { shopId, name, image: finalImage, parentCategoryId: parentCategoryId || null });
@@ -789,6 +789,9 @@ export const useAppStore = create<AppState>()(
             set(state => ({
               categories: state.categories.some(c => c._id === res.data._id) ? state.categories : [...state.categories, res.data]
             }));
+            if (shopId) {
+              await get().fetchCatalog(shopId);
+            }
           }
         } catch (err) {
           console.error('Failed to add category', err);

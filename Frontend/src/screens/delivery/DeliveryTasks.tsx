@@ -900,7 +900,7 @@ export const DeliveryTasksScreen = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.background,
   },
   topOverscrollFiller: {
     position: 'absolute',

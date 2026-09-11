@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   bodyContent: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: COLORS.background,
     flex: 1,
     paddingHorizontal: SPACING.mobile,
     paddingTop: SPACING.md,

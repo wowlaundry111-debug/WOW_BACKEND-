@@ -308,7 +308,7 @@ export const SuperAdminDashboard: React.FC = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.background,
   },
   scrollContent: {
     padding: SPACING.mobile,
