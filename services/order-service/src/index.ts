@@ -532,13 +532,13 @@ router.patch('/:orderId/admin-details', requireAuth, requireRole(['ShopAdmin', '
   }
 });
 
-// Update KG item weights (Delivery agent — after weighing clothes at delivery time)
-// Body: { items: [{ itemId: string, kgWeight: number }] }
+// Update KG item weights (Delivery agent — weighs clothes at pickup time to calculate final price)
+// Body: { items: [{ itemId: string, kgWeight: number }], markPickedUp?: boolean }
 // Each KG item's price is computed as kgWeight * (catalog pricePerKg from the item record)
 // After update, totalAmount is recalculated and kgPriceUpdated is set to true.
 router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const { items: weightUpdates } = req.body;
+    const { items: weightUpdates, markPickedUp } = req.body;
     if (!Array.isArray(weightUpdates) || weightUpdates.length === 0) {
       return res.status(400).json({ error: 'items array with { itemId, kgWeight } entries is required' });
     }
@@ -591,6 +591,12 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     order.items = updatedItems;
     order.totalAmount = Math.round(newTotal * 100) / 100;
     order.kgPriceUpdated = true;
+
+    // If requested to mark as picked up at the same time
+    if (markPickedUp && ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED'].includes(order.status)) {
+      order.status = 'PICKED_UP';
+    }
+
     await order.save();
 
     const updatedOrder = order.toObject();
@@ -607,8 +613,8 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
         if (customer?.expoPushToken) {
           await sendPushNotification(
             [customer.expoPushToken],
-            'Order Total Updated',
-            `Your KG items have been weighed. Total: ₹${updatedOrder.totalAmount}`,
+            'Order Weighed at Pickup',
+            `Your laundry has been weighed at pickup. Final bill: ₹${updatedOrder.totalAmount}`,
             { orderId: updatedOrder._id }
           );
         }
@@ -621,7 +627,6 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     res.status(500).json({ error: 'Failed to update KG weights' });
   }
 });
-
 
 
 // Verify order items (Delivery & Admin — pickup confirmation / count verification step)
@@ -644,7 +649,15 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
     const taxPercent = shop?.taxPercent || 0;
     const deliveryFeeAmt = shop?.deliveryFee || 0;
 
-    const itemSubtotal = items.reduce((sum: number, item: any) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+    const perItemSubtotal = items
+      .filter((it: any) => it.unit !== 'KG')
+      .reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 0)), 0);
+
+    const kgSubtotal = items
+      .filter((it: any) => it.unit === 'KG')
+      .reduce((sum: number, it: any) => sum + Number(it.price || 0), 0);
+
+    const itemSubtotal = perItemSubtotal + kgSubtotal;
     const washPrefsCost = (order.washPreferences || []).reduce((sum: number, wp: any) => sum + Number(wp.price || 0), 0);
     const taxAmount = (itemSubtotal * taxPercent) / 100;
     const discountAmount = order.discountAmount || 0;
