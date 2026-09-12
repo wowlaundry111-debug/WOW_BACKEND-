@@ -1,5 +1,5 @@
 export type Role = 'SuperAdmin' | 'ShopAdmin' | 'Delivery' | 'Customer';
-export type OrderStatus = 'PLACED' | 'ACCEPTED' | 'PICKUP_ASSIGNED' | 'PICKED_UP' | 'WASHING' | 'IRONING' | 'OUT_FOR_DELIVERY' | 'DELIVERED';
+export type OrderStatus = 'PLACED' | 'ACCEPTED' | 'PICKUP_ASSIGNED' | 'PICKED_UP' | 'WASHING' | 'IRONING' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
 export type PaymentMode = 'COD' | 'UPI' | 'CARD' | 'WALLET';
 
@@ -104,6 +104,10 @@ export interface IOrder {
   customerAddress?: string;
   deliveryBoyId?: string;
   deliveryBoyName?: string;
+  deliveryBoyPhone?: string;
+  shopPhone?: string;
+  cancelledAt?: Date;
+  cancellationReason?: string;
   status: OrderStatus;
   items: {
     itemId: string;

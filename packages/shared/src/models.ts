@@ -117,9 +117,13 @@ const OrderSchema = new Schema<IOrder>({
   customerAddress: { type: String },
   deliveryBoyId: { type: String },
   deliveryBoyName: { type: String },
+  deliveryBoyPhone: { type: String },
+  shopPhone: { type: String },
+  cancelledAt: { type: Date },
+  cancellationReason: { type: String },
   status: {
     type: String,
-    enum: ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED', 'PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_DELIVERY', 'DELIVERED'],
+    enum: ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED', 'PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'],
     default: 'PLACED'
   },
   items: [{
