@@ -25,7 +25,7 @@ const router = Router();
 router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest, res: Response) => {
   try {
     const {
-      shopId, items, totalAmount, discountAmount, taxAmount,
+      shopId, items, totalAmount, discountAmount, couponCode, taxAmount,
       deliveryFee, pickupAddress, deliveryAddress, pickupTime, washPreferences
     } = req.body;
 
@@ -83,6 +83,7 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       washPreferences,
       totalAmount,
       discountAmount,
+      couponCode,
       taxAmount,
       deliveryFee,
       pickupAddress,

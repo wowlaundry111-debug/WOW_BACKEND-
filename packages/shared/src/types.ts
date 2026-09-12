@@ -33,6 +33,15 @@ export interface IPromoBanner {
   type?: 'promo' | 'free';
 }
 
+export interface IShopPromoCode {
+  code: string;
+  discountPercent: number;
+  maxDiscount: number;
+  minOrderValue: number;
+  description?: string;
+  isActive: boolean;
+}
+
 export interface IShop {
   _id: string;
   name: string;
@@ -50,6 +59,7 @@ export interface IShop {
   contactNumber?: string;
   washPreferences?: IWashPreference[];
   promoBanners?: IPromoBanner[];
+  promoCode?: IShopPromoCode;
   minOrderValue?: number;
   taxPercent?: number;
   deliveryFee?: number;
@@ -128,6 +138,7 @@ export interface IOrder {
   taxAmount?: number;
   deliveryFee?: number;
   discountAmount?: number;
+  couponCode?: string;
   paymentStatus?: PaymentStatus;
   paymentMode?: PaymentMode;
   pickupAddress: string;
