@@ -51,7 +51,7 @@ const CATEGORIES = [
   { _id: 'cat_lg_sub_shoes', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'SHOES', image: 'shoes' },
   { _id: 'cat_lg_sub_bags', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
 
-  { _id: 'cat_lg_blanket', shopId: 'shop_lawgate', name: 'BLANKET', image: 'blanket' },
+  { _id: 'cat_lg_blanket', shopId: 'shop_lawgate', name: 'BLANKETS', image: 'blanket' },
 
   // AGI Categories
   { _id: 'cat_agi_laundry', shopId: 'shop_agi', name: 'LAUNDRY', image: 'normal' },
@@ -65,7 +65,7 @@ const CATEGORIES = [
   { _id: 'cat_agi_sub_shoes', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'SHOES', image: 'shoes' },
   { _id: 'cat_agi_sub_bags', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
 
-  { _id: 'cat_agi_blanket', shopId: 'shop_agi', name: 'BLANKET', image: 'blanket' },
+  { _id: 'cat_agi_blanket', shopId: 'shop_agi', name: 'BLANKETS', image: 'blanket' },
 ];
 
 const createItemsForShop = (shopId: string, p: string) => [
@@ -103,13 +103,9 @@ const createItemsForShop = (shopId: string, p: string) => [
   { _id: `item_${p}_w_8`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Trouser / Jeans', pricePerItem: 150, image: 'jeans' },
   { _id: `item_${p}_w_9`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Dupatta', pricePerItem: 100, image: 'wedding_dress' },
 
-  // Dry Clean — Household Items
-  { _id: `item_${p}_h_1`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Blanket – Single', pricePerItem: 300, image: 'blanket' },
-  { _id: `item_${p}_h_2`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Blanket – Double', pricePerItem: 400, image: 'blanket' },
+  // Dry Clean — Household Items (Linen & Furnishings)
   { _id: `item_${p}_h_3`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Bedsheet – Single', pricePerItem: 150, image: 'bedding' },
   { _id: `item_${p}_h_4`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Bedsheet – Double', pricePerItem: 200, image: 'bedding' },
-  { _id: `item_${p}_h_5`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Quilt – Single', pricePerItem: 350, image: 'bedding' },
-  { _id: `item_${p}_h_6`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Quilt – Double', pricePerItem: 450, image: 'bedding' },
   { _id: `item_${p}_h_7`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Carpet', pricePerItem: 50, description: 'Per Sq. Ft.', image: 'rugs' },
   { _id: `item_${p}_h_8`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Door Mat', pricePerItem: 100, description: 'Per Piece', image: 'rugs' },
   { _id: `item_${p}_h_9`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Curtain', pricePerItem: 200, description: 'Starting at ₹200 / Panel', image: 'curtains' },
