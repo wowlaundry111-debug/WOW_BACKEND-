@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Git repository
+.git
+.git/
+
+# APKs and builds
+*.apk
+*.aab
+
+# Unused large asset folders
+assets/final_vectors/
+assets/categories/
+assets/transparent_assets/
+
+# macOS
+.DS_Store
+*.pem
+
+# Local env files
+.env
+.env.local
+.env*.local
+
+# Firebase / credentials
+firebase-service-account.json
+google-services.json
+GoogleService-Info.plist
+
+# TypeScript
+*.tsbuildinfo
+
+# Native
+/ios
+/android
