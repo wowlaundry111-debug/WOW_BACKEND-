@@ -24,8 +24,5 @@
     "socket.io": "^4.8.3",
     "typescript": "^5.0.0"
   },
-  "devDependencies": {
-    "jpeg-js": "^0.4.4",
-    "pngjs": "^7.0.0"
-  }
+  "devDependencies": {}
 }

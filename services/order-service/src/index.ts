@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { Order, Shop, User, Item, Category, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache } from '@wow/shared';
+import { Order, Shop, User, Item, Category, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache, log } from '@wow/shared';
 
 // Helper: emit to a specific shop's room only (not all sockets)
 const emitToShop = (req: Request, shopId: string, event: string, data: any) => {
@@ -114,11 +114,12 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
             { orderId: order._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send new-order notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send new-order notification', { error: e.message });
       }
     });
-  } catch (err) {
+  } catch (err: any) {
+    log.error('Failed to create order', { error: err.message });
     res.status(500).json({ error: 'Failed to create order' });
   }
 });
@@ -311,8 +312,8 @@ router.get('/analytics', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), 
     analyticsCache.set(cacheKey, analyticsResult, 60_000);
     res.setHeader('X-Cache', 'MISS');
     res.json(analyticsResult);
-  } catch (err) {
-    console.error('Failed to fetch analytics data:', err);
+  } catch (err: any) {
+    log.error('Failed to fetch analytics data', { error: err.message });
     res.status(500).json({ error: 'Failed to fetch analytics data' });
   }
 });
@@ -459,8 +460,8 @@ router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAd
             );
           }
         }
-      } catch (e) {
-        console.error('Failed to send status-update notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send status-update notification', { error: e.message });
       }
     });
   } catch (err) {
@@ -536,8 +537,8 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
             { orderId: order._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send assign notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send assign notification', { error: e.message });
       }
     });
   } catch (err) {
@@ -576,8 +577,6 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     const order = await Order.findById(req.params.orderId) as any;
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // Fetch catalog items to get pricePerKg values
-    const { Item } = require('@wow/shared');
     const itemIds = weightUpdates.map((u: any) => u.itemId);
     const catalogItems = await Item.find({ _id: { $in: itemIds } }).select('_id pricePerKg').lean() as any[];
     const catalogMap: Record<string, number> = {};
@@ -648,12 +647,12 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
             { orderId: updatedOrder._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send kg-weight notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send kg-weight notification', { error: e.message });
       }
     });
-  } catch (err) {
-    console.error('Failed to update kg weights:', err);
+  } catch (err: any) {
+    log.error('Failed to update KG weights', { error: err.message });
     res.status(500).json({ error: 'Failed to update KG weights' });
   }
 });
@@ -724,12 +723,12 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
             { orderId: order._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send verify notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send verify notification', { error: e.message });
       }
     });
-  } catch (err) {
-    console.error('Failed to verify order', err);
+  } catch (err: any) {
+    log.error('Failed to verify order', { error: err.message });
     res.status(500).json({ error: 'Failed to verify order' });
   }
 });
@@ -834,12 +833,12 @@ router.patch('/:orderId/cancel', requireAuth, async (req: AuthRequest, res: Resp
             { orderId: updatedOrder._id, status: 'CANCELLED' }
           );
         }
-      } catch (e) {
-        console.error('Failed to send cancellation notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send cancellation notification', { error: e.message });
       }
     });
-  } catch (err) {
-    console.error('Failed to cancel order:', err);
+  } catch (err: any) {
+    log.error('Failed to cancel order', { error: err.message });
     res.status(500).json({ error: 'Failed to cancel order' });
   }
 });

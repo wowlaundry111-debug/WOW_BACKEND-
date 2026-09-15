@@ -2,7 +2,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import mongoose from 'mongoose';
-import { User, Shop, Category, Item, Offer, Order, connectDB } from '@wow/shared';
+import { User, Shop, Category, Item, Offer, connectDB } from '@wow/shared';
 
 const SHOPS = [
   {
@@ -26,16 +26,14 @@ const SHOPS = [
 const USERS = [
   // Super Admin
   { _id: 'super_admin_1', shopId: '', role: 'SuperAdmin', name: 'Platform Owner', phone: '9999999999', email: 'superadmin@wow.com', address: 'HQ' },
-  
+
   // Lawgate Users
   { _id: 'admin_lawgate', shopId: 'shop_lawgate', role: 'ShopAdmin', name: 'Lawgate Admin', phone: '9876543210', email: 'admin.lawgate@wow.com', address: 'Lawgate Main' },
   { _id: 'delivery_lawgate', shopId: 'shop_lawgate', role: 'Delivery', name: 'Lawgate Delivery', phone: '9000000001', email: 'delivery.lawgate@wow.com', address: 'Lawgate Area' },
-  { _id: 'customer_lawgate', shopId: 'shop_lawgate', role: 'Customer', name: 'Lawgate Customer', phone: '9000000002', email: 'customer.lawgate@wow.com', address: 'Hostel 1' },
 
   // AGI Users
   { _id: 'admin_agi', shopId: 'shop_agi', role: 'ShopAdmin', name: 'AGI Admin', phone: '9876543211', email: 'admin.agi@wow.com', address: 'AGI Campus' },
   { _id: 'delivery_agi', shopId: 'shop_agi', role: 'Delivery', name: 'AGI Delivery', phone: '9000000011', email: 'delivery.agi@wow.com', address: 'AGI Area' },
-  { _id: 'customer_agi', shopId: 'shop_agi', role: 'Customer', name: 'AGI Customer', phone: '9000000012', email: 'customer.agi@wow.com', address: 'Hostel A' },
 ];
 
 const CATEGORIES = [
@@ -51,6 +49,8 @@ const CATEGORIES = [
   { _id: 'cat_lg_sub_shoes', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'SHOES', image: 'shoes' },
   { _id: 'cat_lg_sub_bags', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
 
+  { _id: 'cat_lg_blanket', shopId: 'shop_lawgate', name: 'BLANKETS', image: 'blanket' },
+
   // AGI Categories
   { _id: 'cat_agi_laundry', shopId: 'shop_agi', name: 'LAUNDRY', image: 'normal' },
   { _id: 'cat_agi_sub_reg', shopId: 'shop_agi', parentCategoryId: 'cat_agi_laundry', name: 'REGULAR WASH', image: 'normal' },
@@ -62,6 +62,8 @@ const CATEGORIES = [
   { _id: 'cat_agi_sub_house', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'HOUSEHOLD ITEMS', image: 'bedding' },
   { _id: 'cat_agi_sub_shoes', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'SHOES', image: 'shoes' },
   { _id: 'cat_agi_sub_bags', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
+
+  { _id: 'cat_agi_blanket', shopId: 'shop_agi', name: 'BLANKETS', image: 'blanket' },
 ];
 
 const createItemsForShop = (shopId: string, p: string) => [
@@ -99,13 +101,9 @@ const createItemsForShop = (shopId: string, p: string) => [
   { _id: `item_${p}_w_8`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Trouser / Jeans', pricePerItem: 150, image: 'jeans' },
   { _id: `item_${p}_w_9`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Dupatta', pricePerItem: 100, image: 'wedding_dress' },
 
-  // Dry Clean — Household Items
-  { _id: `item_${p}_h_1`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Blanket – Single', pricePerItem: 300, image: 'blanket' },
-  { _id: `item_${p}_h_2`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Blanket – Double', pricePerItem: 400, image: 'blanket' },
+  // Dry Clean — Household Items (Linen & Furnishings)
   { _id: `item_${p}_h_3`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Bedsheet – Single', pricePerItem: 150, image: 'bedding' },
   { _id: `item_${p}_h_4`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Bedsheet – Double', pricePerItem: 200, image: 'bedding' },
-  { _id: `item_${p}_h_5`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Quilt – Single', pricePerItem: 350, image: 'bedding' },
-  { _id: `item_${p}_h_6`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Quilt – Double', pricePerItem: 450, image: 'bedding' },
   { _id: `item_${p}_h_7`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Carpet', pricePerItem: 50, description: 'Per Sq. Ft.', image: 'rugs' },
   { _id: `item_${p}_h_8`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Door Mat', pricePerItem: 100, description: 'Per Piece', image: 'rugs' },
   { _id: `item_${p}_h_9`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Curtain', pricePerItem: 200, description: 'Starting at ₹200 / Panel', image: 'curtains' },
@@ -121,6 +119,13 @@ const createItemsForShop = (shopId: string, p: string) => [
   { _id: `item_${p}_b_1`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Trolley Bag – Small', pricePerItem: 300, image: 'bag' },
   { _id: `item_${p}_b_2`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Trolley Bag – Large', pricePerItem: 400, image: 'bag' },
   { _id: `item_${p}_b_3`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Soft Toys', pricePerItem: 150, description: 'Starting from ₹150 (As per size)', image: 'bag' },
+
+  // Blankets & Winter Items
+  { _id: `item_${p}_blk_1`, shopId, categoryId: `cat_${p}_blanket`, name: 'Blanket Double Bed', pricePerItem: 300, description: '₹300 Per Unit', image: 'blanket' },
+  { _id: `item_${p}_blk_2`, shopId, categoryId: `cat_${p}_blanket`, name: 'Blanket Single Bed', pricePerItem: 250, description: '₹250 Per Unit', image: 'blanket' },
+  { _id: `item_${p}_blk_3`, shopId, categoryId: `cat_${p}_blanket`, name: 'Rajaai / Quilt', pricePerItem: 300, description: '₹300 Per Unit', image: 'bedding' },
+  { _id: `item_${p}_blk_4`, shopId, categoryId: `cat_${p}_blanket`, name: 'Blanket Single / Double Ply', pricePerItem: 300, description: '₹300 Per Unit', image: 'blanket' },
+  { _id: `item_${p}_blk_5`, shopId, categoryId: `cat_${p}_blanket`, name: 'Very Small Blanket / Winter Rajai Cover', pricePerItem: 200, description: '₹200 Per Unit', image: 'blanket' },
 ];
 
 const ITEMS = [
@@ -133,46 +138,6 @@ const OFFERS = [
   { _id: 'offer_agi_1', shopId: 'shop_agi', code: 'STUDENT20', discountPercent: 20, maxDiscount: 100, minOrderValue: 150, description: '20% off for students' },
 ];
 
-const ORDERS = [
-  {
-    _id: 'order_1',
-    shopId: 'shop_lawgate',
-    customerId: 'customer_lawgate',
-    customerName: 'Lawgate Customer',
-    customerPhone: '9000000002',
-    customerAddress: 'Hostel 1',
-    status: 'PLACED',
-    items: [
-      { itemId: 'item_lg_wf_1', name: 'WASH + FOLD', quantity: 3, unit: 'KG', price: 50 },
-      { itemId: 'item_lg_m_1', name: 'Shirt / T-Shirt', quantity: 2, unit: 'ITEM', price: 150 }
-    ],
-    totalAmount: 450,
-    paymentStatus: 'PENDING',
-    paymentMode: 'COD',
-    pickupAddress: 'Hostel 1',
-    deliveryAddress: 'Hostel 1',
-    createdAt: new Date().toISOString()
-  },
-  {
-    _id: 'order_2',
-    shopId: 'shop_lawgate',
-    customerId: 'customer_lawgate',
-    customerName: 'Lawgate Customer',
-    customerPhone: '9000000002',
-    customerAddress: 'Hostel 1',
-    status: 'WASHING',
-    items: [
-      { itemId: 'item_lg_m_3', name: 'Coat', quantity: 1, unit: 'ITEM', price: 300 }
-    ],
-    totalAmount: 300,
-    paymentStatus: 'SUCCESS',
-    paymentMode: 'UPI',
-    pickupAddress: 'Hostel 1',
-    deliveryAddress: 'Hostel 1',
-    createdAt: new Date(Date.now() - 86400000).toISOString()
-  }
-];
-
 const seed = async () => {
   await connectDB();
 
@@ -182,7 +147,6 @@ const seed = async () => {
   await Category.deleteMany({});
   await Item.deleteMany({});
   await Offer.deleteMany({});
-  await Order.deleteMany({});
 
   console.log('Inserting shops...');
   await Shop.insertMany(SHOPS);
@@ -198,9 +162,6 @@ const seed = async () => {
 
   console.log('Inserting offers...');
   await Offer.insertMany(OFFERS);
-
-  console.log('Inserting orders...');
-  await Order.insertMany(ORDERS);
 
   console.log('Database seeded successfully with Lawgate and AGI!');
   process.exit(0);
