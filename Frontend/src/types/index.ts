@@ -87,6 +87,7 @@ export interface Category {
   isActive?: boolean;
   parentCategoryId?: string; // parent category ID for nested sub-categories
   subCategories?: Category[];
+  singleItemSelection?: boolean;
 }
 
 export interface Item {

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { Category, Item, Shop, Offer, requireAuth, requireRole, AuthRequest, catalogCache } from '@wow/shared';
+import { Category, Item, Shop, Offer, requireAuth, requireRole, AuthRequest, catalogCache, log } from '@wow/shared';
 
 const router = Router();
 
@@ -72,8 +72,8 @@ router.post('/shops', requireAuth, requireRole(['SuperAdmin']), async (req: Auth
     catalogCache.delete('shops:list');
     res.status(201).json(shop);
     emitSocketEvent(req, 'shop_created', shop);
-  } catch (err) {
-    console.error('Failed to create shop:', err);
+  } catch (err: any) {
+    log.error('Failed to create shop', { error: err.message });
     res.status(500).json({ error: 'Failed to create shop' });
   }
 });
@@ -129,8 +129,8 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
         );
         catalogCache.delete(`offers:${req.params.shopId}`);
         catalogCache.delete('offers:all');
-      } catch (syncErr) {
-        console.warn('Failed to sync Offer model:', syncErr);
+      } catch (syncErr: any) {
+        log.warn('Failed to sync Offer model', { error: syncErr.message });
       }
     }
 
@@ -141,8 +141,8 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
 
     res.json(shop);
     emitSocketEvent(req, 'shop_updated', shop);
-  } catch (err) {
-    console.error('Failed to update shop:', err);
+  } catch (err: any) {
+    log.error('Failed to update shop', { error: err.message });
     res.status(500).json({ error: 'Failed to update shop' });
   }
 });
@@ -157,8 +157,8 @@ router.delete('/shops/:shopId', requireAuth, requireRole(['SuperAdmin']), async 
     catalogCache.delete(`catalog:${req.params.shopId}`);
     res.json({ message: 'Shop deleted successfully' });
     emitSocketEvent(req, 'shop_deleted', { shopId: req.params.shopId });
-  } catch (err) {
-    console.error('Failed to delete shop:', err);
+  } catch (err: any) {
+    log.error('Failed to delete shop', { error: err.message });
     res.status(500).json({ error: 'Failed to delete shop' });
   }
 });
@@ -193,6 +193,7 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
         ...c,
         _id: cId,
         parentCategoryId: c.parentCategoryId ? String(c.parentCategoryId) : null,
+        singleItemSelection: Boolean(c.singleItemSelection),
         subCategories: []
       };
     }
@@ -249,7 +250,7 @@ router.get('/shops/:shopId/items', async (req: Request, res: Response) => {
 // ── POST /categories ──────────────────────────────────────────────────────────
 router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const { shopId, name, image, parentCategoryId } = req.body;
+    const { shopId, name, image, parentCategoryId, singleItemSelection } = req.body;
 
     // Validate parent exists in same shop (if provided)
     if (parentCategoryId) {
@@ -260,7 +261,7 @@ router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
       if (parent.parentCategoryId) return res.status(400).json({ error: 'Sub-categories can only be one level deep' });
     }
 
-    const category = await Category.create({ shopId, name, image, isActive: true, parentCategoryId: parentCategoryId || null });
+    const category = await Category.create({ shopId, name, image, isActive: true, parentCategoryId: parentCategoryId || null, singleItemSelection: Boolean(singleItemSelection) });
     // Invalidate catalog cache for this shop
     catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(category);
@@ -273,7 +274,7 @@ router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
 // ── PATCH /categories/:id ─────────────────────────────────────────────────────
 router.patch('/categories/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const allowed = ['name', 'image', 'isActive', 'parentCategoryId'];
+    const allowed = ['name', 'image', 'isActive', 'parentCategoryId', 'singleItemSelection'];
     const updates: Record<string, any> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -338,8 +339,8 @@ router.post('/items', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), asy
     if (shopId) catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(item);
     emitSocketEvent(req, 'item_created', item);
-  } catch (err) {
-    console.error('Failed to create item:', err);
+  } catch (err: any) {
+    log.error('Failed to create item', { error: err.message });
     res.status(500).json({ error: 'Failed to create item' });
   }
 });
@@ -370,8 +371,8 @@ router.patch('/items/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
     if (item.shopId) catalogCache.delete(`catalog:${item.shopId}`);
     res.json(item);
     emitSocketEvent(req, 'item_updated', item);
-  } catch (err) {
-    console.error('Failed to update item:', err);
+  } catch (err: any) {
+    log.error('Failed to update item', { error: err.message });
     res.status(500).json({ error: 'Failed to update item' });
   }
 });
@@ -434,7 +435,7 @@ router.post('/offers', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), as
     if (err.code === 11000) {
       return res.status(409).json({ error: 'An offer with this code already exists for this shop' });
     }
-    console.error('Failed to create offer:', err);
+    log.error('Failed to create offer', { error: err.message });
     res.status(500).json({ error: 'Failed to create offer' });
   }
 });
@@ -472,19 +473,5 @@ router.delete('/offers/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'
     res.status(500).json({ error: 'Failed to delete offer' });
   }
 });
-
-// Used if we want to run this service independently
-if (require.main === module) {
-  const express = require('express');
-  const app = express();
-  app.use(express.json());
-  app.use('/catalog', router);
-
-  const { connectDB } = require('@wow/shared');
-  connectDB().then(() => {
-    const port = process.env.PORT || 3002;
-    app.listen(port, () => console.log(`Catalog Service running on port ${port}`));
-  });
-}
 
 export default router;

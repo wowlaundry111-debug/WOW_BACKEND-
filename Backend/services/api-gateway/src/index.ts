@@ -11,8 +11,7 @@ import path from 'path';
 // Load .env from the Backend root directory
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
-import { connectDB } from '@wow/shared';
-import { log, requestLogger } from './logger';
+import { connectDB, log, requestLogger } from '@wow/shared';
 
 // Import microservice routers
 import authRouter from '@wow/auth-service';
@@ -200,21 +199,12 @@ app.use('/orders', orderRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/upload', uploadRouter);
 
-// ── Health Check ──────────────────────────────────────────────────────────────
-app.all('/', (_req: Request, res: Response) => {
-  res.json({ status: 'OK', message: 'WOW API Gateway is running', uptime: process.uptime() });
-});
-
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'API Gateway is running', uptime: process.uptime() });
 });
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'API Gateway is running', uptime: process.uptime() });
-});
-
-app.get('/api', (_req: Request, res: Response) => {
-  res.json({ status: 'OK', message: 'WOW API Gateway running' });
 });
 
 // ── Centralized Error Handler ─────────────────────────────────────────────────

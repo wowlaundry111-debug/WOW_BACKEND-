@@ -797,10 +797,14 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
               <View style={styles.matchingItemsList}>
                 {matchingItems.map((item) => {
                   const qty = getQuantity(item._id);
-                  const itemCat = categories.find((c) => c._id === item.categoryId);
+                  const itemCat = categories.find((c) => String(c._id) === String(item.categoryId));
+                  const isDisabled = itemCat?.singleItemSelection && cart.some(c => {
+                    const otherItem = items.find(i => String(i._id) === String(c.itemId));
+                    return otherItem && String(otherItem.categoryId) === String(item.categoryId) && String(c.itemId) !== String(item._id);
+                  });
 
                   return (
-                    <View key={item._id} style={styles.searchItemCard}>
+                    <View key={item._id} style={[styles.searchItemCard, isDisabled && { opacity: 0.5 }]}>
                       {/* Item Image / Icon */}
                       <View style={styles.searchItemImgBox}>
                         {item.image ? (
@@ -830,12 +834,13 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
                       <View style={styles.searchItemAction}>
                         {qty === 0 ? (
                           <TouchableOpacity
-                            style={styles.searchAddBtn}
+                            style={[styles.searchAddBtn, isDisabled && { backgroundColor: '#9CA3AF' }]}
                             activeOpacity={0.8}
+                            disabled={isDisabled}
                             onPress={() => handleAddToCart(item, 1)}
                           >
-                            <Plus size={16} color={COLORS.black} strokeWidth={3} />
-                            <Text style={styles.searchAddText}>ADD</Text>
+                            {isDisabled ? null : <Plus size={16} color={COLORS.black} strokeWidth={3} />}
+                            <Text style={[styles.searchAddText, isDisabled && { color: '#fff', marginLeft: 0 }]}>{isDisabled ? 'DISABLED' : 'ADD'}</Text>
                           </TouchableOpacity>
                         ) : (
                           <View style={styles.searchQtyBox}>

@@ -9,6 +9,7 @@ import {
   otpCache,
   pendingRegCache,
   otpAttemptCache,
+  log,
 } from '@wow/shared';
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
@@ -223,13 +224,13 @@ async function sendOtpEmail(email: string, otp: string): Promise<{ success: bool
       });
 
       if (error) {
-        console.error(`[Resend Error] Failed to send OTP to ${email}:`, error);
+        log.error('Resend failed to send OTP', { email, error: (error as any).message || JSON.stringify(error) });
         return { success: false, error: (error as any).message || JSON.stringify(error) };
       }
-      console.log(`[Resend Success] OTP sent to ${email} (id: ${data?.id})`);
+      log.info('OTP sent via Resend', { email, id: data?.id });
       return { success: true };
     } catch (err: any) {
-      console.error(`[Resend Exception] ${email}:`, err.message || err);
+      log.error('Resend exception', { email, error: err.message || err });
       return { success: false, error: err.message || 'Failed to communicate with email service' };
     }
   }
@@ -239,7 +240,7 @@ async function sendOtpEmail(email: string, otp: string): Promise<{ success: bool
   const smtpPass = process.env.SMTP_PASS?.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
 
   if (!smtpUser || !smtpPass) {
-    console.warn(`[Email Not Configured] OTP for ${email}: ${otp}`);
+    log.warn('Email not configured — OTP not delivered', { email });
     return { success: false, error: 'Email service is not configured (RESEND_API_KEY missing)' };
   }
 
@@ -260,10 +261,10 @@ async function sendOtpEmail(email: string, otp: string): Promise<{ success: bool
       to: email,
       ...template,
     });
-    console.log(`[SMTP Success] OTP sent to ${email} (MessageId: ${info.messageId})`);
+    log.info('OTP sent via SMTP', { email, messageId: info.messageId });
     return { success: true };
   } catch (err: any) {
-    console.error(`[SMTP Error] Failed to send OTP to ${email}:`, err.message || err);
+    log.error('SMTP failed to send OTP', { email, error: err.message || err });
     return { success: false, error: err.message || 'SMTP delivery failed' };
   }
 }
@@ -422,7 +423,7 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     }
 
     const token = generateToken(user);
-    console.log(`[Admin/Staff Direct Login Bypass] Instant bypass for ${user.role} (${user.email || user.phone})`);
+    log.info('Staff direct login bypass', { role: user.role, email: user.email || user.phone });
     return res.json({
       message: 'Authenticated successfully',
       directLogin: true,
@@ -442,12 +443,12 @@ router.post('/send-otp', async (req: Request, res: Response) => {
   // Generate 6-digit OTP
   const otp = String(Math.floor(100000 + Math.random() * 900000));
   otpCache.set(targetEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-  console.log(`[OTP Generated] For ${targetEmail}: ${otp}`);
+  log.debug('OTP generated', { email: targetEmail });
 
   // Send OTP email via Resend
   const emailResult = await sendOtpEmail(targetEmail, otp);
   if (!emailResult.success) {
-    console.error(`[OTP Send Warning] Could not deliver email to ${targetEmail}:`, emailResult.error);
+    log.warn('OTP email delivery failed', { email: targetEmail, error: emailResult.error });
   }
 
   return res.json({
@@ -479,10 +480,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const cachedOtpEntry = otpCache.get(targetEmail);
     const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
 
-    const isMasterOtp = String(otp).trim() === '123456';
-    const isMatched = storedOtp && String(otp).trim() === String(storedOtp).trim();
-
-    if (!isMasterOtp && !isMatched) {
+    if (!storedOtp || String(otp).trim() !== String(storedOtp).trim()) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
 
@@ -610,7 +608,7 @@ router.post('/register', async (req: Request, res: Response) => {
       token,
     });
   } catch (error: any) {
-    console.error('Registration error:', error);
+    log.error('Registration error', { error: error.message });
     return res.status(500).json({ error: error.message || 'Failed to complete registration' });
   }
 });
@@ -637,10 +635,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Too many incorrect attempts. Please try again in 15 minutes.' });
     }
 
-    const isMasterOtp = String(otp).trim() === '123456';
-    const isMatched = storedOtp && String(otp).trim() === String(storedOtp).trim();
-
-    if (!isMasterOtp && !isMatched) {
+    if (!storedOtp || String(otp).trim() !== String(storedOtp).trim()) {
       otpAttemptCache.set(cleanInput, attempts + 1, OTP_LOCK_TTL_MS);
       const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
       return res.status(400).json({
@@ -680,7 +675,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
         directLogin: true,
       });
     } catch (err: any) {
-      console.error('Account creation after OTP error:', err);
+      log.error('Account creation after OTP error', { error: err.message });
       return res.status(500).json({ error: 'Failed to create account. Please try again.' });
     }
   }
@@ -773,8 +768,8 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
     });
     res.status(201).json(user);
     emitSocketEvent(req, 'user_created', user);
-  } catch (err) {
-    console.error('Failed to create user:', err);
+  } catch (err: any) {
+    log.error('Failed to create user', { error: err.message });
     res.status(500).json({ error: 'Failed to create user' });
   }
 });
@@ -805,8 +800,8 @@ router.put('/users/push-token', requireAuth, async (req: AuthRequest, res: Respo
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ message: 'Push token updated successfully', user });
     emitSocketEvent(req, 'user_updated', user);
-  } catch (err) {
-    console.error('Failed to update push token:', err);
+  } catch (err: any) {
+    log.error('Failed to update push token', { error: err.message });
     res.status(500).json({ error: 'Failed to update push token' });
   }
 });
@@ -823,8 +818,8 @@ router.put('/users/me', requireAuth, async (req: AuthRequest, res: Response) => 
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
     emitSocketEvent(req, 'user_updated', user);
-  } catch (err) {
-    console.error('Failed to update profile:', err);
+  } catch (err: any) {
+    log.error('Failed to update profile', { error: err.message });
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
@@ -841,8 +836,8 @@ router.patch('/users/:id', requireAuth, requireRole(['SuperAdmin']), async (req:
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
     emitSocketEvent(req, 'user_updated', user);
-  } catch (err) {
-    console.error('Failed to update user:', err);
+  } catch (err: any) {
+    log.error('Failed to update user', { error: err.message });
     res.status(500).json({ error: 'Failed to update user' });
   }
 });
@@ -866,8 +861,8 @@ router.delete('/users/:id', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User deleted' });
     emitSocketEvent(req, 'user_deleted', { userId: req.params.id });
-  } catch (err) {
-    console.error('Failed to delete user:', err);
+  } catch (err: any) {
+    log.error('Failed to delete user', { error: err.message });
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });
@@ -909,24 +904,10 @@ router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Deliv
     ]);
 
     res.json({ users, total, page, pages: Math.ceil(total / limit) });
-  } catch (err) {
-    console.error('Failed to fetch users:', err);
+  } catch (err: any) {
+    log.error('Failed to fetch users', { error: err.message });
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
-
-// Running Independently Fallback
-if (require.main === module) {
-  const express = require('express');
-  const app = express();
-  app.use(express.json());
-  app.use('/auth', router);
-
-  const { connectDB } = require('@wow/shared');
-  connectDB().then(() => {
-    const port = process.env.PORT || 3001;
-    app.listen(port, () => console.log(`Auth Service running on port ${port}`));
-  });
-}
 
 export default router;

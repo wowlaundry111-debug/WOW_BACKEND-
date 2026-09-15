@@ -34,6 +34,7 @@ export const AdminCatalogScreen: React.FC = () => {
   const [vectorPickerTarget, setVectorPickerTarget] = useState<'create' | 'edit'>('create');
   const [newCatName, setNewCatName] = useState('');
   const [newCatImage, setNewCatImage] = useState('');
+  const [newCatSingleItemSelection, setNewCatSingleItemSelection] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -82,9 +83,10 @@ export const AdminCatalogScreen: React.FC = () => {
     }
     setIsCreating(true);
     try {
-      await addCategory(newCatName.trim(), newCatImage.trim() || undefined, activeShopId, newCatParentId || undefined);
+      await addCategory(newCatName.trim(), newCatImage.trim() || undefined, activeShopId, newCatParentId || undefined, newCatParentId ? newCatSingleItemSelection : undefined);
       setNewCatName('');
       setNewCatImage('');
+      setNewCatSingleItemSelection(false);
       setAddCatVisible(false);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to create category');
@@ -314,6 +316,11 @@ export const AdminCatalogScreen: React.FC = () => {
                         <ChevronRight size={10} color={COLORS.black} strokeWidth={3} />
                       </View>
                     )}
+                    {cat.singleItemSelection && (
+                      <View style={[styles.servicesBadge, { backgroundColor: '#FEF08A' }]}>
+                        <Text style={styles.servicesBadgeText}>SINGLE ITEM ONLY</Text>
+                      </View>
+                    )}
                   </View>
                 </TouchableOpacity>
 
@@ -406,6 +413,16 @@ export const AdminCatalogScreen: React.FC = () => {
                 onChangeText={setNewCatName}
               />
             </View>
+
+            {newCatParentId && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: '#fff', borderWidth: 2, borderColor: COLORS.black, marginBottom: 16, borderRadius: 8 }}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>Single Item Only</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.gray, marginTop: 4 }}>Restrict customers to adding only one item type from this sub-category</Text>
+                </View>
+                <ToggleSwitch value={newCatSingleItemSelection} onToggle={() => setNewCatSingleItemSelection(!newCatSingleItemSelection)} />
+              </View>
+            )}
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>CATEGORY ICON / ILLUSTRATION</Text>

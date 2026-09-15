@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
+import { log } from '@wow/shared';
 
 const router = Router();
 
@@ -33,8 +34,8 @@ router.post('/', upload.single('image'), async (req, res) => {
     });
 
     res.json({ url: (result as any).secure_url });
-  } catch (error) {
-    console.error('Cloudinary upload error:', error);
+  } catch (error: any) {
+    log.error('Cloudinary upload error', { error: error?.message || error });
     res.status(500).json({ error: 'Failed to upload image' });
   }
 });

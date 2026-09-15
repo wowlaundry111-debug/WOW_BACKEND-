@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { Order, Shop, User, Item, Category, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache } from '@wow/shared';
+import { Order, Shop, User, Item, Category, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache, log } from '@wow/shared';
 
 // Helper: emit to a specific shop's room only (not all sockets)
 const emitToShop = (req: Request, shopId: string, event: string, data: any) => {
@@ -47,13 +47,29 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     const itemIds = (items || []).map((i: any) => i.itemId);
     const catalogItems = await Item.find({ _id: { $in: itemIds } }).select('_id categoryId').lean() as any[];
     const categoryIds = [...new Set(catalogItems.map((ci: any) => ci.categoryId))];
-    const catalogCategories = await Category.find({ _id: { $in: categoryIds } }).select('_id name parentCategoryId').lean() as any[];
+    const catalogCategories = await Category.find({ _id: { $in: categoryIds } }).select('_id name parentCategoryId singleItemSelection').lean() as any[];
 
     // Build quick lookup maps
     const itemCategoryMap: Record<string, string> = {}; // itemId -> categoryId
     catalogItems.forEach((ci: any) => { itemCategoryMap[ci._id] = ci.categoryId; });
-    const catNameMap: Record<string, any> = {}; // categoryId -> { name, parentCategoryId }
+    const catNameMap: Record<string, any> = {}; // categoryId -> { name, parentCategoryId, singleItemSelection }
     catalogCategories.forEach((c: any) => { catNameMap[c._id] = c; });
+
+    // Validate single item selection rule
+    const subCatItemCounts: Record<string, Set<string>> = {};
+    for (const item of items || []) {
+      const catId = itemCategoryMap[item.itemId];
+      const cat = catId ? catNameMap[catId] : null;
+      if (cat && cat.singleItemSelection) {
+        if (!subCatItemCounts[catId]) subCatItemCounts[catId] = new Set();
+        subCatItemCounts[catId].add(item.itemId);
+        if (subCatItemCounts[catId].size > 1) {
+          return res.status(400).json({
+            error: `Only one item type can be selected from the "${cat.name}" category.`
+          });
+        }
+      }
+    }
 
     // Enrich items with breadcrumb names
     const enrichedItems = (items || []).map((item: any) => {
@@ -114,11 +130,12 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
             { orderId: order._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send new-order notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send new-order notification', { error: e.message });
       }
     });
-  } catch (err) {
+  } catch (err: any) {
+    log.error('Failed to create order', { error: err.message });
     res.status(500).json({ error: 'Failed to create order' });
   }
 });
@@ -147,13 +164,13 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
     } else if (user.role === 'Delivery') {
       const targetShopId = (req.query.shopId as string) || user.shopId;
       if (targetShopId) {
-        query.$or = [{ deliveryBoyId: user._id }, { deliveryBoyId: String(user._id) }, { shopId: targetShopId }];
+        query.$or = [{ deliveryBoyId: user._id }, { shopId: targetShopId }];
       } else {
         const dbUser = await User.findById(user._id).select('shopId').lean() as any;
         if (dbUser?.shopId) {
-          query.$or = [{ deliveryBoyId: user._id }, { deliveryBoyId: String(user._id) }, { shopId: dbUser.shopId }];
+          query.$or = [{ deliveryBoyId: user._id }, { shopId: dbUser.shopId }];
         } else {
-          query.$or = [{ deliveryBoyId: user._id }, { deliveryBoyId: String(user._id) }];
+          query.deliveryBoyId = user._id;
         }
       }
     } else if (user.role === 'SuperAdmin') {
@@ -311,8 +328,8 @@ router.get('/analytics', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), 
     analyticsCache.set(cacheKey, analyticsResult, 60_000);
     res.setHeader('X-Cache', 'MISS');
     res.json(analyticsResult);
-  } catch (err) {
-    console.error('Failed to fetch analytics data:', err);
+  } catch (err: any) {
+    log.error('Failed to fetch analytics data', { error: err.message });
     res.status(500).json({ error: 'Failed to fetch analytics data' });
   }
 });
@@ -459,8 +476,8 @@ router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAd
             );
           }
         }
-      } catch (e) {
-        console.error('Failed to send status-update notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send status-update notification', { error: e.message });
       }
     });
   } catch (err) {
@@ -493,7 +510,7 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
     if (!req.body.status) {
       if (['PLACED', 'ACCEPTED'].includes(currentOrder.status)) {
         newStatus = 'PICKUP_ASSIGNED';
-      } else if (['PICKED_UP', 'WASHING', 'IRONING', 'READY_FOR_DELIVERY'].includes(currentOrder.status)) {
+      } else if (['PICKED_UP', 'WASHING', 'IRONING'].includes(currentOrder.status)) {
         newStatus = 'OUT_FOR_DELIVERY';
       }
     }
@@ -536,8 +553,8 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
             { orderId: order._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send assign notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send assign notification', { error: e.message });
       }
     });
   } catch (err) {
@@ -576,8 +593,6 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     const order = await Order.findById(req.params.orderId) as any;
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // Fetch catalog items to get pricePerKg values
-    const { Item } = require('@wow/shared');
     const itemIds = weightUpdates.map((u: any) => u.itemId);
     const catalogItems = await Item.find({ _id: { $in: itemIds } }).select('_id pricePerKg').lean() as any[];
     const catalogMap: Record<string, number> = {};
@@ -586,19 +601,13 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     });
 
     // Apply weights to order items
-    let addedKgTotal = 0;
     const updatedItems = order.items.map((it: any) => {
       const update = weightUpdates.find((u: any) => u.itemId === it.itemId);
       if (update && it.unit === 'KG') {
         const kgWeight = Math.max(0, Number(update.kgWeight) || 0);
         const pricePerKg = catalogMap[it.itemId] || 0;
         const kgPrice = Math.round(kgWeight * pricePerKg * 100) / 100;
-        addedKgTotal += kgPrice;
         return { ...it.toObject(), kgWeight, price: kgPrice };
-      }
-      // Non-KG items already have price; add them to running total
-      if (it.unit !== 'KG') {
-        addedKgTotal += it.price * it.quantity;
       }
       return it;
     });
@@ -648,12 +657,12 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
             { orderId: updatedOrder._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send kg-weight notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send kg-weight notification', { error: e.message });
       }
     });
-  } catch (err) {
-    console.error('Failed to update kg weights:', err);
+  } catch (err: any) {
+    log.error('Failed to update KG weights', { error: err.message });
     res.status(500).json({ error: 'Failed to update KG weights' });
   }
 });
@@ -724,12 +733,12 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
             { orderId: order._id }
           );
         }
-      } catch (e) {
-        console.error('Failed to send verify notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send verify notification', { error: e.message });
       }
     });
-  } catch (err) {
-    console.error('Failed to verify order', err);
+  } catch (err: any) {
+    log.error('Failed to verify order', { error: err.message });
     res.status(500).json({ error: 'Failed to verify order' });
   }
 });
@@ -834,28 +843,14 @@ router.patch('/:orderId/cancel', requireAuth, async (req: AuthRequest, res: Resp
             { orderId: updatedOrder._id, status: 'CANCELLED' }
           );
         }
-      } catch (e) {
-        console.error('Failed to send cancellation notification:', e);
+      } catch (e: any) {
+        log.error('Failed to send cancellation notification', { error: e.message });
       }
     });
-  } catch (err) {
-    console.error('Failed to cancel order:', err);
+  } catch (err: any) {
+    log.error('Failed to cancel order', { error: err.message });
     res.status(500).json({ error: 'Failed to cancel order' });
   }
 });
-
-// Used if we want to run this service independently
-if (require.main === module) {
-  const express = require('express');
-  const app = express();
-  app.use(express.json());
-  app.use('/orders', router);
-
-  const { connectDB } = require('@wow/shared');
-  connectDB().then(() => {
-    const port = process.env.PORT || 3003;
-    app.listen(port, () => console.log(`Order Service running on port ${port}`));
-  });
-}
 
 export default router;

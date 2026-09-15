@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { log } from './logger';
 
 let isConnected = false;
 
@@ -11,7 +12,7 @@ export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`Attempting MongoDB connection (attempt ${attempt}/${retries})...`);
+      log.info(`Attempting MongoDB connection (attempt ${attempt}/${retries})`);
       const db = await mongoose.connect(MONGODB_URI, {
         maxPoolSize: 50,
         minPoolSize: 5,
@@ -25,26 +26,26 @@ export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
 
       // Production connection monitoring
       mongoose.connection.on('error', (err) => {
-        console.error('MongoDB connection error:', err.message);
+        log.error('MongoDB connection error', { error: err.message });
       });
       mongoose.connection.on('disconnected', () => {
         isConnected = false;
-        console.warn('MongoDB disconnected — Mongoose will retry automatically');
+        log.warn('MongoDB disconnected — Mongoose will retry automatically');
       });
       mongoose.connection.on('reconnected', () => {
         isConnected = true;
-        console.log('MongoDB reconnected');
+        log.info('MongoDB reconnected');
       });
 
-      console.log('MongoDB Connected successfully');
+      log.info('MongoDB connected successfully');
       return;
     } catch (error: any) {
-      console.error(`MongoDB connection attempt ${attempt} failed:`, error.message || error);
+      log.error(`MongoDB connection attempt ${attempt} failed`, { error: error.message || error });
       if (attempt < retries) {
-        console.log(`Retrying in ${delayMs / 1000}s...`);
+        log.info(`Retrying in ${delayMs / 1000}s...`);
         await new Promise((res) => setTimeout(res, delayMs));
       } else {
-        console.error('All MongoDB connection attempts failed. Exiting process.');
+        log.error('All MongoDB connection attempts failed. Exiting process.');
         process.exit(1);
       }
     }

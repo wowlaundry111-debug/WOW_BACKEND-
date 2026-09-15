@@ -76,6 +76,7 @@ export interface ICategory {
   image?: string;
   isActive: boolean;
   parentCategoryId?: string; // null/undefined = top-level; set = sub-category
+  singleItemSelection?: boolean; // When true, only one item from this sub-category can be selected (any qty)
 }
 
 export interface IItem {
@@ -143,8 +144,6 @@ export interface IOrder {
   paymentMode?: PaymentMode;
   pickupAddress: string;
   deliveryAddress: string;
-  pickupDriverId?: string;
-  deliveryDriverId?: string;
   pickupTime?: string;
   adminNotes?: string;
   isArchived?: boolean;

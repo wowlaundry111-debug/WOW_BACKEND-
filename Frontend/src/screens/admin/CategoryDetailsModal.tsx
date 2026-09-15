@@ -67,6 +67,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editCatName, setEditCatName] = useState(category?.name || '');
   const [editCatImage, setEditCatImage] = useState(category?.image || '');
+  const [editCatSingleItem, setEditCatSingleItem] = useState(!!category?.singleItemSelection);
 
   if (!category) return null;
 
@@ -158,7 +159,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
       else Alert.alert('Required', 'Category name cannot be empty');
       return;
     }
-    updateCategory(catId!, { name: editCatName.trim(), image: editCatImage || undefined });
+    updateCategory(catId!, { name: editCatName.trim(), image: editCatImage || undefined, singleItemSelection: category.parentCategoryId ? editCatSingleItem : undefined });
     setIsEditingCategory(false);
   };
 
@@ -227,6 +228,7 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
               onPress={() => {
                 setEditCatName(category.name);
                 setEditCatImage(category.image || '');
+                setEditCatSingleItem(!!category.singleItemSelection);
                 setIsEditingCategory(true);
               }}
             >
@@ -249,6 +251,16 @@ export const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
                   onChangeText={setEditCatName}
                   placeholder="Category Name"
                 />
+
+                {category.parentCategoryId && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: '#fff', borderWidth: 2, borderColor: COLORS.black, marginTop: 12, borderRadius: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '900', color: COLORS.black, textTransform: 'uppercase' }}>Single Item Only</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.gray, marginTop: 4 }}>Restrict customers to adding only one item type from this sub-category</Text>
+                    </View>
+                    <ToggleSwitch value={editCatSingleItem} onToggle={() => setEditCatSingleItem(!editCatSingleItem)} />
+                  </View>
+                )}
 
                 {/* Category Vector Icon Picker */}
                 <View style={{ marginTop: 8 }}>

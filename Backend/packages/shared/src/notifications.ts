@@ -1,4 +1,5 @@
 import { Expo, ExpoPushMessage } from 'expo-server-sdk';
+import { log } from './logger';
 
 const expo = new Expo();
 
@@ -11,7 +12,7 @@ export const sendPushNotification = async (
   const messages: ExpoPushMessage[] = pushTokens
     .filter(token => {
       if (!Expo.isExpoPushToken(token)) {
-        console.error(`Invalid Expo push token: ${token}`);
+        log.warn('Invalid Expo push token', { token });
         return false;
       }
       return true;
@@ -28,11 +29,11 @@ export const sendPushNotification = async (
   ).then(results => {
     results.forEach((result, i) => {
       if (result.status === 'rejected') {
-        console.error(`Push notification chunk ${i} failed:`, result.reason);
+        log.error(`Push notification chunk ${i} failed`, { error: result.reason?.message || result.reason });
       }
     });
   }).catch(err => {
-    console.error('Push notification dispatch error:', err);
+    log.error('Push notification dispatch error', { error: err?.message || err });
   });
   // Returns immediately — caller is never blocked
 };

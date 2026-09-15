@@ -635,14 +635,21 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
               const isBucket = Boolean(item.isBucket || (item.pricePerKg && item.pricePerKg > 0) || (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg') || item.name.toLowerCase().includes('per-kg'))));
               const ratePerKg = item.pricePerKg || (item.unit === 'KG' ? (item.pricePerItem ?? item.price) : (item.price ?? item.pricePerItem)) || 0;
 
+              const itemCat = categories.find(c => String(c._id) === String(item.categoryId));
+              const isDisabled = itemCat?.singleItemSelection && cart.some(c => {
+                const otherItem = items.find(i => String(i._id) === String(c.itemId));
+                return otherItem && String(otherItem.categoryId) === String(item.categoryId) && String(c.itemId) !== String(item._id);
+              });
+
               // ── BUCKET ITEM: Large tappable card to increase clothes count ──
               if (isBucket) {
                 return (
                   <TouchableOpacity
                     key={item._id}
                     activeOpacity={0.88}
+                    disabled={isDisabled}
                     onPress={() => handleAddToCart(item, 1)}
-                    style={styles.bucketCard}
+                    style={[styles.bucketCard, isDisabled && { opacity: 0.5 }]}
                   >
                     <View style={styles.bucketCardInner}>
                       <View style={styles.bucketImgWrap}>
@@ -702,13 +709,14 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
                           )}
 
                           <TouchableOpacity
+                            disabled={isDisabled}
                             onPress={(e) => {
                               e.stopPropagation();
                               handleAddToCart(item, 1);
                             }}
-                            style={styles.bucketAddBtn}
+                            style={[styles.bucketAddBtn, isDisabled && { backgroundColor: '#9CA3AF' }]}
                           >
-                            <Text style={styles.bucketAddBtnText}>+ ADD ({qty})</Text>
+                            <Text style={styles.bucketAddBtnText}>{isDisabled ? 'DISABLED' : `+ ADD (${qty})`}</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -720,7 +728,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
               const price = item.pricePerItem || item.price || 0;
 
               return (
-                <View key={item._id} style={styles.itemCard}>
+                <View key={item._id} style={[styles.itemCard, isDisabled && { opacity: 0.5 }]}>
                   {/* Illustration box */}
                   <View style={styles.itemImgBox}>
                     <CategoryVectorIllustration
@@ -787,10 +795,10 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
                       </View>
                     ) : (
                       <BouncyCard
-                        onPress={() => handleAddToCart(item, 1)}
-                        contentStyle={styles.addBtn}
+                        onPress={() => { if (!isDisabled) handleAddToCart(item, 1); }}
+                        contentStyle={[styles.addBtn, isDisabled && { backgroundColor: '#9CA3AF', borderColor: '#4B5563' }]}
                       >
-                        <Text style={styles.addBtnText}>ADD +</Text>
+                        <Text style={[styles.addBtnText, isDisabled && { color: '#fff' }]}>{isDisabled ? 'DISABLED' : 'ADD +'}</Text>
                       </BouncyCard>
                     )}
                   </View>

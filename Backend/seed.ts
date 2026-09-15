@@ -2,7 +2,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import mongoose from 'mongoose';
-import { User, Shop, Category, Item, Offer, Order, connectDB } from '@wow/shared';
+import { User, Shop, Category, Item, Offer, connectDB } from '@wow/shared';
 
 const SHOPS = [
   {
@@ -26,16 +26,14 @@ const SHOPS = [
 const USERS = [
   // Super Admin
   { _id: 'super_admin_1', shopId: '', role: 'SuperAdmin', name: 'Platform Owner', phone: '9999999999', email: 'superadmin@wow.com', address: 'HQ' },
-  
+
   // Lawgate Users
   { _id: 'admin_lawgate', shopId: 'shop_lawgate', role: 'ShopAdmin', name: 'Lawgate Admin', phone: '9876543210', email: 'admin.lawgate@wow.com', address: 'Lawgate Main' },
   { _id: 'delivery_lawgate', shopId: 'shop_lawgate', role: 'Delivery', name: 'Lawgate Delivery', phone: '9000000001', email: 'delivery.lawgate@wow.com', address: 'Lawgate Area' },
-  { _id: 'customer_lawgate', shopId: 'shop_lawgate', role: 'Customer', name: 'Lawgate Customer', phone: '9000000002', email: 'customer.lawgate@wow.com', address: 'Hostel 1' },
 
   // AGI Users
   { _id: 'admin_agi', shopId: 'shop_agi', role: 'ShopAdmin', name: 'AGI Admin', phone: '9876543211', email: 'admin.agi@wow.com', address: 'AGI Campus' },
   { _id: 'delivery_agi', shopId: 'shop_agi', role: 'Delivery', name: 'AGI Delivery', phone: '9000000011', email: 'delivery.agi@wow.com', address: 'AGI Area' },
-  { _id: 'customer_agi', shopId: 'shop_agi', role: 'Customer', name: 'AGI Customer', phone: '9000000012', email: 'customer.agi@wow.com', address: 'Hostel A' },
 ];
 
 const CATEGORIES = [
@@ -140,46 +138,6 @@ const OFFERS = [
   { _id: 'offer_agi_1', shopId: 'shop_agi', code: 'STUDENT20', discountPercent: 20, maxDiscount: 100, minOrderValue: 150, description: '20% off for students' },
 ];
 
-const ORDERS = [
-  {
-    _id: 'order_1',
-    shopId: 'shop_lawgate',
-    customerId: 'customer_lawgate',
-    customerName: 'Lawgate Customer',
-    customerPhone: '9000000002',
-    customerAddress: 'Hostel 1',
-    status: 'PLACED',
-    items: [
-      { itemId: 'item_lg_wf_1', name: 'WASH + FOLD', quantity: 3, unit: 'KG', price: 50 },
-      { itemId: 'item_lg_m_1', name: 'Shirt / T-Shirt', quantity: 2, unit: 'ITEM', price: 150 }
-    ],
-    totalAmount: 450,
-    paymentStatus: 'PENDING',
-    paymentMode: 'COD',
-    pickupAddress: 'Hostel 1',
-    deliveryAddress: 'Hostel 1',
-    createdAt: new Date().toISOString()
-  },
-  {
-    _id: 'order_2',
-    shopId: 'shop_lawgate',
-    customerId: 'customer_lawgate',
-    customerName: 'Lawgate Customer',
-    customerPhone: '9000000002',
-    customerAddress: 'Hostel 1',
-    status: 'WASHING',
-    items: [
-      { itemId: 'item_lg_m_3', name: 'Coat', quantity: 1, unit: 'ITEM', price: 300 }
-    ],
-    totalAmount: 300,
-    paymentStatus: 'SUCCESS',
-    paymentMode: 'UPI',
-    pickupAddress: 'Hostel 1',
-    deliveryAddress: 'Hostel 1',
-    createdAt: new Date(Date.now() - 86400000).toISOString()
-  }
-];
-
 const seed = async () => {
   await connectDB();
 
@@ -189,7 +147,6 @@ const seed = async () => {
   await Category.deleteMany({});
   await Item.deleteMany({});
   await Offer.deleteMany({});
-  await Order.deleteMany({});
 
   console.log('Inserting shops...');
   await Shop.insertMany(SHOPS);
@@ -205,9 +162,6 @@ const seed = async () => {
 
   console.log('Inserting offers...');
   await Offer.insertMany(OFFERS);
-
-  console.log('Inserting orders...');
-  await Order.insertMany(ORDERS);
 
   console.log('Database seeded successfully with Lawgate and AGI!');
   process.exit(0);
