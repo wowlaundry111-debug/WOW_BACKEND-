@@ -47,13 +47,29 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     const itemIds = (items || []).map((i: any) => i.itemId);
     const catalogItems = await Item.find({ _id: { $in: itemIds } }).select('_id categoryId').lean() as any[];
     const categoryIds = [...new Set(catalogItems.map((ci: any) => ci.categoryId))];
-    const catalogCategories = await Category.find({ _id: { $in: categoryIds } }).select('_id name parentCategoryId').lean() as any[];
+    const catalogCategories = await Category.find({ _id: { $in: categoryIds } }).select('_id name parentCategoryId singleItemSelection').lean() as any[];
 
     // Build quick lookup maps
     const itemCategoryMap: Record<string, string> = {}; // itemId -> categoryId
     catalogItems.forEach((ci: any) => { itemCategoryMap[ci._id] = ci.categoryId; });
-    const catNameMap: Record<string, any> = {}; // categoryId -> { name, parentCategoryId }
+    const catNameMap: Record<string, any> = {}; // categoryId -> { name, parentCategoryId, singleItemSelection }
     catalogCategories.forEach((c: any) => { catNameMap[c._id] = c; });
+
+    // Validate single item selection rule
+    const subCatItemCounts: Record<string, Set<string>> = {};
+    for (const item of items || []) {
+      const catId = itemCategoryMap[item.itemId];
+      const cat = catId ? catNameMap[catId] : null;
+      if (cat && cat.singleItemSelection) {
+        if (!subCatItemCounts[catId]) subCatItemCounts[catId] = new Set();
+        subCatItemCounts[catId].add(item.itemId);
+        if (subCatItemCounts[catId].size > 1) {
+          return res.status(400).json({
+            error: `Only one item type can be selected from the "${cat.name}" category.`
+          });
+        }
+      }
+    }
 
     // Enrich items with breadcrumb names
     const enrichedItems = (items || []).map((item: any) => {

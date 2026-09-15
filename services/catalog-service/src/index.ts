@@ -193,6 +193,7 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
         ...c,
         _id: cId,
         parentCategoryId: c.parentCategoryId ? String(c.parentCategoryId) : null,
+        singleItemSelection: Boolean(c.singleItemSelection),
         subCategories: []
       };
     }
@@ -249,7 +250,7 @@ router.get('/shops/:shopId/items', async (req: Request, res: Response) => {
 // ── POST /categories ──────────────────────────────────────────────────────────
 router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const { shopId, name, image, parentCategoryId } = req.body;
+    const { shopId, name, image, parentCategoryId, singleItemSelection } = req.body;
 
     // Validate parent exists in same shop (if provided)
     if (parentCategoryId) {
@@ -260,7 +261,7 @@ router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
       if (parent.parentCategoryId) return res.status(400).json({ error: 'Sub-categories can only be one level deep' });
     }
 
-    const category = await Category.create({ shopId, name, image, isActive: true, parentCategoryId: parentCategoryId || null });
+    const category = await Category.create({ shopId, name, image, isActive: true, parentCategoryId: parentCategoryId || null, singleItemSelection: Boolean(singleItemSelection) });
     // Invalidate catalog cache for this shop
     catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(category);
@@ -273,7 +274,7 @@ router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
 // ── PATCH /categories/:id ─────────────────────────────────────────────────────
 router.patch('/categories/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const allowed = ['name', 'image', 'isActive', 'parentCategoryId'];
+    const allowed = ['name', 'image', 'isActive', 'parentCategoryId', 'singleItemSelection'];
     const updates: Record<string, any> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];

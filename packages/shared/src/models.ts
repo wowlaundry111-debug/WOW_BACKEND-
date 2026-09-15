@@ -73,6 +73,7 @@ const CategorySchema = new Schema<ICategory>({
   image: { type: String },
   isActive: { type: Boolean, default: true },
   parentCategoryId: { type: String, required: false, default: null }, // null = top-level
+  singleItemSelection: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // -- Category indexes --
