@@ -224,7 +224,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
   onSelectCategory,
 }) => {
   const insets = useSafeAreaInsets();
-  const { categories, items, cart, addToCart, isLoading, currentTenantId, shops, fetchCatalog } = useAppStore();
+  const { categories, items, cart, addToCart, isLoading, isCatalogLoading, currentTenantId, shops, fetchCatalog } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -609,7 +609,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
               )}
 
           {/* Items List */}
-          {isLoading && catItems.length === 0 ? (
+          {(isLoading || isCatalogLoading) && catItems.length === 0 ? (
             <>
               <ItemSkeleton />
               <ItemSkeleton />

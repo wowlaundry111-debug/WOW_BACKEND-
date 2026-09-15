@@ -10,6 +10,7 @@ const SHOPS = [
     name: 'WOW Laundry Lawgate',
     ownerId: 'super_admin_1',
     branches: ['Lawgate Main'],
+    contactNumber: '62808-32724',
     paymentInfo: { upiId: 'wowlawgate@upi', bankName: 'HDFC Bank', accountNo: '111122223333', qrValue: 'upi://pay?pa=wowlawgate@upi' },
   },
   {
@@ -17,6 +18,7 @@ const SHOPS = [
     name: 'WOW Laundry AGI',
     ownerId: 'super_admin_1',
     branches: ['AGI Campus'],
+    contactNumber: '62808-32724',
     paymentInfo: { upiId: 'wowagi@upi', bankName: 'ICICI Bank', accountNo: '444455556666', qrValue: 'upi://pay?pa=wowagi@upi' },
   }
 ];
@@ -49,6 +51,8 @@ const CATEGORIES = [
   { _id: 'cat_lg_sub_shoes', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'SHOES', image: 'shoes' },
   { _id: 'cat_lg_sub_bags', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
 
+  { _id: 'cat_lg_blanket', shopId: 'shop_lawgate', name: 'BLANKET', image: 'blanket' },
+
   // AGI Categories
   { _id: 'cat_agi_laundry', shopId: 'shop_agi', name: 'LAUNDRY', image: 'normal' },
   { _id: 'cat_agi_sub_reg', shopId: 'shop_agi', parentCategoryId: 'cat_agi_laundry', name: 'REGULAR WASH', image: 'normal' },
@@ -60,6 +64,8 @@ const CATEGORIES = [
   { _id: 'cat_agi_sub_house', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'HOUSEHOLD ITEMS', image: 'bedding' },
   { _id: 'cat_agi_sub_shoes', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'SHOES', image: 'shoes' },
   { _id: 'cat_agi_sub_bags', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
+
+  { _id: 'cat_agi_blanket', shopId: 'shop_agi', name: 'BLANKET', image: 'blanket' },
 ];
 
 const createItemsForShop = (shopId: string, p: string) => [
@@ -119,6 +125,13 @@ const createItemsForShop = (shopId: string, p: string) => [
   { _id: `item_${p}_b_1`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Trolley Bag – Small', pricePerItem: 300, image: 'bag' },
   { _id: `item_${p}_b_2`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Trolley Bag – Large', pricePerItem: 400, image: 'bag' },
   { _id: `item_${p}_b_3`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Soft Toys', pricePerItem: 150, description: 'Starting from ₹150 (As per size)', image: 'bag' },
+
+  // Blankets & Winter Items
+  { _id: `item_${p}_blk_1`, shopId, categoryId: `cat_${p}_blanket`, name: 'Blanket Double Bed', pricePerItem: 300, description: '₹300 Per Unit', image: 'blanket' },
+  { _id: `item_${p}_blk_2`, shopId, categoryId: `cat_${p}_blanket`, name: 'Blanket Single Bed', pricePerItem: 250, description: '₹250 Per Unit', image: 'blanket' },
+  { _id: `item_${p}_blk_3`, shopId, categoryId: `cat_${p}_blanket`, name: 'Rajaai / Quilt', pricePerItem: 300, description: '₹300 Per Unit', image: 'bedding' },
+  { _id: `item_${p}_blk_4`, shopId, categoryId: `cat_${p}_blanket`, name: 'Blanket Single / Double Ply', pricePerItem: 300, description: '₹300 Per Unit', image: 'blanket' },
+  { _id: `item_${p}_blk_5`, shopId, categoryId: `cat_${p}_blanket`, name: 'Very Small Blanket / Winter Rajai Cover', pricePerItem: 200, description: '₹200 Per Unit', image: 'blanket' },
 ];
 
 const ITEMS = [

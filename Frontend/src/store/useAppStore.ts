@@ -102,39 +102,34 @@ interface AppState {
   archiveDeliveredOrders: () => Promise<{ success: boolean; archivedCount?: number; message?: string }>;
 }
 
-// Catalog fetch deduplication guard
-let catalogFetchInFlight: Promise<void> | null = null;
+// // Catalog fetch deduplication guard
+let catalogFetchInFlight: { promise: Promise<void>; shopId: string } | null = null;
 
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      // Initial States
       currentRole: 'Customer',
       currentTenantId: '',
       currentUser: null,
-
-      shops: [],
       users: [],
+      shops: [],
       categories: [],
       items: [],
-      offers: [],
       orders: [],
-      orderTotal: 0,
-      orderPage: 1,
-
-      catalogLastFetched: 0,
-      shopsLastFetched: 0,
-      offersLastFetched: 0,
-
+      offers: [],
+      cart: [],
+      activeCoupon: null,
       isLoading: false,
       isCatalogLoading: false,
       isOrdersLoading: false,
+      catalogLastFetched: 0,
+      shopsLastFetched: 0,
+      offersLastFetched: 0,
+      deliveryInstructions: '',
+      orderTotal: 0,
+      orderPage: 1,
       error: null,
       storageStatus: null,
-
-      cart: [],
-      activeCoupon: null,
-      deliveryInstructions: '',
 
       // Environment Switch Actions
       setCurrentRole: (role) => {
@@ -146,7 +141,8 @@ export const useAppStore = create<AppState>()(
         set({ 
           currentTenantId: shopId,
           cart: [], 
-          activeCoupon: null 
+          activeCoupon: null,
+          isCatalogLoading: true,
         });
         if (shopId) {
           get().fetchCatalog(shopId);
@@ -470,17 +466,26 @@ export const useAppStore = create<AppState>()(
         }
         if (!shopId) return;
 
-        // TTL: skip if same-shop data is fresh within 60 seconds (explicit override always refetches)
+        const shopIdStr = String(shopId);
         const CATALOG_TTL = 60_000;
-        if (!overrideShopId && (Date.now() - get().catalogLastFetched) < CATALOG_TTL && get().categories.length > 0) return;
+        const hasFreshData = !overrideShopId &&
+          (Date.now() - get().catalogLastFetched) < CATALOG_TTL &&
+          get().categories.some(c => String(c.shopId) === shopIdStr);
 
-        if (catalogFetchInFlight) return catalogFetchInFlight;
+        if (hasFreshData) {
+          set({ isCatalogLoading: false });
+          return;
+        }
 
-        catalogFetchInFlight = (async () => {
+        if (catalogFetchInFlight && catalogFetchInFlight.shopId === shopIdStr) {
+          return catalogFetchInFlight.promise;
+        }
+
+        const fetchPromise = (async () => {
           set({ isCatalogLoading: true, error: null });
           try {
             // Use combined endpoint — 1 round-trip instead of 2
-            const res = await api.get(`/catalog/shops/${shopId}/catalog`);
+            const res = await api.get(`/catalog/shops/${shopIdStr}/catalog`);
             set({
               categories: res.data.categories || [],
               items: res.data.items || [],
@@ -491,10 +496,13 @@ export const useAppStore = create<AppState>()(
             set({ error: err.message || 'Failed to load catalog', isCatalogLoading: false });
           }
         })().finally(() => {
-          catalogFetchInFlight = null;
+          if (catalogFetchInFlight && catalogFetchInFlight.shopId === shopIdStr) {
+            catalogFetchInFlight = null;
+          }
         });
 
-        return catalogFetchInFlight;
+        catalogFetchInFlight = { promise: fetchPromise, shopId: shopIdStr };
+        return fetchPromise;
       },
 
       // Paginated orders fetch with strict shop partitioning

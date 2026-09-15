@@ -319,6 +319,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
     cart,
     addToCart,
     isLoading,
+    isCatalogLoading,
     currentUser,
     orders,
     shops,
@@ -337,6 +338,9 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
 
   const [copiedPromo, setCopiedPromo] = useState(false);
   const shopPromo = currentShop?.promoCode?.isActive && currentShop?.promoCode?.code ? currentShop.promoCode : null;
+
+  const hasLoadedShopCats = categories.some((c) => String(c.shopId) === String(currentTenantId));
+  const isCatLoading = isCatalogLoading || (!hasLoadedShopCats && categories.length === 0) || (Boolean(currentTenantId) && !hasLoadedShopCats);
 
   const handleApplyShopPromo = () => {
     if (!shopPromo) return;
@@ -861,20 +865,20 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
           )}
 
           {/* ─── CATEGORIES SECTION ─── */}
-          {tenantCats.length > 0 && (
+          {(tenantCats.length > 0 || isCatLoading) && (
             <View style={isSearching && matchingItems.length > 0 ? { marginTop: SPACING.lg } : undefined}>
               <View style={styles.sectionHeaderWrap}>
                 <Text style={styles.sectionHeading}>
                   {isSearching ? 'MATCHING CATEGORIES' : 'START WASHING'}
                 </Text>
                 <Text style={styles.sectionSubheading}>
-                  {isSearching ? `${tenantCats.length} CATEGORIES` : 'PICK A CATEGORY'}
+                  {isCatLoading ? `LOADING ${currentShop?.name || 'SERVICES'}...` : (isSearching ? `${tenantCats.length} CATEGORIES` : 'PICK A CATEGORY')}
                 </Text>
               </View>
 
               {/* 2-Column Grid */}
               <View style={styles.grid}>
-                {isLoading ? (
+                {isCatLoading ? (
                   <>
                     <CategorySkeleton />
                     <CategorySkeleton />
@@ -922,7 +926,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
           )}
 
           {/* No Results Found */}
-          {isSearching && matchingItems.length === 0 && tenantCats.length === 0 && (
+          {isSearching && matchingItems.length === 0 && tenantCats.length === 0 && !isCatLoading && (
             <View style={styles.emptySearchWrap}>
               <ShoppingBag size={48} color={COLORS.black} strokeWidth={2} style={{ marginBottom: 12 }} />
               <Text style={styles.emptySearchTitle}>No Results Found</Text>
@@ -939,7 +943,7 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
             </View>
           )}
 
-          {!isSearching && tenantCats.length === 0 && !isLoading && (
+          {!isSearching && tenantCats.length === 0 && !isCatLoading && !isLoading && (
             <View style={styles.emptyStateWrap}>
               <Text style={styles.emptyStateText}>No categories found.</Text>
             </View>

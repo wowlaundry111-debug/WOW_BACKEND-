@@ -183,7 +183,7 @@ const OTP_EMAIL_TEMPLATE = (otp: string) => {
                         Wear Fresh and Feel Fresh
                       </div>
                       <div style="font-size: 10px; color: #6B7280; margin-top: 4px;">
-                        Need help? <a href="mailto:wowlaundry111@gmail.com" style="color: #0D8DE3; text-decoration: underline; font-weight: 700;">wowlaundry111@gmail.com</a> &bull; +91 7814508706
+                        Need help? <a href="mailto:wowlaundry111@gmail.com" style="color: #0D8DE3; text-decoration: underline; font-weight: 700;">wowlaundry111@gmail.com</a> &bull; +91 6280832724
                       </div>
                     </div>
                   </td>
