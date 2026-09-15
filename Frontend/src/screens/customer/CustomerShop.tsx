@@ -633,6 +633,7 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
                 item.unit === 'KG' || 
                 (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg') || item.name.toLowerCase().includes('per-kg')));
               const isBucket = Boolean(item.isBucket || (item.pricePerKg && item.pricePerKg > 0) || (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg') || item.name.toLowerCase().includes('per-kg'))));
+              const ratePerKg = item.pricePerKg || (item.unit === 'KG' ? (item.pricePerItem ?? item.price) : (item.price ?? item.pricePerItem)) || 0;
 
               // ── BUCKET ITEM: Large tappable card to increase clothes count ──
               if (isBucket) {
@@ -659,9 +660,25 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <Text style={styles.bucketTitle}>{item.name}</Text>
                           <View style={styles.bucketKgBadge}>
-                            <Text style={styles.bucketKgBadgeText}>PER KG</Text>
+                            <Text style={styles.bucketKgBadgeText}>
+                              {ratePerKg > 0 ? `₹${ratePerKg} / KG` : 'PER KG'}
+                            </Text>
                           </View>
                         </View>
+
+                        {ratePerKg > 0 && (
+                          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 2 }}>
+                            <Text style={{ fontSize: 16, fontWeight: '900', fontFamily: 'Outfit_800ExtraBold', color: COLORS.primary }}>
+                              ₹{ratePerKg}
+                            </Text>
+                            <Text style={{ fontSize: 11, fontWeight: '800', fontFamily: 'Outfit_800ExtraBold', color: '#6B7280' }}>
+                              /KG
+                            </Text>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#0284C7', marginLeft: 4 }}>
+                              (Weighed at delivery)
+                            </Text>
+                          </View>
+                        )}
 
                         <Text style={styles.bucketDesc} numberOfLines={2}>
                           {item.description || 'Tap bucket to count clothes. Weighed & priced upon delivery.'}
@@ -725,8 +742,18 @@ export const CustomerShopScreen: React.FC<CustomerShopProps> = ({
 
                     {isKg ? (
                       <View style={{ marginTop: 4 }}>
-                        <View style={{ backgroundColor: '#0284C7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, alignSelf: 'flex-start' }}>
-                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>PER KG</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                          {ratePerKg > 0 ? (
+                            <>
+                              <Text style={styles.itemPrice}>₹{ratePerKg}</Text>
+                              <Text style={styles.itemUnit}>/KG</Text>
+                            </>
+                          ) : null}
+                          <View style={{ backgroundColor: '#0284C7', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 4, marginLeft: ratePerKg > 0 ? 4 : 0 }}>
+                            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>
+                              {ratePerKg > 0 ? `₹${ratePerKg} / KG` : 'PER KG'}
+                            </Text>
+                          </View>
                         </View>
                         <Text style={{ fontSize: 9, color: '#6B7280', fontWeight: '800', marginTop: 2 }}>Priced at delivery</Text>
                       </View>

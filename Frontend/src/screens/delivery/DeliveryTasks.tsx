@@ -8,7 +8,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
-import { MapPin, Phone, QrCode, Banknote, Wifi, X, Smartphone, AlertTriangle, Truck, PackageCheck, Navigation, Clock, ShieldCheck, CheckCircle2, User, ChevronRight } from 'lucide-react-native';
+import { MapPin, Phone, QrCode, Banknote, Wifi, X, Smartphone, AlertTriangle, Truck, PackageCheck, Navigation, Clock, ShieldCheck, CheckCircle2, User, ChevronRight, Scale } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
@@ -137,11 +137,13 @@ const VerifyOrderModal = ({
   order,
   onClose,
   onVerify,
+  onOpenWeigh,
 }: {
   visible: boolean;
   order: Order | null;
   onClose: () => void;
   onVerify: (counts: Record<string, number>) => void;
+  onOpenWeigh?: () => void;
 }) => {
   const [counts, setCounts] = useState<Record<string, number>>({});
 
@@ -167,6 +169,36 @@ const VerifyOrderModal = ({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <Text style={styles.modalHeading}>VERIFY PICKED ITEMS</Text>
+          {(() => {
+            const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+            const hasUnweighedKg = order.items.some(isKgCheck) && !order.kgPriceUpdated;
+            if (!hasUnweighedKg) return null;
+            return (
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#FEF08A',
+                  borderColor: COLORS.black,
+                  borderWidth: 2,
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+                activeOpacity={0.8}
+                onPress={() => {
+                  onClose();
+                  onOpenWeigh?.();
+                }}
+              >
+                <Scale size={16} color={COLORS.black} strokeWidth={2.5} />
+                <Text style={{ flex: 1, fontSize: 11, fontWeight: '900', color: COLORS.black }}>
+                  KG ITEMS DETECTED: TAP HERE TO WEIGH & SET FINAL PRICE AT PICKUP
+                </Text>
+              </TouchableOpacity>
+            );
+          })()}
           <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 300 }}>
             {order.items.map((it) => (
               <View key={it.itemId} style={styles.verifyRow}>
@@ -204,6 +236,13 @@ const VerifyOrderModal = ({
             <TouchableOpacity
               style={styles.modalConfirmBtn}
               onPress={() => {
+                const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                const hasUnweighedKg = order.items.some(isKgCheck) && !order.kgPriceUpdated;
+                if (hasUnweighedKg && onOpenWeigh) {
+                  onClose();
+                  onOpenWeigh();
+                  return;
+                }
                 onVerify(counts);
                 onClose();
               }}
@@ -230,7 +269,7 @@ const WeighKgModal = ({
   order: Order | null;
   catalogItems: any[];
   onClose: () => void;
-  onConfirm: (weights: { itemId: string; kgWeight: number }[]) => Promise<void>;
+  onConfirm: (weights: { itemId: string; kgWeight: number }[], markPickedUp?: boolean) => Promise<void>;
 }) => {
   const [weights, setWeights] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -264,13 +303,13 @@ const WeighKgModal = ({
     return sum;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (andConfirmPickup = false) => {
     setSubmitting(true);
     const payload = kgItems.map(it => ({
       itemId: it.itemId,
       kgWeight: parseFloat(weights[it.itemId] || '0') || 0,
     }));
-    await onConfirm(payload);
+    await onConfirm(payload, andConfirmPickup);
     setSubmitting(false);
     onClose();
   };
@@ -279,9 +318,9 @@ const WeighKgModal = ({
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalHeading}>WEIGH KG CLOTHES</Text>
+          <Text style={styles.modalHeading}>WEIGH CLOTHES AT PICKUP</Text>
           <Text style={{ fontSize: 13, color: '#4B5563', marginBottom: 16 }}>
-            Enter the exact weight (in KG) measured on the scale.
+            Enter exact weight in KG. Final price will be calculated and locked at pickup.
           </Text>
 
           <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 300 }}>
@@ -358,13 +397,13 @@ const WeighKgModal = ({
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalConfirmBtn, { backgroundColor: '#B0FF49' }]}
-              onPress={handleSave}
+              onPress={() => handleSave(true)}
               disabled={submitting}
             >
               {submitting ? (
                 <ActivityIndicator size="small" color={COLORS.black} />
               ) : (
-                <Text style={styles.modalConfirmText}>SAVE & UPDATE BILL</Text>
+                <Text style={styles.modalConfirmText}>CONFIRM PICKUP & FINAL PRICE</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -761,37 +800,65 @@ export const DeliveryTasksScreen = () => {
                 </Text>
               </View>
 
-              {/* KG Weighing Action Button (if order contains KG items) */}
+              {/* KG Status Banner / Action */}
               {(() => {
                 const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
                 const hasKg = order.items.some(isKgCheck);
                 if (!hasKg) return null;
 
+                if (activeTab === 'PICKUP') {
+                  return (
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: order.kgPriceUpdated ? '#DCFCE7' : '#FEF08A',
+                        borderColor: COLORS.black,
+                        borderWidth: 2,
+                        borderRadius: 8,
+                        paddingVertical: 8,
+                        paddingHorizontal: 12,
+                        marginBottom: 8,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                      }}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        setWeighModalOrder(order);
+                      }}
+                    >
+                      <Scale size={14} color={COLORS.black} strokeWidth={2.5} />
+                      <Text style={{ fontSize: 12, fontWeight: '900', color: COLORS.black }}>
+                        {order.kgPriceUpdated ? `✓ WEIGHED AT PICKUP: ₹${order.totalAmount} (EDIT)` : 'WEIGH CLOTHES AT PICKUP (REQUIRED)'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }
+
+                // DELIVERY Tab: Clothes already weighed at pickup
                 return (
-                  <TouchableOpacity
+                  <View
                     style={{
-                      backgroundColor: order.kgPriceUpdated ? '#DCFCE7' : '#FEF08A',
-                      borderColor: COLORS.black,
-                      borderWidth: 2,
+                      backgroundColor: '#F0FDF4',
+                      borderColor: '#86EFAC',
+                      borderWidth: 1.5,
                       borderRadius: 8,
-                      paddingVertical: 8,
-                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      paddingHorizontal: 10,
                       marginBottom: 8,
                       flexDirection: 'row',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                    }}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      setWeighModalOrder(order);
+                      justifyContent: 'space-between',
                     }}
                   >
-                    <Text style={{ fontSize: 12, fontWeight: '900', color: COLORS.black }}>
-                      {order.kgPriceUpdated ? 'EDIT KG WEIGHTS (WEIGHED)' : 'WEIGH KG CLOTHES (REQUIRED)'}
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#166534' }}>
+                      ✓ WEIGHED AT PICKUP
                     </Text>
-                  </TouchableOpacity>
+                    <Text style={{ fontSize: 12, fontWeight: '900', color: '#166534' }}>
+                      FINAL BILL: ₹{order.totalAmount}
+                    </Text>
+                  </View>
                 );
               })()}
 
@@ -812,17 +879,40 @@ export const DeliveryTasksScreen = () => {
                 ) : null}
 
                 {activeTab === 'PICKUP' ? (
-                  <TouchableOpacity
-                    style={styles.primaryActionBtn}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                      setVerifyModalOrder(order);
-                    }}
-                  >
-                    <PackageCheck size={16} color={COLORS.black} strokeWidth={2.5} />
-                    <Text style={styles.primaryActionBtnText}>VERIFY & PICK UP</Text>
-                  </TouchableOpacity>
+                  (() => {
+                    const isKgCheck = (it: any) => it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                    const hasUnweighedKg = order.items.some(isKgCheck) && !order.kgPriceUpdated;
+
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.primaryActionBtn,
+                          hasUnweighedKg && { backgroundColor: '#FEF08A' }
+                        ]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                          if (hasUnweighedKg) {
+                            setWeighModalOrder(order);
+                          } else {
+                            setVerifyModalOrder(order);
+                          }
+                        }}
+                      >
+                        {hasUnweighedKg ? (
+                          <>
+                            <Scale size={16} color={COLORS.black} strokeWidth={2.5} />
+                            <Text style={styles.primaryActionBtnText}>WEIGH & CONFIRM PICKUP</Text>
+                          </>
+                        ) : (
+                          <>
+                            <PackageCheck size={16} color={COLORS.black} strokeWidth={2.5} />
+                            <Text style={styles.primaryActionBtnText}>VERIFY & PICK UP</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()
                 ) : (
                   <TouchableOpacity
                     style={[styles.primaryActionBtn, styles.collectPayBtn]}
@@ -861,6 +951,11 @@ export const DeliveryTasksScreen = () => {
           visible={!!verifyModalOrder}
           order={verifyModalOrder}
           onClose={() => setVerifyModalOrder(null)}
+          onOpenWeigh={() => {
+            const o = verifyModalOrder;
+            setVerifyModalOrder(null);
+            setWeighModalOrder(o);
+          }}
           onVerify={async (counts) => {
             await verifyOrderItems(verifyModalOrder._id, counts);
           }}
@@ -874,8 +969,13 @@ export const DeliveryTasksScreen = () => {
           order={weighModalOrder}
           catalogItems={items}
           onClose={() => setWeighModalOrder(null)}
-          onConfirm={async (weights) => {
-            await updateKgWeight(weighModalOrder._id, weights);
+          onConfirm={async (weights, markPickedUp = true) => {
+            await updateKgWeight(weighModalOrder._id, weights, markPickedUp);
+            if (markPickedUp) {
+              const initial: Record<string, number> = {};
+              weighModalOrder.items.forEach(it => initial[it.itemId] = it.quantity);
+              await verifyOrderItems(weighModalOrder._id, initial);
+            }
           }}
         />
       )}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -29,8 +29,39 @@ export const AuthScreen = () => {
   const [otpEmail, setOtpEmail] = useState(''); // email OTP was sent to
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  const otpInputRef = useRef<TextInput>(null);
 
   const { sendLoginOtp, verifyLoginOtp } = useAppStore();
+
+  useEffect(() => {
+    if (step === 'OTP') {
+      const timer = setTimeout(() => {
+        otpInputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
+
+  const handleResendOtp = async () => {
+    if (!otpEmail) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLoading(true);
+    const res = await sendLoginOtp(otpEmail);
+    setLoading(false);
+    if (res.success) {
+      if (Platform.OS === 'web') {
+        alert(res.message || 'Verification code resent to your email.');
+      } else {
+        Alert.alert('Code Resent', res.message || 'Verification code resent to your email.');
+      }
+    } else {
+      if (Platform.OS === 'web') {
+        alert(res.message || 'Failed to resend code');
+      } else {
+        Alert.alert('Resend Failed', res.message || 'Failed to resend code');
+      }
+    }
+  };
 
   // Step 1: request OTP or direct login for staff
   const handleRequestOtp = async () => {
@@ -175,7 +206,11 @@ export const AuthScreen = () => {
 
               {/* 6-Digit OTP Input Boxes */}
               <Text style={styles.fieldLabel}>VERIFICATION CODE</Text>
-              <View style={styles.otpContainer}>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => otpInputRef.current?.focus()}
+                style={styles.otpContainer}
+              >
                 {[0, 1, 2, 3, 4, 5].map((idx) => {
                   const digit = otp[idx] || '';
                   return (
@@ -188,6 +223,7 @@ export const AuthScreen = () => {
                   );
                 })}
                 <TextInput
+                  ref={otpInputRef}
                   style={styles.hiddenOtpInput}
                   value={otp}
                   onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, '').slice(0, 6))}
@@ -195,7 +231,7 @@ export const AuthScreen = () => {
                   maxLength={6}
                   autoFocus
                 />
-              </View>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.btn, !isStep2Valid && styles.btnDisabled]}
@@ -213,14 +249,25 @@ export const AuthScreen = () => {
                 )}
               </TouchableOpacity>
 
-              {/* Resend / Back */}
-              <TouchableOpacity
-                onPress={() => { setStep('IDENTIFIER'); setOtp(''); }}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12 }}
-              >
-                <RefreshCw size={14} color='#6B7280' strokeWidth={2.5} />
-                <Text style={{ fontSize: 12, fontWeight: '800', color: '#6B7280' }}>Wrong email? Go back</Text>
-              </TouchableOpacity>
+              {/* Resend & Change Email Actions */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingHorizontal: 4 }}>
+                <TouchableOpacity
+                  onPress={() => { setStep('IDENTIFIER'); setOtp(''); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                >
+                  <RefreshCw size={13} color='#6B7280' strokeWidth={2.5} />
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#6B7280' }}>Change email</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleResendOtp}
+                  disabled={loading}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: COLORS.primary, textDecorationLine: 'underline' }}>
+                    Resend Code
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
 
@@ -381,5 +428,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     opacity: 0.01,
+    zIndex: 10,
   },
 });

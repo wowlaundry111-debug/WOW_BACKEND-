@@ -64,6 +64,7 @@ interface AppState {
   applyCoupon: (code: string) => { success: boolean; message: string };
   removeCoupon: () => void;
   placeOrder: (deliveryAddress: string, pickupTime?: string, washPreferences?: { name: string, price: number }[]) => Promise<{ success: boolean; orderId: string; message: string }>;
+  cancelOrder: (orderId: string, reason?: string) => Promise<{ success: boolean; message?: string }>;
 
   // Actions - Shop Admin Operations
   updateOrderStatus: (orderId: string, status: OrderStatus, paymentMode?: PaymentMode, paymentStatus?: PaymentStatus) => Promise<void>;
@@ -82,7 +83,7 @@ interface AppState {
 
   // Actions - Delivery Boy Operations
   verifyOrderItems: (orderId: string, itemsCount: Record<string, number>) => Promise<void>;
-  updateKgWeight: (orderId: string, items: { itemId: string; kgWeight: number }[]) => Promise<{ success: boolean; message?: string }>;
+  updateKgWeight: (orderId: string, items: { itemId: string; kgWeight: number }[], markPickedUp?: boolean) => Promise<{ success: boolean; message?: string }>;
   recordPayment: (orderId: string, paymentMode: PaymentMode) => Promise<void>;
 
 
@@ -164,9 +165,10 @@ export const useAppStore = create<AppState>()(
       setCurrentUser: (user) => {
         if (user) {
           const effectiveShop = user.role === 'SuperAdmin' ? '' : (user.shopId || get().currentTenantId || '');
+          const safeRole = ((user.role as string) === 'Admin' ? 'ShopAdmin' : user.role) as Role;
           set({
             currentUser: user,
-            currentRole: user.role,
+            currentRole: safeRole,
             currentTenantId: effectiveShop,
           });
           if (effectiveShop) {
@@ -300,9 +302,10 @@ export const useAppStore = create<AppState>()(
             : (user.shopId || get().currentTenantId || defaultShop);
 
           // Reset TTLs so initializeAppData always re-fetches shops/offers on login
+          const safeRole = ((user.role as string) === 'Admin' ? 'ShopAdmin' : user.role) as Role;
           set({
             currentUser: user,
-            currentRole: user.role,
+            currentRole: safeRole,
             currentTenantId: effectiveShop,
             shopsLastFetched: 0,
             offersLastFetched: 0,
@@ -341,9 +344,10 @@ export const useAppStore = create<AppState>()(
               ? ''
               : (user.shopId || get().currentTenantId || defaultShop);
 
+            const safeRole = ((user.role as string) === 'Admin' ? 'ShopAdmin' : user.role) as Role;
             set({
               currentUser: user,
-              currentRole: user.role,
+              currentRole: safeRole,
               currentTenantId: effectiveShop,
               shopsLastFetched: 0,
               offersLastFetched: 0,
@@ -576,6 +580,7 @@ export const useAppStore = create<AppState>()(
         const isKg = Boolean(item.pricePerKg && item.pricePerKg > 0) || 
           item.unit === 'KG' || 
           (typeof item.name === 'string' && (item.name.toLowerCase().includes('per kg') || item.name.toLowerCase().includes('/ kg')));
+        const ratePerKg = item.pricePerKg || (isKg ? (item.pricePerItem ?? item.price) : undefined);
         const resolvedPrice = isKg ? 0 : (item.pricePerItem ?? item.price ?? 0);
         const resolvedUnit = isKg ? 'KG' : 'ITEM';
 
@@ -607,6 +612,7 @@ export const useAppStore = create<AppState>()(
               name: item.name,
               quantity,
               price: resolvedPrice,
+              pricePerKg: ratePerKg,
               unit: resolvedUnit,
               image: item.image,
               categoryName,
@@ -643,8 +649,27 @@ export const useAppStore = create<AppState>()(
       clearCart: () => set({ cart: [], activeCoupon: null, deliveryInstructions: '' }),
 
       applyCoupon: (code) => {
-        const { offers, cart, currentTenantId } = get();
-        const coupon = offers.find(o => o.code.toUpperCase() === code.toUpperCase() && o.shopId === currentTenantId);
+        const { offers, cart, currentTenantId, shops } = get();
+        const currentShop = shops.find(s => s._id === currentTenantId);
+
+        let coupon: any = offers.find(o => o.code.toUpperCase() === code.toUpperCase() && o.shopId === currentTenantId);
+
+        if (!coupon && currentShop?.promoCode?.code && currentShop.promoCode.code.toUpperCase() === code.toUpperCase()) {
+          if (!currentShop.promoCode.isActive) {
+            return { success: false, message: 'This promo code is currently inactive' };
+          }
+          coupon = {
+            _id: `promo_${currentShop._id}`,
+            shopId: currentShop._id,
+            code: currentShop.promoCode.code.toUpperCase(),
+            discountPercent: currentShop.promoCode.discountPercent,
+            maxDiscount: currentShop.promoCode.maxDiscount ?? 99999,
+            minOrderValue: currentShop.promoCode.minOrderValue ?? 0,
+            description: currentShop.promoCode.description || '',
+            isActive: true,
+          };
+        }
+
         if (!coupon) return { success: false, message: 'Invalid coupon code for this shop' };
 
         const isKgItemCheck = (c: any) => 
@@ -711,16 +736,25 @@ export const useAppStore = create<AppState>()(
             washPreferences,
             totalAmount: finalTotal,
             discountAmount: discount,
+            couponCode: activeCoupon?.code || undefined,
             taxAmount: tax,
             deliveryFee: deliveryFeeAmt,
             pickupAddress: deliveryAddress,
             deliveryAddress,
             pickupTime,
           });
-          const newOrder = res.data;
+          const rawOrder = res.data;
+          const newOrder = {
+            ...rawOrder,
+            _id: String(rawOrder._id || `ord_${Date.now()}`),
+            customerId: String(rawOrder.customerId || currentUser._id),
+            createdAt: rawOrder.createdAt || new Date().toISOString(),
+            items: Array.isArray(rawOrder.items) ? rawOrder.items : [],
+            status: rawOrder.status || 'PLACED',
+          };
 
           set(state => ({
-            orders: [newOrder, ...state.orders],
+            orders: [newOrder, ...state.orders.filter(o => String(o._id) !== String(newOrder._id))],
             cart: [],
             activeCoupon: null,
             deliveryInstructions: '',
@@ -731,6 +765,22 @@ export const useAppStore = create<AppState>()(
         } catch (err: any) {
           set({ isLoading: false, error: err.message || 'Failed to place order' });
           return { success: false, orderId: '', message: err.message || 'Failed to place order' };
+        }
+      },
+
+      cancelOrder: async (orderId: string, reason?: string) => {
+        try {
+          const res = await api.patch(`/orders/${orderId}/cancel`, { reason });
+          if (res.data) {
+            set(state => ({
+              orders: state.orders.map(o => String(o._id) === String(orderId) ? res.data : o)
+            }));
+            return { success: true, message: 'Order cancelled successfully' };
+          }
+          return { success: false, message: 'Failed to cancel order' };
+        } catch (err: any) {
+          const msg = err?.response?.data?.error || err.message || 'Failed to cancel order';
+          return { success: false, message: msg };
         }
       },
 
@@ -1017,9 +1067,9 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      updateKgWeight: async (orderId, items) => {
+      updateKgWeight: async (orderId, items, markPickedUp = false) => {
         try {
-          const res = await api.patch(`/orders/${orderId}/kg-weight`, { items });
+          const res = await api.patch(`/orders/${orderId}/kg-weight`, { items, markPickedUp });
           if (res.data) {
             set(state => ({
               orders: state.orders.map(o => o._id === orderId ? res.data : o),

@@ -338,25 +338,112 @@ export const AdminOrdersScreen: React.FC = () => {
 
               </View>
 
-              {/* Items Summary & Category */}
+              {/* Category & Items Section on Outer Card */}
               {(() => {
-                const primaryCat = order.items?.find((i: any) => i.categoryName || i.subCategoryName);
-                const catText = primaryCat ? formatCatTitle(primaryCat) : '';
+                const itemsByCatOrder = (order.items || []).reduce((acc: Record<string, any[]>, it: any) => {
+                  const title = formatCatTitle(it);
+                  if (!acc[title]) acc[title] = [];
+                  acc[title].push(it);
+                  return acc;
+                }, {});
+
                 return (
-                  <View style={styles.itemsBox}>
-                    {catText && catText !== 'GENERAL LAUNDRY' ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <View style={{ backgroundColor: '#0D8DE3', paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: COLORS.black }}>
-                          <Text style={{ fontSize: 9, fontWeight: '900', color: COLORS.white, letterSpacing: 0.5 }}>
-                            {catText}
+                  <View style={{ gap: 8, marginVertical: 8 }}>
+                    {(Object.entries(itemsByCatOrder) as [string, any[]][]).map(([catTitle, catItems], groupIdx) => (
+                      <View key={groupIdx} style={styles.catGroupCard}>
+                        {/* Big Words Category Header Banner */}
+                        <View style={styles.catHeaderBanner}>
+                          <View style={styles.catBadge}>
+                            <Text style={styles.catBadgeText}>CATEGORY</Text>
+                          </View>
+                          <Text style={styles.catBannerTitle} numberOfLines={1}>
+                            {catTitle}
                           </Text>
+                          <View style={styles.catCountBadge}>
+                            <Text style={styles.catCountBadgeText}>
+                              {catItems.length} {catItems.length === 1 ? 'ITEM' : 'ITEMS'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Items in this Category */}
+                        <View style={styles.catItemsList}>
+                          {catItems.map((it: any, idx: number) => {
+                            const isKg = it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+                            const linePrice = (it.price || 0) * (isKg ? (it.kgWeight || 1) : it.quantity);
+                            return (
+                              <View key={`${it.itemId || idx}-${idx}`} style={[styles.catItemRow, idx > 0 && styles.catItemDivider]}>
+                                <View style={{ flex: 1, paddingRight: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                    <Text style={styles.catItemName}>
+                                      {it.quantity}x {it.name}
+                                    </Text>
+                                    {it.isBucket && (
+                                      <View style={styles.bucketBadge}>
+                                        <Text style={styles.bucketBadgeText}>BUCKET (PER KG)</Text>
+                                      </View>
+                                    )}
+                                  </View>
+
+                                  {isKg ? (
+                                    <View style={{ marginTop: 3 }}>
+                                      <Text style={styles.catItemSubtext}>
+                                        {it.kgWeight ? `MEASURED WEIGHT: ${it.kgWeight} KG` : 'AWAITING AGENT WEIGHT ENTRY'}
+                                      </Text>
+                                      {it.isBucket && (
+                                        <Text style={styles.catItemCountText}>
+                                          CLOTHES COUNT: {it.quantity}
+                                        </Text>
+                                      )}
+                                    </View>
+                                  ) : (
+                                    <Text style={styles.catItemPriceUnit}>
+                                      ₹{it.price} / ITEM
+                                    </Text>
+                                  )}
+                                </View>
+
+                                <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                                  {isKg ? (
+                                    order.kgPriceUpdated && it.price > 0 ? (
+                                      <View style={styles.itemPriceBadge}>
+                                        <Text style={styles.itemPriceBadgeText}>₹{linePrice}</Text>
+                                      </View>
+                                    ) : (
+                                      <View style={styles.itemPendingBadge}>
+                                        <Text style={styles.itemPendingBadgeText}>PENDING</Text>
+                                      </View>
+                                    )
+                                  ) : (
+                                    <View style={styles.itemPriceBadge}>
+                                      <Text style={styles.itemPriceBadgeText}>₹{linePrice}</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                            );
+                          })}
                         </View>
                       </View>
-                    ) : null}
-                    <Text style={styles.itemsSummaryText} numberOfLines={2}>
-                      {order.items?.map((i) => `${i.quantity}x ${i.name}`).join(' · ') ||
-                        'Standard Laundry'}
-                    </Text>
+                    ))}
+
+                    {/* Wash Preferences if any */}
+                    {order.washPreferences && order.washPreferences.length > 0 && (
+                      <View style={styles.addonsCard}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <Sparkles size={12} color="#0D8DE3" strokeWidth={2.5} />
+                          <Text style={[styles.addonsHeader, { fontSize: 9 }]}>WASH ADD-ONS & PREFERENCES</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                          {order.washPreferences.map((pref: any, idx: number) => (
+                            <View key={idx} style={styles.addonChip}>
+                              <Text style={styles.addonChipName}>{pref.name}</Text>
+                              <Text style={styles.addonChipPrice}>+₹{pref.price}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
                   </View>
                 );
               })()}

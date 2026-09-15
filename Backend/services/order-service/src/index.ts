@@ -25,14 +25,19 @@ const router = Router();
 router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest, res: Response) => {
   try {
     const {
-      shopId, items, totalAmount, discountAmount, taxAmount,
+      shopId, items, totalAmount, discountAmount, couponCode, taxAmount,
       deliveryFee, pickupAddress, deliveryAddress, pickupTime, washPreferences
     } = req.body;
 
-    // Only fetch the isOpen field — no need for full shop document
-    const shop = await Shop.findById(shopId).select('isOpen').lean() as any;
+    // Fetch shop isOpen and contactNumber
+    const shop = await Shop.findById(shopId).select('isOpen contactNumber').lean() as any;
     if (shop && shop.isOpen === false) {
       return res.status(400).json({ error: 'This branch is currently closed. We are not accepting orders right now.' });
+    }
+    let shopPhone = shop?.contactNumber || '';
+    if (!shopPhone) {
+      const adminUser = await User.findOne({ shopId, role: 'ShopAdmin' }).select('phone').lean() as any;
+      shopPhone = adminUser?.phone || '';
     }
 
     const customer = await User.findById(req.user!._id).select('name phone').lean() as any;
@@ -73,10 +78,12 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       customerName: customer?.name || 'Unknown Customer',
       customerPhone: customer?.phone || 'N/A',
       shopId,
+      shopPhone,
       items: enrichedItems,
       washPreferences,
       totalAmount,
       discountAmount,
+      couponCode,
       taxAmount,
       deliveryFee,
       pickupAddress,
@@ -173,7 +180,29 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
       total = await Order.countDocuments(query);
     }
 
-    res.json({ orders, total, page, pages: Math.ceil(total / limit) });
+    // Enrich missing shopPhone or deliveryBoyPhone for older orders
+    const missingShopIds = [...new Set(orders.filter((o: any) => !o.shopPhone && o.shopId).map((o: any) => o.shopId))];
+    const missingDeliveryBoyIds = [...new Set(orders.filter((o: any) => !o.deliveryBoyPhone && o.deliveryBoyId).map((o: any) => o.deliveryBoyId))];
+
+    let shopPhoneMap: Record<string, string> = {};
+    if (missingShopIds.length > 0) {
+      const shops = await Shop.find({ _id: { $in: missingShopIds } }).select('_id contactNumber').lean() as any[];
+      shops.forEach((s: any) => { if (s.contactNumber) shopPhoneMap[s._id] = s.contactNumber; });
+    }
+
+    let deliveryPhoneMap: Record<string, string> = {};
+    if (missingDeliveryBoyIds.length > 0) {
+      const deliveryUsers = await User.find({ _id: { $in: missingDeliveryBoyIds } }).select('_id phone').lean() as any[];
+      deliveryUsers.forEach((u: any) => { if (u.phone) deliveryPhoneMap[u._id] = u.phone; });
+    }
+
+    const enrichedOrders = orders.map((o: any) => ({
+      ...o,
+      shopPhone: o.shopPhone || shopPhoneMap[o.shopId] || '',
+      deliveryBoyPhone: o.deliveryBoyPhone || (o.deliveryBoyId ? deliveryPhoneMap[o.deliveryBoyId] : '') || '',
+    }));
+
+    res.json({ orders: enrichedOrders, total, page, pages: Math.ceil(total / limit) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
@@ -450,14 +479,15 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
     const currentOrder = await Order.findById(req.params.orderId);
     if (!currentOrder) return res.status(404).json({ error: 'Order not found' });
 
+    const staff = await User.findById(deliveryBoyId).select('name phone').lean() as any;
     if (!deliveryBoyName) {
-      const staff = await User.findById(deliveryBoyId).select('name').lean() as any;
       if (staff?.name) {
         deliveryBoyName = staff.name;
       } else {
         deliveryBoyName = 'Delivery Staff';
       }
     }
+    const deliveryBoyPhone = staff?.phone || '';
 
     let newStatus = req.body.status || currentOrder.status;
     if (!req.body.status) {
@@ -470,7 +500,7 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
 
     const order = await Order.findByIdAndUpdate(
       req.params.orderId,
-      { deliveryBoyId, deliveryBoyName, status: newStatus },
+      { deliveryBoyId, deliveryBoyName, deliveryBoyPhone, status: newStatus },
       { new: true }
     ).lean() as any;
 
@@ -532,13 +562,13 @@ router.patch('/:orderId/admin-details', requireAuth, requireRole(['ShopAdmin', '
   }
 });
 
-// Update KG item weights (Delivery agent — after weighing clothes at delivery time)
-// Body: { items: [{ itemId: string, kgWeight: number }] }
+// Update KG item weights (Delivery agent — weighs clothes at pickup time to calculate final price)
+// Body: { items: [{ itemId: string, kgWeight: number }], markPickedUp?: boolean }
 // Each KG item's price is computed as kgWeight * (catalog pricePerKg from the item record)
 // After update, totalAmount is recalculated and kgPriceUpdated is set to true.
 router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const { items: weightUpdates } = req.body;
+    const { items: weightUpdates, markPickedUp } = req.body;
     if (!Array.isArray(weightUpdates) || weightUpdates.length === 0) {
       return res.status(400).json({ error: 'items array with { itemId, kgWeight } entries is required' });
     }
@@ -591,6 +621,12 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     order.items = updatedItems;
     order.totalAmount = Math.round(newTotal * 100) / 100;
     order.kgPriceUpdated = true;
+
+    // If requested to mark as picked up at the same time
+    if (markPickedUp && ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED'].includes(order.status)) {
+      order.status = 'PICKED_UP';
+    }
+
     await order.save();
 
     const updatedOrder = order.toObject();
@@ -607,8 +643,8 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
         if (customer?.expoPushToken) {
           await sendPushNotification(
             [customer.expoPushToken],
-            'Order Total Updated',
-            `Your KG items have been weighed. Total: ₹${updatedOrder.totalAmount}`,
+            'Order Weighed at Pickup',
+            `Your laundry has been weighed at pickup. Final bill: ₹${updatedOrder.totalAmount}`,
             { orderId: updatedOrder._id }
           );
         }
@@ -621,7 +657,6 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     res.status(500).json({ error: 'Failed to update KG weights' });
   }
 });
-
 
 
 // Verify order items (Delivery & Admin — pickup confirmation / count verification step)
@@ -644,7 +679,15 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
     const taxPercent = shop?.taxPercent || 0;
     const deliveryFeeAmt = shop?.deliveryFee || 0;
 
-    const itemSubtotal = items.reduce((sum: number, item: any) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+    const perItemSubtotal = items
+      .filter((it: any) => it.unit !== 'KG')
+      .reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 0)), 0);
+
+    const kgSubtotal = items
+      .filter((it: any) => it.unit === 'KG')
+      .reduce((sum: number, it: any) => sum + Number(it.price || 0), 0);
+
+    const itemSubtotal = perItemSubtotal + kgSubtotal;
     const washPrefsCost = (order.washPreferences || []).reduce((sum: number, wp: any) => sum + Number(wp.price || 0), 0);
     const taxAmount = (itemSubtotal * taxPercent) / 100;
     const discountAmount = order.discountAmount || 0;
@@ -714,6 +757,90 @@ router.patch('/:orderId/payment', requireAuth, requireRole(['ShopAdmin', 'SuperA
     res.json(paidOrder);
   } catch (err) {
     res.status(500).json({ error: 'Failed to record payment' });
+  }
+});
+
+// Cancel an order (Customer can cancel within 15 minutes of placement; Admins can cancel anytime)
+router.patch('/:orderId/cancel', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+    const user = req.user!;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status === 'CANCELLED') {
+      return res.status(400).json({ error: 'Order is already cancelled' });
+    }
+
+    if (user.role === 'Customer') {
+      // Must be customer's own order
+      if (String(order.customerId) !== String(user._id)) {
+        return res.status(403).json({ error: 'Unauthorized to cancel this order' });
+      }
+
+      // Check if order status allows cancellation
+      const customerCancellableStatuses = ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED'];
+      if (!customerCancellableStatuses.includes(order.status)) {
+        return res.status(400).json({ error: `Cannot cancel order at ${order.status.replace(/_/g, ' ')} stage. Please contact support.` });
+      }
+
+      // 15-minute cancellation window check
+      const createdAtTime = new Date(order.createdAt).getTime();
+      const elapsedMs = Date.now() - createdAtTime;
+      const MAX_CANCEL_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+      if (elapsedMs > MAX_CANCEL_WINDOW_MS) {
+        return res.status(400).json({ 
+          error: 'Orders can only be cancelled within 15 minutes of placement. Please contact shop support for assistance.' 
+        });
+      }
+    } else if (!['ShopAdmin', 'SuperAdmin'].includes(user.role)) {
+      return res.status(403).json({ error: 'Unauthorized to cancel orders' });
+    }
+
+    order.status = 'CANCELLED';
+    order.cancelledAt = new Date();
+    order.cancellationReason = reason || (user.role === 'Customer' ? 'Cancelled by customer' : 'Cancelled by admin');
+    await order.save();
+
+    const updatedOrder = order.toObject();
+
+    // Respond immediately
+    res.json(updatedOrder);
+
+    // Emit real-time events
+    emitToShop(req, updatedOrder.shopId, 'order_updated', updatedOrder);
+    emitToUser(req, String(updatedOrder.customerId), 'order_updated', updatedOrder);
+    if (updatedOrder.deliveryBoyId) {
+      emitToUser(req, String(updatedOrder.deliveryBoyId), 'order_updated', updatedOrder);
+    }
+
+    // Fire-and-forget push notification to shop admins
+    setImmediate(async () => {
+      try {
+        const shopAdmins = await User.find({ shopId: updatedOrder.shopId, role: 'ShopAdmin' })
+          .select('expoPushToken')
+          .lean() as any[];
+        const adminTokens = shopAdmins.map((a: any) => a.expoPushToken).filter(Boolean) as string[];
+        if (adminTokens.length > 0) {
+          await sendPushNotification(
+            adminTokens,
+            'Order Cancelled',
+            `Order #${String(updatedOrder._id).slice(-6).toUpperCase()} was cancelled by ${user.role === 'Customer' ? 'customer' : 'admin'}.`,
+            { orderId: updatedOrder._id, status: 'CANCELLED' }
+          );
+        }
+      } catch (e) {
+        console.error('Failed to send cancellation notification:', e);
+      }
+    });
+  } catch (err) {
+    console.error('Failed to cancel order:', err);
+    res.status(500).json({ error: 'Failed to cancel order' });
   }
 });
 

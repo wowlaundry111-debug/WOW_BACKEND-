@@ -26,7 +26,7 @@ router.get('/shops', async (req: Request, res: Response) => {
     }
 
     const shops = await Shop.find({})
-      .select('_id name branches isOpen instructions pickupTimings contactNumber washPreferences minOrderValue taxPercent deliveryFee paymentInfo promoBanners androidAppUrl iosAppUrl')
+      .select('_id name branches isOpen instructions pickupTimings contactNumber washPreferences minOrderValue taxPercent deliveryFee paymentInfo promoBanners promoCode androidAppUrl iosAppUrl')
       .lean();
 
     catalogCache.set(CACHE_KEY, shops, SHOPS_LIST_TTL);
@@ -99,7 +99,7 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
 
     const allowed = [
       'name', 'branches', 'paymentInfo', 'isOpen', 'instructions',
-      'pickupTimings', 'contactNumber', 'washPreferences', 'promoBanners',
+      'pickupTimings', 'contactNumber', 'washPreferences', 'promoBanners', 'promoCode',
       'minOrderValue', 'taxPercent', 'deliveryFee', 'androidAppUrl', 'iosAppUrl',
     ];
 
@@ -110,6 +110,29 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
 
     const shop = await Shop.findByIdAndUpdate(req.params.shopId, updates, { new: true }).lean();
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
+
+    // Sync with Offer collection if promoCode is updated
+    if (req.body.promoCode && req.body.promoCode.code) {
+      try {
+        await Offer.findOneAndUpdate(
+          { shopId: req.params.shopId, code: String(req.body.promoCode.code).trim().toUpperCase() },
+          {
+            shopId: req.params.shopId,
+            code: String(req.body.promoCode.code).trim().toUpperCase(),
+            discountPercent: Number(req.body.promoCode.discountPercent) || 0,
+            maxDiscount: Number(req.body.promoCode.maxDiscount) || 0,
+            minOrderValue: Number(req.body.promoCode.minOrderValue) || 0,
+            description: req.body.promoCode.description || '',
+            isActive: req.body.promoCode.isActive !== false,
+          },
+          { upsert: true, new: true }
+        );
+        catalogCache.delete(`offers:${req.params.shopId}`);
+        catalogCache.delete('offers:all');
+      } catch (syncErr) {
+        console.warn('Failed to sync Offer model:', syncErr);
+      }
+    }
 
     // Invalidate both the list cache and this shop's individual cache
     catalogCache.delete('shops:list');

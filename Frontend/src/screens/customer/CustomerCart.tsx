@@ -296,6 +296,11 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
   const [couponCode, setCouponCode] = useState('');
   const [couponMsg, setCouponMsg] = useState<{ type: string; text: string }>({ type: '', text: '' });
   const [loading, setLoading] = useState(false);
+  const cartScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    cartScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []);
 
   const handleAutoDetect = async () => {
     setIsDetectingLoc(true);
@@ -440,12 +445,6 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
       </View>
     );
   }
-
-  const cartScrollRef = React.useRef<ScrollView>(null);
-
-  React.useEffect(() => {
-    cartScrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, []);
 
   // ─── Filled Cart / Checkout Screen ───────────────────────────────────────
   return (
@@ -604,8 +603,29 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
             <View style={styles.cardHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Clock size={18} color={COLORS.black} strokeWidth={2.5} />
-                <Text style={styles.cardHeading}>PICKUP SLOT</Text>
+                <Text style={styles.cardHeading}>PICKUP SCHEDULE</Text>
               </View>
+              <View style={styles.selectedSlotBadge}>
+                <Text style={styles.selectedSlotBadgeText}>{selectedDay} | {selectedSlot}</Text>
+              </View>
+            </View>
+
+            {/* Day Selector */}
+            <View style={styles.daySelectorRow}>
+              {['Today', 'Tomorrow', 'Day After'].map((d) => {
+                const isDaySelected = selectedDay === d;
+                return (
+                  <BouncyCard
+                    key={d}
+                    onPress={() => setSelectedDay(d)}
+                    contentStyle={[styles.dayPill, isDaySelected && styles.dayPillActive]}
+                  >
+                    <Text style={[styles.dayPillText, isDaySelected && styles.dayPillTextActive]}>
+                      {d}
+                    </Text>
+                  </BouncyCard>
+                );
+              })}
             </View>
 
             <View style={styles.timeSlotGrid}>
@@ -678,7 +698,9 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
                           </Text>
                         )}
                         {isKg ? (
-                          <Text style={[styles.cartItemRate, { color: '#0284C7', fontWeight: '800' }]}>Weighed at delivery</Text>
+                          <Text style={[styles.cartItemRate, { color: '#0284C7', fontWeight: '800' }]}>
+                            {item.pricePerKg ? `₹${item.pricePerKg}/kg · Weighed at delivery` : 'Weighed at delivery'}
+                          </Text>
                         ) : (
                           <Text style={styles.cartItemRate}>₹{item.price} per unit</Text>
                         )}
@@ -740,6 +762,43 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
           {/* 5. Promo Code & Bill Summary */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardHeading}>PROMO CODE</Text>
+
+            {/* Quick 1-tap Promo Code from Shop if available */}
+            {shop?.promoCode?.isActive && shop?.promoCode?.code ? (
+              <View style={styles.shopPromoQuickCard}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Tag size={13} color="#0284C7" strokeWidth={3} />
+                    <Text style={styles.shopPromoCodeText}>{shop.promoCode.code}</Text>
+                    <View style={styles.shopPromoBadge}>
+                      <Text style={styles.shopPromoBadgeText}>{shop.promoCode.discountPercent}% OFF</Text>
+                    </View>
+                  </View>
+                  <Text numberOfLines={1} style={styles.shopPromoSubtext}>
+                    {shop.promoCode.description || `Min order ₹${shop.promoCode.minOrderValue || 0}, max ₹${shop.promoCode.maxDiscount || 'unlimited'}`}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    if (!shop?.promoCode) return;
+                    setCouponCode(shop.promoCode.code);
+                    const res = applyCoupon(shop.promoCode.code);
+                    if (res.success) {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      setCouponMsg({ type: 'success', text: res.message });
+                    } else {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                      setCouponMsg({ type: 'error', text: res.message });
+                    }
+                  }}
+                  style={styles.shopPromoApplyBtn}
+                >
+                  <Text style={styles.shopPromoApplyBtnText}>APPLY NOW</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             <View style={styles.couponRow}>
               <TextInput
                 style={styles.couponInput}
@@ -763,6 +822,18 @@ export const CustomerCartScreen: React.FC<CustomerCartProps> = ({ onBack, onChec
                 {couponMsg.text}
               </Text>
             ) : null}
+
+            {activeCoupon && (
+              <View style={styles.activeCouponBanner}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={16} color={COLORS.black} strokeWidth={3} />
+                  <Text style={styles.activeCouponText}>{activeCoupon.code} APPLIED</Text>
+                </View>
+                <TouchableOpacity onPress={removeCoupon} style={styles.removeCouponBtn}>
+                  <Text style={styles.removeCouponBtnText}>REMOVE</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <View style={styles.billDivider} />
 
@@ -1360,5 +1431,129 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.black,
     letterSpacing: 0.5,
+  },
+  daySelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  dayPill: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+  },
+  dayPillActive: {
+    backgroundColor: COLORS.black,
+    ...NEO_SHADOW.box2,
+  },
+  dayPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontFamily: 'Outfit_700Bold',
+    color: COLORS.black,
+    textTransform: 'uppercase',
+  },
+  dayPillTextActive: {
+    color: '#B0FF49',
+  },
+  selectedSlotBadge: {
+    backgroundColor: COLORS.black,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+  },
+  selectedSlotBadgeText: {
+    fontSize: 10,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#B0FF49',
+  },
+  shopPromoQuickCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    padding: 10,
+    marginTop: 6,
+    marginBottom: 8,
+    ...NEO_SHADOW.box2,
+  },
+  shopPromoCodeText: {
+    fontSize: 12,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  shopPromoBadge: {
+    backgroundColor: '#B0FF49',
+    borderWidth: 1,
+    borderColor: COLORS.black,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  shopPromoBadgeText: {
+    fontSize: 9,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+  },
+  shopPromoSubtext: {
+    fontSize: 10,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#475569',
+    marginTop: 2,
+  },
+  shopPromoApplyBtn: {
+    backgroundColor: COLORS.black,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+  },
+  shopPromoApplyBtnText: {
+    fontSize: 9,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#B0FF49',
+    letterSpacing: 0.3,
+  },
+  activeCouponBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginTop: 8,
+    ...NEO_SHADOW.box2,
+  },
+  activeCouponText: {
+    fontSize: 11,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  removeCouponBtn: {
+    backgroundColor: COLORS.black,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+  },
+  removeCouponBtnText: {
+    fontSize: 9,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.white,
+    letterSpacing: 0.3,
   },
 });

@@ -25,6 +25,10 @@ import {
   ChevronUp,
   SlidersHorizontal,
   Layers,
+  Clock,
+  Tag,
+  Percent,
+  X,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
@@ -43,7 +47,28 @@ const DEFAULT_WASH_PREFS = [
   { id: 'stain_booster', name: 'Stain Remover Booster', description: 'Spot treatment for tough grease & collar marks', price: 40, enabled: true },
 ];
 
-type SectionId = 'store' | 'payment' | 'banners' | 'addons' | 'fleet';
+const DEFAULT_PICKUP_TIMINGS = [
+  '08:00 AM - 10:00 AM',
+  '10:00 AM - 12:00 PM',
+  '12:00 PM - 02:00 PM',
+  '02:00 PM - 04:00 PM',
+  '04:00 PM - 06:00 PM',
+  '06:00 PM - 08:00 PM',
+  '08:00 PM - 10:00 PM',
+];
+
+const PRESET_TIMING_SLOTS = [
+  '07:00 AM - 09:00 AM',
+  '09:00 AM - 11:00 AM',
+  '11:00 AM - 01:00 PM',
+  '01:00 PM - 03:00 PM',
+  '03:00 PM - 05:00 PM',
+  '05:00 PM - 07:00 PM',
+  '07:00 PM - 09:00 PM',
+  '09:00 PM - 11:00 PM',
+];
+
+type SectionId = 'store' | 'slots' | 'promo' | 'payment' | 'banners' | 'addons' | 'fleet';
 
 interface SettingsMenuItem {
   id: SectionId;
@@ -62,6 +87,22 @@ const SETTINGS_SECTIONS: SettingsMenuItem[] = [
     subtitle: 'Open/close, min order, tax & fees',
     icon: Store,
     color: '#B0FF49',
+  },
+  {
+    id: 'slots',
+    label: 'Pickup Time Slots',
+    shortLabel: 'Slots',
+    subtitle: 'Manage customer order pickup slots',
+    icon: Clock,
+    color: '#38BDF8',
+  },
+  {
+    id: 'promo',
+    label: 'Shop Promo Code',
+    shortLabel: 'Promo',
+    subtitle: 'Discount code shown on customer home & cart',
+    icon: Tag,
+    color: '#F472B6',
   },
   {
     id: 'payment',
@@ -116,6 +157,8 @@ export const AdminShopScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'all' | SectionId>('all');
   const [expandedSections, setExpandedSections] = useState<Record<SectionId, boolean>>({
     store: true,
+    slots: true,
+    promo: true,
     payment: true,
     banners: true,
     addons: true,
@@ -131,6 +174,24 @@ export const AdminShopScreen: React.FC = () => {
   const [accountNo, setAccountNo] = useState(currentShop?.paymentInfo?.accountNo || '');
   const [contactNumber, setContactNumber] = useState(currentShop?.contactNumber || '');
   const [instructions, setInstructions] = useState(currentShop?.instructions || '');
+
+  // Pickup Timings Slots
+  const [pickupTimings, setPickupTimings] = useState<string[]>(
+    currentShop?.pickupTimings && currentShop.pickupTimings.length > 0
+      ? currentShop.pickupTimings
+      : DEFAULT_PICKUP_TIMINGS
+  );
+  const [newSlotInput, setNewSlotInput] = useState('');
+
+  // Shop Promo Code
+  const [promoCodeForm, setPromoCodeForm] = useState({
+    code: currentShop?.promoCode?.code || '',
+    discountPercent: String(currentShop?.promoCode?.discountPercent || 15),
+    maxDiscount: String(currentShop?.promoCode?.maxDiscount || 100),
+    minOrderValue: String(currentShop?.promoCode?.minOrderValue || 200),
+    description: currentShop?.promoCode?.description || '',
+    isActive: currentShop?.promoCode?.isActive ?? true,
+  });
 
   // Promo Banners & Wash Preferences
   const [promoBanners, setPromoBanners] = useState(
@@ -162,6 +223,19 @@ export const AdminShopScreen: React.FC = () => {
       setAccountNo(currentShop.paymentInfo?.accountNo || '');
       setContactNumber(currentShop.contactNumber || '');
       setInstructions(currentShop.instructions || '');
+      if (currentShop.pickupTimings && currentShop.pickupTimings.length > 0) {
+        setPickupTimings(currentShop.pickupTimings);
+      }
+      if (currentShop.promoCode) {
+        setPromoCodeForm({
+          code: currentShop.promoCode.code || '',
+          discountPercent: String(currentShop.promoCode.discountPercent || 15),
+          maxDiscount: String(currentShop.promoCode.maxDiscount || 100),
+          minOrderValue: String(currentShop.promoCode.minOrderValue || 200),
+          description: currentShop.promoCode.description || '',
+          isActive: currentShop.promoCode.isActive ?? true,
+        });
+      }
       setPromoBanners(
         currentShop.promoBanners && currentShop.promoBanners.length >= 2
           ? currentShop.promoBanners
@@ -174,6 +248,23 @@ export const AdminShopScreen: React.FC = () => {
       );
     }
   }, [currentShop]);
+
+  const handleAddSlot = (slotToAdd?: string) => {
+    const s = (slotToAdd || newSlotInput).trim();
+    if (!s) return;
+    if (pickupTimings.includes(s)) {
+      Alert.alert('Duplicate Slot', 'This timing slot already exists.');
+      return;
+    }
+    setPickupTimings([...pickupTimings, s]);
+    if (!slotToAdd) setNewSlotInput('');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleDeleteSlot = (idx: number) => {
+    setPickupTimings(pickupTimings.filter((_, i) => i !== idx));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
 
   const deliveryBoys = users.filter(
     (u) => u.role === 'Delivery' && (!activeShopId || !u.shopId || u.shopId === activeShopId)
@@ -205,6 +296,15 @@ export const AdminShopScreen: React.FC = () => {
         instructions,
         promoBanners,
         washPreferences,
+        pickupTimings,
+        promoCode: {
+          code: promoCodeForm.code.trim().toUpperCase(),
+          discountPercent: Number(promoCodeForm.discountPercent) || 0,
+          maxDiscount: Number(promoCodeForm.maxDiscount) || 0,
+          minOrderValue: Number(promoCodeForm.minOrderValue) || 0,
+          description: promoCodeForm.description.trim(),
+          isActive: promoCodeForm.isActive,
+        },
         paymentInfo: {
           upiId,
           bankName,
@@ -480,7 +580,276 @@ export const AdminShopScreen: React.FC = () => {
           </View>
         )}
 
-        {/* ─── 2. PAYMENT & BANKING ─── */}
+        {/* ─── 2. PICKUP TIME SLOTS ─── */}
+        {shouldShowSection('slots') && (
+          <View style={styles.optionCard}>
+            <TouchableOpacity
+              style={styles.optionHeader}
+              activeOpacity={0.85}
+              onPress={() => toggleSection('slots')}
+            >
+              <View style={[styles.optionIconBox, { backgroundColor: '#38BDF8' }]}>
+                <Clock size={18} color={COLORS.black} strokeWidth={2.5} />
+              </View>
+              <View style={styles.optionHeaderTextWrap}>
+                <Text style={styles.optionTitle}>PICKUP TIME SLOTS ({pickupTimings.length})</Text>
+                <Text style={styles.optionSubtitle}>Configured slots for checkout pickup</Text>
+              </View>
+              {expandedSections.slots ? (
+                <ChevronUp size={20} color={COLORS.black} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={20} color={COLORS.black} strokeWidth={2.5} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSections.slots && (
+              <View style={styles.optionBody}>
+                {/* Active Slots list */}
+                <Text style={styles.inputLabel}>ACTIVE PICKUP SLOTS</Text>
+                {pickupTimings.length === 0 ? (
+                  <View style={styles.emptySlotBox}>
+                    <Text style={styles.emptySlotText}>No pickup slots configured. Add one below.</Text>
+                  </View>
+                ) : (
+                  <View style={styles.slotsWrap}>
+                    {pickupTimings.map((slot, idx) => (
+                      <View key={slot + idx} style={styles.slotTagPill}>
+                        <Clock size={12} color={COLORS.black} strokeWidth={2.5} />
+                        <Text style={styles.slotTagText}>{slot}</Text>
+                        <TouchableOpacity
+                          style={styles.slotDeleteBtn}
+                          onPress={() => handleDeleteSlot(idx)}
+                          activeOpacity={0.8}
+                        >
+                          <X size={12} color="#DC2626" strokeWidth={3} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Add Custom Slot */}
+                <View style={[styles.formRow, { marginTop: 10, alignItems: 'flex-end' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>ADD CUSTOM SLOT</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. 09:00 AM - 11:00 AM"
+                      placeholderTextColor="#9CA3AF"
+                      value={newSlotInput}
+                      onChangeText={setNewSlotInput}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={styles.addSlotBtn}
+                    onPress={() => handleAddSlot()}
+                    activeOpacity={0.85}
+                  >
+                    <Plus size={14} color={COLORS.black} strokeWidth={3} />
+                    <Text style={styles.addSlotBtnText}>ADD</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Quick Presets */}
+                <View style={{ marginTop: 10 }}>
+                  <Text style={styles.inputLabel}>QUICK PRESETS (TAP TO ADD)</Text>
+                  <View style={styles.presetsWrap}>
+                    {PRESET_TIMING_SLOTS.map((slot) => {
+                      const isAlreadyAdded = pickupTimings.includes(slot);
+                      return (
+                        <TouchableOpacity
+                          key={slot}
+                          disabled={isAlreadyAdded}
+                          onPress={() => handleAddSlot(slot)}
+                          style={[
+                            styles.presetPill,
+                            isAlreadyAdded && styles.presetPillDisabled,
+                          ]}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.presetPillText,
+                              isAlreadyAdded && styles.presetPillTextDisabled,
+                            ]}
+                          >
+                            {isAlreadyAdded ? `✓ ${slot}` : `+ ${slot}`}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── 3. SHOP PROMO CODE ─── */}
+        {shouldShowSection('promo') && (
+          <View style={styles.optionCard}>
+            <TouchableOpacity
+              style={styles.optionHeader}
+              activeOpacity={0.85}
+              onPress={() => toggleSection('promo')}
+            >
+              <View style={[styles.optionIconBox, { backgroundColor: '#F472B6' }]}>
+                <Tag size={18} color={COLORS.black} strokeWidth={2.5} />
+              </View>
+              <View style={styles.optionHeaderTextWrap}>
+                <Text style={styles.optionTitle}>SHOP PROMO CODE</Text>
+                <Text style={styles.optionSubtitle}>Main card offer & customer discount</Text>
+              </View>
+              {expandedSections.promo ? (
+                <ChevronUp size={20} color={COLORS.black} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={20} color={COLORS.black} strokeWidth={2.5} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSections.promo && (
+              <View style={styles.optionBody}>
+                {/* Active Switch */}
+                <View style={styles.statusToggleRow}>
+                  <View>
+                    <Text style={styles.inputLabel}>PROMO STATUS</Text>
+                    <Text style={styles.statusSubtext}>
+                      {promoCodeForm.isActive
+                        ? 'Promo code is LIVE for customers'
+                        : 'Promo code is paused / hidden'}
+                    </Text>
+                  </View>
+                  <View style={styles.toggleRow}>
+                    <Text
+                      style={[
+                        styles.toggleLabel,
+                        promoCodeForm.isActive ? { color: '#16A34A' } : { color: '#DC2626' },
+                      ]}
+                    >
+                      {promoCodeForm.isActive ? 'ACTIVE' : 'INACTIVE'}
+                    </Text>
+                    <ToggleSwitch
+                      value={promoCodeForm.isActive}
+                      onToggle={() =>
+                        setPromoCodeForm({ ...promoCodeForm, isActive: !promoCodeForm.isActive })
+                      }
+                    />
+                  </View>
+                </View>
+
+                {/* Code & Discount Percent */}
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1.2 }}>
+                    <Text style={styles.inputLabel}>PROMO CODE</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={promoCodeForm.code}
+                      onChangeText={(t) =>
+                        setPromoCodeForm({ ...promoCodeForm, code: t.toUpperCase() })
+                      }
+                      placeholder="e.g. WOW20"
+                      placeholderTextColor="#9CA3AF"
+                      autoCapitalize="characters"
+                    />
+                  </View>
+                  <View style={{ flex: 0.8 }}>
+                    <Text style={styles.inputLabel}>DISCOUNT (%)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={promoCodeForm.discountPercent}
+                      onChangeText={(t) =>
+                        setPromoCodeForm({ ...promoCodeForm, discountPercent: t })
+                      }
+                      keyboardType="numeric"
+                      placeholder="15"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                  </View>
+                </View>
+
+                {/* Max Discount & Min Order Value */}
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>MAX DISCOUNT (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={promoCodeForm.maxDiscount}
+                      onChangeText={(t) =>
+                        setPromoCodeForm({ ...promoCodeForm, maxDiscount: t })
+                      }
+                      keyboardType="numeric"
+                      placeholder="100"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>MIN ORDER (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={promoCodeForm.minOrderValue}
+                      onChangeText={(t) =>
+                        setPromoCodeForm({ ...promoCodeForm, minOrderValue: t })
+                      }
+                      keyboardType="numeric"
+                      placeholder="200"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                  </View>
+                </View>
+
+                {/* Description */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>PROMO DESCRIPTION / TERMS</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={promoCodeForm.description}
+                    onChangeText={(t) =>
+                      setPromoCodeForm({ ...promoCodeForm, description: t })
+                    }
+                    placeholder="e.g. 20% discount up to ₹100 on min ₹200 order"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                {/* Live Preview Card */}
+                {promoCodeForm.code.trim().length > 0 && (
+                  <View style={styles.promoLivePreviewCard}>
+                    <View style={styles.promoLiveTopRow}>
+                      <View style={styles.promoLiveBadge}>
+                        <Text style={styles.promoLiveBadgeText}>CUSTOMER VIEW PREVIEW</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.promoStatusDot,
+                          { backgroundColor: promoCodeForm.isActive ? '#16A34A' : '#DC2626' },
+                        ]}
+                      />
+                    </View>
+                    <View style={styles.promoLiveMainRow}>
+                      <View>
+                        <Text style={styles.promoLiveCode}>USE CODE: {promoCodeForm.code}</Text>
+                        <Text style={styles.promoLiveOff}>{promoCodeForm.discountPercent || 0}% OFF</Text>
+                      </View>
+                      <View style={styles.promoLiveMeta}>
+                        <Text style={styles.promoLiveTerms}>
+                          Max Discount: ₹{promoCodeForm.maxDiscount || 0}
+                        </Text>
+                        <Text style={styles.promoLiveTerms}>
+                          Min Order: ₹{promoCodeForm.minOrderValue || 0}
+                        </Text>
+                      </View>
+                    </View>
+                    {promoCodeForm.description ? (
+                      <Text style={styles.promoLiveDesc}>{promoCodeForm.description}</Text>
+                    ) : null}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── 4. PAYMENT & BANKING ─── */}
         {shouldShowSection('payment') && (
           <View style={styles.optionCard}>
             <TouchableOpacity
@@ -1292,6 +1661,166 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit_800ExtraBold',
     color: COLORS.white,
     letterSpacing: 0.5,
+  },
+  slotsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: SPACING.sm,
+  },
+  slotTagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  slotTagText: {
+    fontSize: 11,
+    fontFamily: 'Outfit_700Bold',
+    color: COLORS.black,
+  },
+  slotDeleteBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
+  emptySlotBox: {
+    padding: SPACING.md,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#94A3B8',
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.sm,
+  },
+  emptySlotText: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#64748B',
+  },
+  addSlotBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#38BDF8',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
+    height: 42,
+    justifyContent: 'center',
+    ...NEO_SHADOW.box2,
+  },
+  addSlotBtnText: {
+    fontSize: 11,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  presetsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  presetPill: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  presetPillDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+  },
+  presetPillText: {
+    fontSize: 10,
+    fontFamily: 'Outfit_700Bold',
+    color: COLORS.black,
+  },
+  presetPillTextDisabled: {
+    color: '#94A3B8',
+  },
+  promoLivePreviewCard: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 2,
+    borderColor: COLORS.black,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginTop: SPACING.sm,
+    ...NEO_SHADOW.box2,
+  },
+  promoLiveTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  promoLiveBadge: {
+    backgroundColor: '#F472B6',
+    borderWidth: 1.5,
+    borderColor: COLORS.black,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+  },
+  promoLiveBadgeText: {
+    fontSize: 9,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.3,
+  },
+  promoStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: COLORS.black,
+  },
+  promoLiveMainRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  promoLiveCode: {
+    fontSize: 13,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: COLORS.black,
+    letterSpacing: 0.5,
+  },
+  promoLiveOff: {
+    fontSize: 22,
+    fontFamily: 'Outfit_800ExtraBold',
+    color: '#E11D48',
+  },
+  promoLiveMeta: {
+    alignItems: 'flex-end',
+  },
+  promoLiveTerms: {
+    fontSize: 10,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#64748B',
+  },
+  promoLiveDesc: {
+    fontSize: 11,
+    fontFamily: 'Outfit_600SemiBold',
+    color: '#334155',
+    borderTopWidth: 1,
+    borderTopColor: '#FECDD3',
+    paddingTop: 6,
+    marginTop: 2,
   },
   logoutBtn: {
     flexDirection: 'row',

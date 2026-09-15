@@ -51,6 +51,14 @@ const ShopSchema = new Schema<IShop>({
     subtitle: { type: String },
     type: { type: String, default: 'promo' }
   }],
+  promoCode: {
+    code: { type: String },
+    discountPercent: { type: Number, default: 0 },
+    maxDiscount: { type: Number, default: 0 },
+    minOrderValue: { type: Number, default: 0 },
+    description: { type: String },
+    isActive: { type: Boolean, default: true },
+  },
   minOrderValue: { type: Number },
   taxPercent: { type: Number },
   deliveryFee: { type: Number },
@@ -117,9 +125,13 @@ const OrderSchema = new Schema<IOrder>({
   customerAddress: { type: String },
   deliveryBoyId: { type: String },
   deliveryBoyName: { type: String },
+  deliveryBoyPhone: { type: String },
+  shopPhone: { type: String },
+  cancelledAt: { type: Date },
+  cancellationReason: { type: String },
   status: {
     type: String,
-    enum: ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED', 'PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_DELIVERY', 'DELIVERED'],
+    enum: ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED', 'PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'],
     default: 'PLACED'
   },
   items: [{
@@ -141,6 +153,7 @@ const OrderSchema = new Schema<IOrder>({
   taxAmount: { type: Number },
   deliveryFee: { type: Number },
   discountAmount: { type: Number, default: 0 },
+  couponCode: { type: String },
   paymentStatus: {
     type: String,
     enum: ['PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],

@@ -50,6 +50,7 @@ import {
   ShoppingBag,
   Store,
   Check,
+  Tag,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS, TYPO, NEO_SHADOW } from '../../components/Theme';
@@ -333,6 +334,17 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
   const currentShop = shops.find((s) => s._id === currentTenantId) || shops[0];
   const promo1 = currentShop?.promoBanners?.[0] || { badge: 'PROMO', title: '50% OFF', subtitle: 'Winter Wear Deep Dryclean' };
   const promo2 = currentShop?.promoBanners?.[1] || { badge: 'EXPRESS', title: 'EXPRESS DOORSTEP', subtitle: 'Fast doorstep delivery' };
+
+  const [copiedPromo, setCopiedPromo] = useState(false);
+  const shopPromo = currentShop?.promoCode?.isActive && currentShop?.promoCode?.code ? currentShop.promoCode : null;
+
+  const handleApplyShopPromo = () => {
+    if (!shopPromo) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCopiedPromo(true);
+    useAppStore.getState().applyCoupon(shopPromo.code);
+    setTimeout(() => setCopiedPromo(false), 2500);
+  };
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -634,10 +646,41 @@ export const CustomerHomeScreen: React.FC<CustomerHomeProps> = ({ onCategoryPres
                   {/* Promo Text Content */}
                   <View style={{ flex: 1, paddingLeft: 10, paddingRight: 6, zIndex: 2 }}>
                     <View style={styles.promoBadgeGold}>
-                      <Text style={styles.promoBadgeGoldText}>{promo1.badge || 'PROMO'}</Text>
+                      <Text style={styles.promoBadgeGoldText}>
+                        {shopPromo ? `USE CODE: ${shopPromo.code}` : (promo1.badge || 'PROMO')}
+                      </Text>
                     </View>
-                    <Text style={styles.luxuryPromoTitle}>{promo1.title}</Text>
-                    <Text style={styles.luxuryPromoSub}>{promo1.subtitle}</Text>
+                    <Text style={styles.luxuryPromoTitle}>
+                      {shopPromo ? `${shopPromo.discountPercent}% OFF` : promo1.title}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.luxuryPromoSub}>
+                      {shopPromo ? (shopPromo.description || `Min order ₹${shopPromo.minOrderValue || 0}, max ₹${shopPromo.maxDiscount || 'unlimited'}`) : promo1.subtitle}
+                    </Text>
+
+                    {shopPromo && (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={handleApplyShopPromo}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          backgroundColor: copiedPromo ? '#B0FF49' : '#FACC15',
+                          borderWidth: 1.5,
+                          borderColor: '#000',
+                          borderRadius: 8,
+                          paddingHorizontal: 8,
+                          paddingVertical: 3,
+                          marginTop: 4,
+                          alignSelf: 'flex-start',
+                        }}
+                      >
+                        <Tag size={10} color="#000" strokeWidth={3} />
+                        <Text style={{ fontSize: 9, fontFamily: 'Outfit_800ExtraBold', color: '#000', letterSpacing: 0.3 }}>
+                          {copiedPromo ? 'COPIED & APPLIED!' : 'TAP TO APPLY'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   {/* 3D Orange Gift Jacket Emblem with Green '+' */}

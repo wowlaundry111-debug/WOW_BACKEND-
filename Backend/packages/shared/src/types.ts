@@ -1,5 +1,5 @@
 export type Role = 'SuperAdmin' | 'ShopAdmin' | 'Delivery' | 'Customer';
-export type OrderStatus = 'PLACED' | 'ACCEPTED' | 'PICKUP_ASSIGNED' | 'PICKED_UP' | 'WASHING' | 'IRONING' | 'OUT_FOR_DELIVERY' | 'DELIVERED';
+export type OrderStatus = 'PLACED' | 'ACCEPTED' | 'PICKUP_ASSIGNED' | 'PICKED_UP' | 'WASHING' | 'IRONING' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
 export type PaymentMode = 'COD' | 'UPI' | 'CARD' | 'WALLET';
 
@@ -33,6 +33,15 @@ export interface IPromoBanner {
   type?: 'promo' | 'free';
 }
 
+export interface IShopPromoCode {
+  code: string;
+  discountPercent: number;
+  maxDiscount: number;
+  minOrderValue: number;
+  description?: string;
+  isActive: boolean;
+}
+
 export interface IShop {
   _id: string;
   name: string;
@@ -50,6 +59,7 @@ export interface IShop {
   contactNumber?: string;
   washPreferences?: IWashPreference[];
   promoBanners?: IPromoBanner[];
+  promoCode?: IShopPromoCode;
   minOrderValue?: number;
   taxPercent?: number;
   deliveryFee?: number;
@@ -104,6 +114,10 @@ export interface IOrder {
   customerAddress?: string;
   deliveryBoyId?: string;
   deliveryBoyName?: string;
+  deliveryBoyPhone?: string;
+  shopPhone?: string;
+  cancelledAt?: Date;
+  cancellationReason?: string;
   status: OrderStatus;
   items: {
     itemId: string;
@@ -124,6 +138,7 @@ export interface IOrder {
   taxAmount?: number;
   deliveryFee?: number;
   discountAmount?: number;
+  couponCode?: string;
   paymentStatus?: PaymentStatus;
   paymentMode?: PaymentMode;
   pickupAddress: string;
