@@ -10,6 +10,7 @@ const SHOPS = [
     name: 'WOW Laundry Lawgate',
     ownerId: 'super_admin_1',
     branches: ['Lawgate Main'],
+    contactNumber: '62808-32724',
     paymentInfo: { upiId: 'wowlawgate@upi', bankName: 'HDFC Bank', accountNo: '111122223333', qrValue: 'upi://pay?pa=wowlawgate@upi' },
   },
   {
@@ -17,6 +18,7 @@ const SHOPS = [
     name: 'WOW Laundry AGI',
     ownerId: 'super_admin_1',
     branches: ['AGI Campus'],
+    contactNumber: '62808-32724',
     paymentInfo: { upiId: 'wowagi@upi', bankName: 'ICICI Bank', accountNo: '444455556666', qrValue: 'upi://pay?pa=wowagi@upi' },
   }
 ];
