@@ -473,18 +473,4 @@ router.delete('/offers/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'
   }
 });
 
-// Used if we want to run this service independently
-if (require.main === module) {
-  const express = require('express');
-  const app = express();
-  app.use(express.json());
-  app.use('/catalog', router);
-
-  const { connectDB } = require('@wow/shared');
-  connectDB().then(() => {
-    const port = process.env.PORT || 3002;
-    app.listen(port, () => console.log(`Catalog Service running on port ${port}`));
-  });
-}
-
 export default router;

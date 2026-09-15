@@ -165,8 +165,6 @@ const OrderSchema = new Schema<IOrder>({
   },
   pickupAddress: { type: String },
   deliveryAddress: { type: String },
-  pickupDriverId: { type: String },
-  deliveryDriverId: { type: String },
   pickupTime: { type: String },
   adminNotes: { type: String },
   isArchived: { type: Boolean, default: false },

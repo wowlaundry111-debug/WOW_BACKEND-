@@ -480,10 +480,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const cachedOtpEntry = otpCache.get(targetEmail);
     const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
 
-    const isMasterOtp = String(otp).trim() === '123456';
-    const isMatched = storedOtp && String(otp).trim() === String(storedOtp).trim();
-
-    if (!isMasterOtp && !isMatched) {
+    if (!storedOtp || String(otp).trim() !== String(storedOtp).trim()) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
 
@@ -638,10 +635,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Too many incorrect attempts. Please try again in 15 minutes.' });
     }
 
-    const isMasterOtp = String(otp).trim() === '123456';
-    const isMatched = storedOtp && String(otp).trim() === String(storedOtp).trim();
-
-    if (!isMasterOtp && !isMatched) {
+    if (!storedOtp || String(otp).trim() !== String(storedOtp).trim()) {
       otpAttemptCache.set(cleanInput, attempts + 1, OTP_LOCK_TTL_MS);
       const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
       return res.status(400).json({
@@ -915,19 +909,5 @@ router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Deliv
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
-
-// Running Independently Fallback
-if (require.main === module) {
-  const express = require('express');
-  const app = express();
-  app.use(express.json());
-  app.use('/auth', router);
-
-  const { connectDB } = require('@wow/shared');
-  connectDB().then(() => {
-    const port = process.env.PORT || 3001;
-    app.listen(port, () => console.log(`Auth Service running on port ${port}`));
-  });
-}
 
 export default router;

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { IUser } from './types';
+import { log } from './logger';
 
 const DEV_FALLBACK_SECRET = 'wow-dev-only-jwt-secret-not-for-production';
 
@@ -8,11 +9,11 @@ const getJwtSecret = (): string => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[FATAL] JWT_SECRET environment variable is not set. Refusing to start.');
+      log.error('[FATAL] JWT_SECRET environment variable is not set. Refusing to start.');
       process.exit(1);
     }
     // Local dev only — warn loudly but continue
-    console.warn('[SECURITY WARNING] JWT_SECRET not set — using insecure dev fallback. DO NOT USE IN PRODUCTION.');
+    log.warn('JWT_SECRET not set — using insecure dev fallback. DO NOT USE IN PRODUCTION.');
     return DEV_FALLBACK_SECRET;
   }
   return secret;
@@ -80,10 +81,9 @@ export const requireRole = (roles: string[]) => {
       (normalizedAllowed.includes('ShopAdmin') && (userRole === 'ShopAdmin' || userRole === 'SuperAdmin'));
 
     if (!hasAccess) {
-      console.warn(`[requireRole Forbidden] User ${req.user._id} role '${req.user.role}' (normalized: '${userRole}') denied for required roles:`, roles);
+      log.warn('Role access denied', { userId: req.user._id, role: req.user.role, normalized: userRole, required: roles });
       return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
     }
     next();
   };
 };
-

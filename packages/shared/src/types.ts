@@ -143,8 +143,6 @@ export interface IOrder {
   paymentMode?: PaymentMode;
   pickupAddress: string;
   deliveryAddress: string;
-  pickupDriverId?: string;
-  deliveryDriverId?: string;
   pickupTime?: string;
   adminNotes?: string;
   isArchived?: boolean;
