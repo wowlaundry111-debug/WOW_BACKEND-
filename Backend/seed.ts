@@ -37,31 +37,30 @@ const USERS = [
 ];
 
 const CATEGORIES = [
-  // Lawgate Top-Level Categories
-  { _id: 'cat_lawgate_1', shopId: 'shop_lawgate', name: 'Everyday Wear' },
-  { _id: 'cat_lawgate_2', shopId: 'shop_lawgate', name: 'Winter Jackets & Coats' },
-  { _id: 'cat_lawgate_3', shopId: 'shop_lawgate', name: 'Premium Drycleaning' },
-  { _id: 'cat_lawgate_4', shopId: 'shop_lawgate', name: 'Bedsheets & Curtains' },
+const CATEGORIES = [
+  // Lawgate (Jalandhar) Categories
+  { _id: 'cat_lg_laundry', shopId: 'shop_lawgate', name: 'LAUNDRY', image: 'normal' },
+  { _id: 'cat_lg_sub_reg', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_laundry', name: 'REGULAR WASH', image: 'normal' },
+  { _id: 'cat_lg_sub_exp', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_laundry', name: 'EXPRESS WASH', image: 'easyWash' },
 
-  // Lawgate Sub-Categories
-  { _id: 'cat_lawgate_sub1', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_1', name: 'Standard Wash & Iron' },
-  { _id: 'cat_lawgate_sub2', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_1', name: 'Regular Mixed Wash' },
-  { _id: 'cat_lawgate_sub3', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_2', name: 'Heavy Winter Wear' },
-  { _id: 'cat_lawgate_sub4', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_3', name: 'Designer & Silk Care' },
-  { _id: 'cat_lawgate_sub5', shopId: 'shop_lawgate', parentCategoryId: 'cat_lawgate_4', name: 'Bedding & Linen' },
+  { _id: 'cat_lg_dryclean', shopId: 'shop_lawgate', name: 'DRY CLEAN', image: 'dryClean' },
+  { _id: 'cat_lg_sub_men', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: "MEN'S WEAR", image: 'suits' },
+  { _id: 'cat_lg_sub_women', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: "WOMEN'S WEAR", image: 'wedding_dress' },
+  { _id: 'cat_lg_sub_house', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'HOUSEHOLD ITEMS', image: 'bedding' },
+  { _id: 'cat_lg_sub_shoes', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'SHOES', image: 'shoes' },
+  { _id: 'cat_lg_sub_bags', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
 
-  // AGI Top-Level Categories
-  { _id: 'cat_agi_1', shopId: 'shop_agi', name: 'Everyday Wear' },
-  { _id: 'cat_agi_2', shopId: 'shop_agi', name: 'Winter Jackets & Coats' },
-  { _id: 'cat_agi_3', shopId: 'shop_agi', name: 'Premium Drycleaning' },
-  { _id: 'cat_agi_4', shopId: 'shop_agi', name: 'Bedsheets & Curtains' },
+  // AGI Categories
+  { _id: 'cat_agi_laundry', shopId: 'shop_agi', name: 'LAUNDRY', image: 'normal' },
+  { _id: 'cat_agi_sub_reg', shopId: 'shop_agi', parentCategoryId: 'cat_agi_laundry', name: 'REGULAR WASH', image: 'normal' },
+  { _id: 'cat_agi_sub_exp', shopId: 'shop_agi', parentCategoryId: 'cat_agi_laundry', name: 'EXPRESS WASH', image: 'easyWash' },
 
-  // AGI Sub-Categories
-  { _id: 'cat_agi_sub1', shopId: 'shop_agi', parentCategoryId: 'cat_agi_1', name: 'Standard Wash & Iron' },
-  { _id: 'cat_agi_sub2', shopId: 'shop_agi', parentCategoryId: 'cat_agi_1', name: 'Regular Mixed Wash' },
-  { _id: 'cat_agi_sub3', shopId: 'shop_agi', parentCategoryId: 'cat_agi_2', name: 'Heavy Winter Wear' },
-  { _id: 'cat_agi_sub4', shopId: 'shop_agi', parentCategoryId: 'cat_agi_3', name: 'Designer & Silk Care' },
-  { _id: 'cat_agi_sub5', shopId: 'shop_agi', parentCategoryId: 'cat_agi_4', name: 'Bedding & Linen' },
+  { _id: 'cat_agi_dryclean', shopId: 'shop_agi', name: 'DRY CLEAN', image: 'dryClean' },
+  { _id: 'cat_agi_sub_men', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: "MEN'S WEAR", image: 'suits' },
+  { _id: 'cat_agi_sub_women', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: "WOMEN'S WEAR", image: 'wedding_dress' },
+  { _id: 'cat_agi_sub_house', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'HOUSEHOLD ITEMS', image: 'bedding' },
+  { _id: 'cat_agi_sub_shoes', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'SHOES', image: 'shoes' },
+  { _id: 'cat_agi_sub_bags', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
 ];
 
 const ITEMS = [
