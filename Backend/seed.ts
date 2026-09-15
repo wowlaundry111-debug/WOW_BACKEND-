@@ -37,7 +37,6 @@ const USERS = [
 ];
 
 const CATEGORIES = [
-const CATEGORIES = [
   // Lawgate (Jalandhar) Categories
   { _id: 'cat_lg_laundry', shopId: 'shop_lawgate', name: 'LAUNDRY', image: 'normal' },
   { _id: 'cat_lg_sub_reg', shopId: 'shop_lawgate', parentCategoryId: 'cat_lg_laundry', name: 'REGULAR WASH', image: 'normal' },
@@ -63,22 +62,68 @@ const CATEGORIES = [
   { _id: 'cat_agi_sub_bags', shopId: 'shop_agi', parentCategoryId: 'cat_agi_dryclean', name: 'BAGS & OTHER ITEMS', image: 'bag' },
 ];
 
-const ITEMS = [
-  // Lawgate Items
-  { _id: 'item_lg_1', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub1', name: 'T-Shirt Wash & Iron', description: 'Standard wash, fabric softener, and steam iron.', pricePerItem: 20 },
-  { _id: 'item_lg_2', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub1', name: 'Denim Jeans', description: 'Tough wash for denims with color protection.', pricePerItem: 40 },
-  { _id: 'item_lg_3', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub2', name: 'Regular Wash (Per KG)', description: 'Everyday clothing mixed wash. Max 5kg per cycle.', pricePerKg: 60, isBucket: true },
-  { _id: 'item_lg_4', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub3', name: 'Heavy Winter Jacket', description: 'Dry cleaning for heavy winter coats and jackets.', pricePerItem: 250 },
-  { _id: 'item_lg_5', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub4', name: 'Designer Dress Dryclean', description: 'Premium care for delicate and designer wear.', pricePerItem: 350 },
-  { _id: 'item_lg_6', shopId: 'shop_lawgate', categoryId: 'cat_lawgate_sub5', name: 'Double Bedsheet Set', description: 'Includes 1 double bedsheet and 2 pillow covers.', pricePerItem: 120 },
+const createItemsForShop = (shopId: string, p: string) => [
+  // Laundry — Regular Wash
+  { _id: `item_${p}_wf_1`, shopId, categoryId: `cat_${p}_sub_reg`, name: 'WASH + FOLD', description: 'TIME 72 HRS', pricePerKg: 50, isBucket: true },
+  { _id: `item_${p}_wf_2`, shopId, categoryId: `cat_${p}_sub_reg`, name: 'WASH + FOLD + IRON', description: 'TIME 72 HRS', pricePerKg: 90, isBucket: true },
 
-  // AGI Items (Mirroring Lawgate)
-  { _id: 'item_agi_1', shopId: 'shop_agi', categoryId: 'cat_agi_sub1', name: 'T-Shirt Wash & Iron', description: 'Standard wash, fabric softener, and steam iron.', pricePerItem: 20 },
-  { _id: 'item_agi_2', shopId: 'shop_agi', categoryId: 'cat_agi_sub1', name: 'Denim Jeans', description: 'Tough wash for denims with color protection.', pricePerItem: 40 },
-  { _id: 'item_agi_3', shopId: 'shop_agi', categoryId: 'cat_agi_sub2', name: 'Regular Wash (Per KG)', description: 'Everyday clothing mixed wash. Max 5kg per cycle.', pricePerKg: 60, isBucket: true },
-  { _id: 'item_agi_4', shopId: 'shop_agi', categoryId: 'cat_agi_sub3', name: 'Heavy Winter Jacket', description: 'Dry cleaning for heavy winter coats and jackets.', pricePerItem: 250 },
-  { _id: 'item_agi_5', shopId: 'shop_agi', categoryId: 'cat_agi_sub4', name: 'Designer Dress Dryclean', description: 'Premium care for delicate and designer wear.', pricePerItem: 350 },
-  { _id: 'item_agi_6', shopId: 'shop_agi', categoryId: 'cat_agi_sub5', name: 'Double Bedsheet Set', description: 'Includes 1 double bedsheet and 2 pillow covers.', pricePerItem: 120 },
+  // Laundry — Express Wash
+  { _id: `item_${p}_exp_1`, shopId, categoryId: `cat_${p}_sub_exp`, name: 'EXPRESS WASH 24 HRS', description: 'WASH + FOLD', pricePerKg: 80, isBucket: true },
+  { _id: `item_${p}_exp_2`, shopId, categoryId: `cat_${p}_sub_exp`, name: 'EXPRESS WASH 12 HRS', description: 'WASH + FOLD', pricePerKg: 90, isBucket: true },
+  { _id: `item_${p}_exp_3`, shopId, categoryId: `cat_${p}_sub_exp`, name: 'EXPRESS WASH 12 HRS', description: 'WASH + PRESS + IRON', pricePerKg: 150, isBucket: true },
+  { _id: `item_${p}_exp_4`, shopId, categoryId: `cat_${p}_sub_exp`, name: 'EXPRESS WASH 14 HRS', description: 'WASH + PRESS  + IRON', pricePerKg: 120, isBucket: true },
+
+  // Dry Clean — Men's Wear
+  { _id: `item_${p}_m_1`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Shirt / T-Shirt', pricePerItem: 150, image: 'tshirt' },
+  { _id: `item_${p}_m_2`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Trouser / Jeans', pricePerItem: 150, image: 'jeans' },
+  { _id: `item_${p}_m_3`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Coat', pricePerItem: 300, image: 'suits' },
+  { _id: `item_${p}_m_4`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Suit – 2 Pcs', pricePerItem: 350, image: 'suits' },
+  { _id: `item_${p}_m_5`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Suit – 3 Pcs', pricePerItem: 450, image: 'suits' },
+  { _id: `item_${p}_m_6`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Half Jacket', pricePerItem: 250, image: 'leather' },
+  { _id: `item_${p}_m_7`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Kurta Pajama', pricePerItem: 350, image: 'suits' },
+  { _id: `item_${p}_m_8`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Sherwani – Normal', pricePerItem: 500, image: 'suits' },
+  { _id: `item_${p}_m_9`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Sherwani – Jari Work', pricePerItem: 1000, image: 'suits' },
+  { _id: `item_${p}_m_10`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Leather Jacket', pricePerItem: 500, image: 'leather' },
+  { _id: `item_${p}_m_11`, shopId, categoryId: `cat_${p}_sub_men`, name: 'Jacket', pricePerItem: 300, image: 'leather' },
+
+  // Dry Clean — Women's Wear
+  { _id: `item_${p}_w_1`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Kurta', pricePerItem: 200, image: 'wedding_dress' },
+  { _id: `item_${p}_w_2`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Salwar', pricePerItem: 200, image: 'wedding_dress' },
+  { _id: `item_${p}_w_3`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Saree', pricePerItem: 360, image: 'wedding_dress' },
+  { _id: `item_${p}_w_4`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Dress', pricePerItem: 400, image: 'wedding_dress' },
+  { _id: `item_${p}_w_5`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Lehenga – Normal', pricePerItem: 500, image: 'wedding_dress' },
+  { _id: `item_${p}_w_6`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Shawl', pricePerItem: 200, image: 'wedding_dress' },
+  { _id: `item_${p}_w_7`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Shirt / T-Shirt', pricePerItem: 150, image: 'tshirt' },
+  { _id: `item_${p}_w_8`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Trouser / Jeans', pricePerItem: 150, image: 'jeans' },
+  { _id: `item_${p}_w_9`, shopId, categoryId: `cat_${p}_sub_women`, name: 'Dupatta', pricePerItem: 100, image: 'wedding_dress' },
+
+  // Dry Clean — Household Items
+  { _id: `item_${p}_h_1`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Blanket – Single', pricePerItem: 300, image: 'blanket' },
+  { _id: `item_${p}_h_2`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Blanket – Double', pricePerItem: 400, image: 'blanket' },
+  { _id: `item_${p}_h_3`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Bedsheet – Single', pricePerItem: 150, image: 'bedding' },
+  { _id: `item_${p}_h_4`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Bedsheet – Double', pricePerItem: 200, image: 'bedding' },
+  { _id: `item_${p}_h_5`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Quilt – Single', pricePerItem: 350, image: 'bedding' },
+  { _id: `item_${p}_h_6`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Quilt – Double', pricePerItem: 450, image: 'bedding' },
+  { _id: `item_${p}_h_7`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Carpet', pricePerItem: 50, description: 'Per Sq. Ft.', image: 'rugs' },
+  { _id: `item_${p}_h_8`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Door Mat', pricePerItem: 100, description: 'Per Piece', image: 'rugs' },
+  { _id: `item_${p}_h_9`, shopId, categoryId: `cat_${p}_sub_house`, name: 'Curtain', pricePerItem: 200, description: 'Starting at ₹200 / Panel', image: 'curtains' },
+
+  // Dry Clean — Shoes
+  { _id: `item_${p}_s_1`, shopId, categoryId: `cat_${p}_sub_shoes`, name: 'Sports Shoes', pricePerItem: 200, image: 'shoes' },
+  { _id: `item_${p}_s_2`, shopId, categoryId: `cat_${p}_sub_shoes`, name: 'Canvas Shoes', pricePerItem: 250, image: 'shoes' },
+  { _id: `item_${p}_s_3`, shopId, categoryId: `cat_${p}_sub_shoes`, name: 'Leather Shoes', pricePerItem: 300, image: 'shoes' },
+  { _id: `item_${p}_s_4`, shopId, categoryId: `cat_${p}_sub_shoes`, name: 'Suede Leather Shoes', pricePerItem: 500, image: 'shoes' },
+  { _id: `item_${p}_s_5`, shopId, categoryId: `cat_${p}_sub_shoes`, name: 'Boots', pricePerItem: 550, image: 'shoes' },
+
+  // Dry Clean — Bags & Other Items
+  { _id: `item_${p}_b_1`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Trolley Bag – Small', pricePerItem: 300, image: 'bag' },
+  { _id: `item_${p}_b_2`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Trolley Bag – Large', pricePerItem: 400, image: 'bag' },
+  { _id: `item_${p}_b_3`, shopId, categoryId: `cat_${p}_sub_bags`, name: 'Soft Toys', pricePerItem: 150, description: 'Starting from ₹150 (As per size)', image: 'bag' },
+];
+
+const ITEMS = [
+  ...createItemsForShop('shop_lawgate', 'lg'),
+  ...createItemsForShop('shop_agi', 'agi'),
 ];
 
 const OFFERS = [
@@ -96,10 +141,10 @@ const ORDERS = [
     customerAddress: 'Hostel 1',
     status: 'PLACED',
     items: [
-      { itemId: 'item_lg_1', name: 'T-Shirt Wash & Iron', quantity: 2, unit: 'ITEM', price: 20 },
-      { itemId: 'item_lg_3', name: 'Regular Wash (Per KG)', quantity: 3, unit: 'KG', price: 60 }
+      { itemId: 'item_lg_wf_1', name: 'WASH + FOLD', quantity: 3, unit: 'KG', price: 50 },
+      { itemId: 'item_lg_m_1', name: 'Shirt / T-Shirt', quantity: 2, unit: 'ITEM', price: 150 }
     ],
-    totalAmount: 220,
+    totalAmount: 450,
     paymentStatus: 'PENDING',
     paymentMode: 'COD',
     pickupAddress: 'Hostel 1',
@@ -115,9 +160,9 @@ const ORDERS = [
     customerAddress: 'Hostel 1',
     status: 'WASHING',
     items: [
-      { itemId: 'item_lg_4', name: 'Heavy Winter Jacket', quantity: 1, unit: 'ITEM', price: 250 }
+      { itemId: 'item_lg_m_3', name: 'Coat', quantity: 1, unit: 'ITEM', price: 300 }
     ],
-    totalAmount: 250,
+    totalAmount: 300,
     paymentStatus: 'SUCCESS',
     paymentMode: 'UPI',
     pickupAddress: 'Hostel 1',
