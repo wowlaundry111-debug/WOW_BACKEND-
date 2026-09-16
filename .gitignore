@@ -28,9 +28,3 @@ GoogleService-Info.plist
 # Sub-repos
 Website/
 
-# Nested accidental copies
-Backend/Backend/
-Backend/Frontend/
-Backend/.expo/
-.expo/
-
