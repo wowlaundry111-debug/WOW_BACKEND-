@@ -23,5 +23,7 @@
     "socket.io": "^4.8.3",
     "typescript": "^5.0.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/react": "^19.3.0"
+  }
 }
