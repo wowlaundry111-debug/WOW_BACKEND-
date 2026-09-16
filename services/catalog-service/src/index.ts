@@ -35,6 +35,36 @@ const emitSocketEvent = (req: Request, event: string, data: any) => {
   if (io) io.emit(event, data);
 };
 
+// Evict any legacy un-sanitized shops:list cache on service startup
+catalogCache.delete('shops:list').catch?.(() => {});
+
+// ── Public Sanitizer Helper ───────────────────────────────────────────────────
+// Strips sensitive banking information (accountNo, bankName) from public responses.
+// Only keeps upiId and qrValue if configured (used by delivery collection).
+const sanitizeShopForPublic = (shop: any) => {
+  if (!shop) return shop;
+  const { paymentInfo, ...rest } = shop;
+  const sanitized: any = { ...rest };
+  if (paymentInfo && (paymentInfo.upiId || paymentInfo.qrValue)) {
+    sanitized.paymentInfo = {
+      upiId: paymentInfo.upiId || '',
+      qrValue: paymentInfo.qrValue || '',
+    };
+  }
+  return sanitized;
+};
+
+// ── GET /shops/admin/all — all shops with full admin details (SuperAdmin only) ──
+// Defined before /shops/:shopId to avoid route param collision.
+router.get('/shops/admin/all', requireAuth, requireRole(['SuperAdmin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const shops = await Shop.find({}).lean();
+    res.json(shops);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch admin shops' });
+  }
+});
+
 // ── GET /shops — cached shop list ─────────────────────────────────────────────
 // Hottest public read — every customer app open hits this.
 router.get('/shops', async (req: Request, res: Response) => {
@@ -46,9 +76,11 @@ router.get('/shops', async (req: Request, res: Response) => {
       return sendWithCache(req, res, cached, 30, 60);
     }
 
-    const shops = await Shop.find({})
+    const rawShops = await Shop.find({})
       .select('_id name branches isOpen instructions pickupTimings contactNumber washPreferences minOrderValue taxPercent deliveryFee paymentInfo promoBanners promoCode androidAppUrl iosAppUrl')
       .lean();
+
+    const shops = rawShops.map(sanitizeShopForPublic);
 
     await catalogCache.set(CACHE_KEY, shops, SHOPS_LIST_TTL);
     res.setHeader('X-Cache', 'MISS');
@@ -58,7 +90,21 @@ router.get('/shops', async (req: Request, res: Response) => {
   }
 });
 
-// ── GET /shops/:shopId — single shop ──────────────────────────────────────────
+// ── GET /shops/:shopId/admin — single shop with full admin/bank details ────────
+router.get('/shops/:shopId/admin', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), async (req: AuthRequest, res: Response) => {
+  try {
+    if (req.user!.role === 'ShopAdmin' && req.user!.shopId !== req.params.shopId) {
+      return res.status(403).json({ error: 'Forbidden: Cannot access other shop settings' });
+    }
+    const shop = await Shop.findById(req.params.shopId).lean();
+    if (!shop) return res.status(404).json({ error: 'Shop not found' });
+    res.json(shop);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch shop admin settings' });
+  }
+});
+
+// ── GET /shops/:shopId — single shop (sanitized for public) ───────────────────
 router.get('/shops/:shopId', async (req: Request, res: Response) => {
   try {
     const CACHE_KEY = `shop:${req.params.shopId}`;
@@ -71,9 +117,11 @@ router.get('/shops/:shopId', async (req: Request, res: Response) => {
     const shop = await Shop.findById(req.params.shopId).lean();
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
 
-    await catalogCache.set(CACHE_KEY, shop, SHOPS_LIST_TTL);
+    const sanitizedShop = sanitizeShopForPublic(shop);
+
+    await catalogCache.set(CACHE_KEY, sanitizedShop, SHOPS_LIST_TTL);
     res.setHeader('X-Cache', 'MISS');
-    return sendWithCache(req, res, shop, 30, 60);
+    return sendWithCache(req, res, sanitizedShop, 30, 60);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch shop' });
   }
@@ -92,7 +140,7 @@ router.post('/shops', requireAuth, requireRole(['SuperAdmin']), async (req: Auth
     // Invalidate shop list cache
     await catalogCache.delete('shops:list');
     res.status(201).json(shop);
-    emitSocketEvent(req, 'shop_created', shop);
+    emitSocketEvent(req, 'shop_created', sanitizeShopForPublic(shop));
   } catch (err: any) {
     log.error('Failed to create shop', { error: err.message });
     res.status(500).json({ error: 'Failed to create shop' });
@@ -129,6 +177,16 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
 
+    // Preserve existing sensitive fields if paymentInfo is partially updated
+    if (req.body.paymentInfo !== undefined) {
+      const existingShop = (await Shop.findById(req.params.shopId).lean()) as any;
+      const existingPayment = existingShop?.paymentInfo || {};
+      updates.paymentInfo = {
+        ...existingPayment,
+        ...req.body.paymentInfo,
+      };
+    }
+
     const shop = await Shop.findByIdAndUpdate(req.params.shopId, updates, { new: true }).lean();
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
 
@@ -161,7 +219,7 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
     await catalogCache.delete(`catalog:${req.params.shopId}`);
 
     res.json(shop);
-    emitSocketEvent(req, 'shop_updated', shop);
+    emitSocketEvent(req, 'shop_updated', sanitizeShopForPublic(shop));
   } catch (err: any) {
     log.error('Failed to update shop', { error: err.message });
     res.status(500).json({ error: 'Failed to update shop' });

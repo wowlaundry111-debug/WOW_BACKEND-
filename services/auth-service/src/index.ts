@@ -16,6 +16,16 @@ import nodemailer from 'nodemailer';
 
 const router = Router();
 
+// ── Sanitize User Helper ──────────────────────────────────────────────────────
+// Strips passwords, hashes, and internal fields from API responses & socket events.
+const sanitizeUser = (user: any) => {
+  if (!user) return user;
+  const obj = typeof user.toObject === 'function' ? user.toObject() : { ...user };
+  delete obj.password;
+  delete obj.__v;
+  return obj;
+};
+
 // ── Email Sender (Resend primary, nodemailer fallback for local dev) ──────────
 //
 // WHY: Render blocks outbound SMTP ports 25, 465, and 587 at the platform level.
@@ -401,7 +411,7 @@ router.post('/send-otp', async (req: Request, res: Response) => {
       message: 'Authenticated successfully',
       directLogin: true,
       requiresOtp: false,
-      user,
+      user: sanitizeUser(user),
       token,
     });
   }
@@ -410,7 +420,7 @@ router.post('/send-otp', async (req: Request, res: Response) => {
   const targetEmail = user.email || (normalizedEmail.includes('@') ? normalizedEmail : null);
   if (!targetEmail) {
     const token = generateToken(user);
-    return res.json({ directLogin: true, requiresOtp: false, user, token });
+    return res.json({ directLogin: true, requiresOtp: false, user: sanitizeUser(user), token });
   }
 
   // Generate 6-digit OTP
@@ -474,7 +484,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     const token = generateToken(user as any);
-    return res.json({ message: 'Authenticated successfully', directLogin: true, user, token });
+    return res.json({ message: 'Authenticated successfully', directLogin: true, user: sanitizeUser(user), token });
   }
 
   // Direct login for staff or password users
@@ -505,14 +515,14 @@ router.post('/login', async (req: Request, res: Response) => {
         return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
       }
       const token = generateToken(user);
-      return res.json({ message: 'Authenticated successfully', directLogin: true, requiresOtp: false, user, token });
+      return res.json({ message: 'Authenticated successfully', directLogin: true, requiresOtp: false, user: sanitizeUser(user), token });
     }
 
     if (user.password && password && user.password !== password) {
       return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
     }
     const token = generateToken(user);
-    return res.json({ message: 'Authenticated successfully', directLogin: true, requiresOtp: false, user, token });
+    return res.json({ message: 'Authenticated successfully', directLogin: true, requiresOtp: false, user: sanitizeUser(user), token });
   }
 
   // User not registered
@@ -640,7 +650,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
 
       if (duplicate) {
         const token = generateToken(duplicate);
-        return res.json({ success: true, user: duplicate, token, directLogin: true, message: 'Account logged in successfully' });
+        return res.json({ success: true, user: sanitizeUser(duplicate), token, directLogin: true, message: 'Account logged in successfully' });
       }
 
       const newUser = await User.create({
@@ -656,7 +666,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
       return res.status(201).json({
         success: true,
         message: 'Account verified and created!',
-        user: newUser,
+        user: sanitizeUser(newUser),
         token,
         directLogin: true,
       });
@@ -685,7 +695,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
   }
 
   const token = generateToken(user as any);
-  return res.json({ success: true, user, token, directLogin: true, message: 'Authenticated successfully' });
+  return res.json({ success: true, user: sanitizeUser(user), token, directLogin: true, message: 'Authenticated successfully' });
 });
 
 
@@ -775,9 +785,9 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
 // ── GET /me — current user profile ───────────────────────────────────────────
 router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const user = await User.findById(req.user!._id).select('-__v').lean();
+    const user = await User.findById(req.user!._id).select('-password -__v').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    res.json(sanitizeUser(user));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
@@ -796,8 +806,9 @@ router.put('/users/push-token', requireAuth, async (req: AuthRequest, res: Respo
       { new: true }
     ).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ message: 'Push token updated successfully', user });
-    emitSocketEvent(req, 'user_updated', user);
+    const safeUser = sanitizeUser(user);
+    res.json({ message: 'Push token updated successfully', user: safeUser });
+    emitSocketEvent(req, 'user_updated', safeUser);
   } catch (err: any) {
     log.error('Failed to update push token', { error: err.message });
     res.status(500).json({ error: 'Failed to update push token' });
@@ -814,8 +825,9 @@ router.put('/users/me', requireAuth, async (req: AuthRequest, res: Response) => 
     }
     const user = await User.findByIdAndUpdate(req.user!._id, updates, { new: true }).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
-    emitSocketEvent(req, 'user_updated', user);
+    const safeUser = sanitizeUser(user);
+    res.json(safeUser);
+    emitSocketEvent(req, 'user_updated', safeUser);
   } catch (err: any) {
     log.error('Failed to update profile', { error: err.message });
     res.status(500).json({ error: 'Failed to update profile' });
@@ -832,8 +844,9 @@ router.patch('/users/:id', requireAuth, requireRole(['SuperAdmin']), async (req:
     }
     const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true }).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
-    emitSocketEvent(req, 'user_updated', user);
+    const safeUser = sanitizeUser(user);
+    res.json(safeUser);
+    emitSocketEvent(req, 'user_updated', safeUser);
   } catch (err: any) {
     log.error('Failed to update user', { error: err.message });
     res.status(500).json({ error: 'Failed to update user' });
