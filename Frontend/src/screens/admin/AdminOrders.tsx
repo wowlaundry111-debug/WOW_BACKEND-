@@ -53,12 +53,12 @@ const FILTERS: {
   label: string;
   statuses: OrderStatus[];
 }[] = [
-  { key: 'new', label: 'New Orders', statuses: ['PLACED', 'ACCEPTED'] },
+  { key: 'new', label: 'New Orders', statuses: ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED'] },
   { key: 'washing', label: 'In Wash Cycle', statuses: ['PICKED_UP', 'WASHING', 'IRONING'] },
   {
     key: 'delivery',
     label: 'Out for Delivery',
-    statuses: ['PICKUP_ASSIGNED', 'OUT_FOR_DELIVERY'],
+    statuses: ['OUT_FOR_DELIVERY'],
   },
   { key: 'history', label: 'History', statuses: ['DELIVERED'] },
 ];
