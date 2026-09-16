@@ -85,8 +85,8 @@ export const analyticsCache = new TTLCache<unknown>();
 /** OTP store: { otp, expiresAt } per email (TTL: 5 min, auto-cleanup: 10 min) */
 export const otpCache = new TTLCache<{ otp: string; expiresAt: number }>(10 * 60 * 1000);
 
-/** Pending registration cache: { name, phone, email } per email (TTL: 10 min) */
-export const pendingRegCache = new TTLCache<{ name: string; phone: string; email: string }>(10 * 60 * 1000);
+/** Pending registration cache: { name, phone, email, password?: string } per email (TTL: 10 min) */
+export const pendingRegCache = new TTLCache<{ name: string; phone: string; email: string; password?: string }>(10 * 60 * 1000);
 
 /** OTP attempt counter: number of failed attempts per email (TTL: 15 min) */
 export const otpAttemptCache = new TTLCache<number>(15 * 60 * 1000);
