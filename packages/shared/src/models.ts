@@ -155,6 +155,9 @@ const OrderSchema = new Schema<IOrder>({
   deliveryFee: { type: Number },
   discountAmount: { type: Number, default: 0 },
   couponCode: { type: String },
+  couponDiscountPercent: { type: Number },
+  couponMaxDiscount: { type: Number },
+  couponMinOrderValue: { type: Number },
   paymentStatus: {
     type: String,
     enum: ['PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],

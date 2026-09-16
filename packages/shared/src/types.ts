@@ -140,6 +140,9 @@ export interface IOrder {
   deliveryFee?: number;
   discountAmount?: number;
   couponCode?: string;
+  couponDiscountPercent?: number;
+  couponMaxDiscount?: number;
+  couponMinOrderValue?: number;
   paymentStatus?: PaymentStatus;
   paymentMode?: PaymentMode;
   pickupAddress: string;

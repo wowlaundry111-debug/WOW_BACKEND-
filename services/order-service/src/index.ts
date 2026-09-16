@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { Order, Shop, User, Item, Category, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache, log } from '@wow/shared';
+import { Order, Shop, User, Item, Category, Offer, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache, log } from '@wow/shared';
 
 // Helper: emit to a specific shop's room only (not all sockets)
 const emitToShop = (req: Request, shopId: string, event: string, data: any) => {
@@ -26,7 +26,8 @@ const router = Router();
 router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest, res: Response) => {
   try {
     const {
-      shopId, items, totalAmount, discountAmount, couponCode, taxAmount,
+      shopId, items, totalAmount, discountAmount, couponCode,
+      couponDiscountPercent, couponMaxDiscount, couponMinOrderValue, taxAmount,
       deliveryFee, pickupAddress, deliveryAddress, pickupTime, washPreferences
     } = req.body;
 
@@ -34,7 +35,7 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
 
     // Run shop lookup + dedup check + customer lookup in parallel (was 3 sequential round-trips)
     const [shop, existingRecentOrder, customer] = await Promise.all([
-      Shop.findById(shopId).select('isOpen contactNumber').lean() as Promise<any>,
+      Shop.findById(shopId).select('isOpen contactNumber promoCode taxPercent deliveryFee').lean() as Promise<any>,
       Order.findOne({
         customerId: req.user!._id,
         shopId,
@@ -129,6 +130,30 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     const resolvedCustomerName = customer?.name || req.body.customerName || (req.user as any)?.name || 'Customer';
     const resolvedCustomerPhone = customer?.phone || req.body.customerPhone || (req.user as any)?.phone || '';
 
+    // Resolve coupon parameters if couponCode was applied
+    let resolvedCouponDiscountPercent = Number(couponDiscountPercent) || 0;
+    let resolvedCouponMaxDiscount = couponMaxDiscount !== undefined ? Number(couponMaxDiscount) : undefined;
+    let resolvedCouponMinOrderValue = Number(couponMinOrderValue) || 0;
+
+    if (couponCode && !resolvedCouponDiscountPercent) {
+      try {
+        if (shop?.promoCode?.code && shop.promoCode.code.toUpperCase() === String(couponCode).toUpperCase()) {
+          resolvedCouponDiscountPercent = Number(shop.promoCode.discountPercent) || 0;
+          resolvedCouponMaxDiscount = shop.promoCode.maxDiscount !== undefined ? Number(shop.promoCode.maxDiscount) : undefined;
+          resolvedCouponMinOrderValue = Number(shop.promoCode.minOrderValue) || 0;
+        } else {
+          const offerDoc = await Offer.findOne({ shopId, code: String(couponCode).toUpperCase() }).lean() as any;
+          if (offerDoc) {
+            resolvedCouponDiscountPercent = Number(offerDoc.discountPercent) || 0;
+            resolvedCouponMaxDiscount = offerDoc.maxDiscount !== undefined ? Number(offerDoc.maxDiscount) : undefined;
+            resolvedCouponMinOrderValue = Number(offerDoc.minOrderValue) || 0;
+          }
+        }
+      } catch (err: any) {
+        log.warn('Could not lookup coupon details on order creation', { error: err.message, couponCode });
+      }
+    }
+
     const order = await Order.create({
       customerId: req.user!._id,
       customerName: resolvedCustomerName,
@@ -138,8 +163,11 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       items: enrichedItems,
       washPreferences,
       totalAmount,
-      discountAmount,
-      couponCode,
+      discountAmount: Number(discountAmount) || 0,
+      couponCode: couponCode ? String(couponCode).toUpperCase() : undefined,
+      couponDiscountPercent: resolvedCouponDiscountPercent || undefined,
+      couponMaxDiscount: resolvedCouponMaxDiscount,
+      couponMinOrderValue: resolvedCouponMinOrderValue || undefined,
       taxAmount,
       deliveryFee,
       pickupAddress,
@@ -415,6 +443,94 @@ router.delete('/archive', requireAuth, requireRole(['SuperAdmin']), async (req: 
   }
 });
 
+// Helper: Recalculate order totals from scratch with full coupon discount re-evaluation
+async function recalculateOrderTotals(order: any, updatedItems?: any[]) {
+  const items = updatedItems || order.items || [];
+
+  const perItemSubtotal = items
+    .filter((it: any) => it.unit !== 'KG')
+    .reduce((s: number, it: any) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+  const kgSubtotal = items
+    .filter((it: any) => it.unit === 'KG')
+    .reduce((s: number, it: any) => s + Number(it.price || 0), 0);
+
+  const totalItemSubtotal = Math.round((perItemSubtotal + kgSubtotal) * 100) / 100;
+
+  // Recalculate coupon discount if coupon was attached to this order
+  let discountAmount = Number(order.discountAmount) || 0;
+  if (order.couponCode) {
+    let discountPercent = Number(order.couponDiscountPercent) || 0;
+    let maxDiscount = order.couponMaxDiscount !== undefined ? Number(order.couponMaxDiscount) : Infinity;
+    let minOrderValue = Number(order.couponMinOrderValue) || 0;
+
+    // Fallback: If coupon metadata is missing on order, lookup from Shop or Offer
+    if (!discountPercent) {
+      try {
+        const shopDoc = await Shop.findById(order.shopId).select('promoCode').lean() as any;
+        if (shopDoc?.promoCode?.code && shopDoc.promoCode.code.toUpperCase() === String(order.couponCode).toUpperCase()) {
+          discountPercent = Number(shopDoc.promoCode.discountPercent) || 0;
+          maxDiscount = shopDoc.promoCode.maxDiscount !== undefined ? Number(shopDoc.promoCode.maxDiscount) : Infinity;
+          minOrderValue = Number(shopDoc.promoCode.minOrderValue) || 0;
+        } else {
+          const offerDoc = await Offer.findOne({ 
+            shopId: order.shopId, 
+            code: String(order.couponCode).toUpperCase() 
+          }).lean() as any;
+          if (offerDoc) {
+            discountPercent = Number(offerDoc.discountPercent) || 0;
+            maxDiscount = offerDoc.maxDiscount !== undefined ? Number(offerDoc.maxDiscount) : Infinity;
+            minOrderValue = Number(offerDoc.minOrderValue) || 0;
+          }
+        }
+      } catch (err: any) {
+        log.warn('Could not lookup coupon details for recalculation', { error: err.message, couponCode: order.couponCode });
+      }
+    }
+
+    if (discountPercent > 0) {
+      if (totalItemSubtotal >= minOrderValue) {
+        const calculatedDiscount = Math.min((totalItemSubtotal * discountPercent) / 100, maxDiscount);
+        discountAmount = Math.round(calculatedDiscount * 100) / 100;
+      } else {
+        discountAmount = 0;
+      }
+      order.couponDiscountPercent = discountPercent;
+      if (maxDiscount !== Infinity) order.couponMaxDiscount = maxDiscount;
+      order.couponMinOrderValue = minOrderValue;
+    }
+  }
+
+  // Shop delivery fee and tax lookup
+  let taxPercent = 0;
+  let deliveryFeeAmt = order.deliveryFee !== undefined ? Number(order.deliveryFee) : 0;
+  try {
+    const shopDoc = await Shop.findById(order.shopId).select('taxPercent deliveryFee').lean() as any;
+    if (shopDoc) {
+      taxPercent = shopDoc.taxPercent !== undefined ? Number(shopDoc.taxPercent) : 0;
+      if (order.deliveryFee === undefined && shopDoc.deliveryFee !== undefined) {
+        deliveryFeeAmt = Number(shopDoc.deliveryFee) || 0;
+      }
+    }
+  } catch (err: any) {
+    log.warn('Could not lookup shop tax and delivery fee', { error: err.message });
+  }
+
+  const taxAmount = Math.round((totalItemSubtotal * taxPercent / 100) * 100) / 100;
+  const washPrefsCost = (order.washPreferences || []).reduce((s: number, p: any) => s + Number(p.price || 0), 0);
+
+  const grandTotal = Math.max(0, totalItemSubtotal - discountAmount + taxAmount + deliveryFeeAmt + washPrefsCost);
+
+  order.items = items;
+  order.discountAmount = discountAmount;
+  order.taxAmount = taxAmount;
+  order.deliveryFee = deliveryFeeAmt;
+  order.totalAmount = Math.round(grandTotal * 100) / 100;
+  order.kgPriceUpdated = true;
+
+  return order;
+}
+
 // Helper: Auto-finalize KG prices on order completion
 async function autoFinalizeKgPrices(order: any) {
   if (order.kgPriceUpdated) return order;
@@ -441,21 +557,7 @@ async function autoFinalizeKgPrices(order: any) {
     return it.toObject ? it.toObject() : { ...it };
   });
 
-  const perItemSubtotal = updatedItems
-    .filter((it: any) => it.unit !== 'KG')
-    .reduce((s: number, it: any) => s + it.price * it.quantity, 0);
-  const kgSubtotal = updatedItems
-    .filter((it: any) => it.unit === 'KG')
-    .reduce((s: number, it: any) => s + (it.price || 0), 0);
-  const newTotal = perItemSubtotal + kgSubtotal
-    + (order.taxAmount || 0)
-    + (order.deliveryFee || 0)
-    - (order.discountAmount || 0)
-    + ((order.washPreferences || []).reduce((s: number, p: any) => s + (p.price || 0), 0));
-
-  order.items = updatedItems;
-  order.totalAmount = Math.round(newTotal * 100) / 100;
-  order.kgPriceUpdated = true;
+  await recalculateOrderTotals(order, updatedItems);
   if (order.save) await order.save();
   return order;
 }
@@ -663,29 +765,14 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
         const kgWeight = Math.max(0, Number(update.kgWeight) || 0);
         const pricePerKg = catalogMap[it.itemId] || 0;
         const kgPrice = Math.round(kgWeight * pricePerKg * 100) / 100;
-        return { ...it.toObject(), kgWeight, price: kgPrice };
+        const itObj = it.toObject ? it.toObject() : { ...it };
+        return { ...itObj, kgWeight, price: kgPrice };
       }
-      return it;
+      return it.toObject ? it.toObject() : { ...it };
     });
 
-    // Recalculate total from scratch (perItem + KG + fees - discount + tax)
-    const perItemSubtotal = updatedItems
-      .filter((it: any) => it.unit !== 'KG')
-      .reduce((s: number, it: any) => s + it.price * it.quantity, 0);
-
-    const kgSubtotal = updatedItems
-      .filter((it: any) => it.unit === 'KG')
-      .reduce((s: number, it: any) => s + (it.price || 0), 0);
-
-    const newTotal = perItemSubtotal + kgSubtotal
-      + (order.taxAmount || 0)
-      + (order.deliveryFee || 0)
-      - (order.discountAmount || 0)
-      + ((order.washPreferences || []).reduce((s: number, p: any) => s + (p.price || 0), 0));
-
-    order.items = updatedItems;
-    order.totalAmount = Math.round(newTotal * 100) / 100;
-    order.kgPriceUpdated = true;
+    // Recalculate total from scratch with coupon re-evaluation
+    await recalculateOrderTotals(order, updatedItems);
 
     // If requested to mark as picked up at the same time
     if (markPickedUp && ['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED'].includes(order.status)) {
@@ -694,7 +781,7 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
 
     await order.save();
 
-    const updatedOrder = order.toObject();
+    const updatedOrder = order.toObject ? order.toObject() : order;
     res.json(updatedOrder);
 
     // Notify customer and shop
@@ -709,7 +796,7 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
           await sendPushNotification(
             [customer.expoPushToken],
             'Order Weighed at Pickup',
-            `Your laundry has been weighed at pickup. Final bill: ₹${updatedOrder.totalAmount}`,
+            `Your laundry has been weighed at pickup. Final bill: ₹${updatedOrder.totalAmount}${updatedOrder.discountAmount > 0 ? ` (Saved ₹${updatedOrder.discountAmount} with coupon)` : ''}`,
             { orderId: updatedOrder._id }
           );
         }
@@ -731,7 +818,7 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
     if (!Array.isArray(items)) {
       return res.status(400).json({ error: 'Items array is required' });
     }
-    const order = await Order.findById(req.params.orderId).lean() as any;
+    const order = await Order.findById(req.params.orderId) as any;
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     // Guard: allow verifying for pickup / ongoing stages
@@ -740,35 +827,23 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
       return res.status(400).json({ error: `Cannot verify items. Order status is: ${order.status}` });
     }
 
-    const shop = await Shop.findById(order.shopId).select('taxPercent deliveryFee').lean() as any;
-    const taxPercent = shop?.taxPercent || 0;
-    const deliveryFeeAmt = shop?.deliveryFee || 0;
+    // Preserve existing weighed prices for KG items if incoming items don't have them
+    const existingMap: Record<string, any> = {};
+    (order.items || []).forEach((it: any) => { existingMap[it.itemId] = it; });
 
-    const perItemSubtotal = items
-      .filter((it: any) => it.unit !== 'KG')
-      .reduce((sum: number, it: any) => sum + (Number(it.price || 0) * Number(it.quantity || 0)), 0);
+    const mergedItems = items.map((it: any) => {
+      const existing = existingMap[it.itemId];
+      if (it.unit === 'KG' && (!it.price || it.price === 0) && existing?.price > 0) {
+        return { ...it, price: existing.price, kgWeight: it.kgWeight || existing.kgWeight };
+      }
+      return it;
+    });
 
-    const kgSubtotal = items
-      .filter((it: any) => it.unit === 'KG')
-      .reduce((sum: number, it: any) => sum + Number(it.price || 0), 0);
+    await recalculateOrderTotals(order, mergedItems);
+    order.status = 'PICKED_UP';
+    await order.save();
 
-    const itemSubtotal = perItemSubtotal + kgSubtotal;
-    const washPrefsCost = (order.washPreferences || []).reduce((sum: number, wp: any) => sum + Number(wp.price || 0), 0);
-    const taxAmount = (itemSubtotal * taxPercent) / 100;
-    const discountAmount = order.discountAmount || 0;
-    const grandTotal = Math.max(0, itemSubtotal - discountAmount + taxAmount + deliveryFeeAmt + washPrefsCost);
-
-    const updatedOrder = await Order.findByIdAndUpdate(
-      req.params.orderId,
-      {
-        items,
-        totalAmount: grandTotal,
-        taxAmount,
-        deliveryFee: deliveryFeeAmt,
-        status: 'PICKED_UP',
-      },
-      { new: true }
-    ).lean() as any;
+    const updatedOrder = order.toObject ? order.toObject() : order;
 
     // Respond immediately
     res.json(updatedOrder);
@@ -785,8 +860,8 @@ router.patch('/:orderId/verify', requireAuth, requireRole(['Delivery', 'ShopAdmi
           await sendPushNotification(
             [customer.expoPushToken],
             'Items Verified',
-            `Your laundry items have been verified. Grand total: ₹${grandTotal.toFixed(2)}.`,
-            { orderId: order._id }
+            `Your laundry items have been verified. Grand total: ₹${Number(updatedOrder.totalAmount || 0).toFixed(2)}${updatedOrder.discountAmount > 0 ? ` (Saved ₹${updatedOrder.discountAmount} with coupon)` : ''}.`,
+            { orderId: updatedOrder._id }
           );
         }
       } catch (e: any) {
