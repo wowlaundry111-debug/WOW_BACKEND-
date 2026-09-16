@@ -8,6 +8,27 @@ const SHOPS_LIST_TTL   = 60_000;  // 60 seconds — shop list changes rarely
 const CATALOG_TTL      = 30_000;  // 30 seconds — catalog called on every app open
 const OFFERS_TTL       = 60_000;  // 60 seconds
 
+// ── HTTP Cache Headers Helper ─────────────────────────────────────────────────
+// stale-while-revalidate: browser/CDN serves old response INSTANTLY while
+// refreshing in the background. Repeat loads feel like 0ms.
+import crypto from 'crypto';
+
+function setCacheHeaders(res: Response, data: unknown, maxAge: number, staleWhileRevalidate: number) {
+  const etag = `"${crypto.createHash('sha1').update(JSON.stringify(data)).digest('hex').slice(0, 16)}"`;
+  res.setHeader('Cache-Control', `public, max-age=${maxAge}, stale-while-revalidate=${staleWhileRevalidate}`);
+  res.setHeader('ETag', etag);
+  res.setHeader('Vary', 'Accept-Encoding');
+  return etag;
+}
+
+function sendWithCache(req: Request, res: Response, data: unknown, maxAge: number, swr: number) {
+  const etag = setCacheHeaders(res, data, maxAge, swr);
+  if (req.headers['if-none-match'] === etag) {
+    return res.status(304).end(); // 0 bytes — browser uses its cached copy
+  }
+  res.json(data);
+}
+
 // ── Socket Event Helper ───────────────────────────────────────────────────────
 const emitSocketEvent = (req: Request, event: string, data: any) => {
   const io = req.app.get('io');
@@ -22,7 +43,7 @@ router.get('/shops', async (req: Request, res: Response) => {
     const cached = await catalogCache.get(CACHE_KEY);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
-      return res.json(cached);
+      return sendWithCache(req, res, cached, 30, 60);
     }
 
     const shops = await Shop.find({})
@@ -31,7 +52,7 @@ router.get('/shops', async (req: Request, res: Response) => {
 
     await catalogCache.set(CACHE_KEY, shops, SHOPS_LIST_TTL);
     res.setHeader('X-Cache', 'MISS');
-    res.json(shops);
+    return sendWithCache(req, res, shops, 30, 60);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch shops' });
   }
@@ -44,7 +65,7 @@ router.get('/shops/:shopId', async (req: Request, res: Response) => {
     const cached = await catalogCache.get(CACHE_KEY);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
-      return res.json(cached);
+      return sendWithCache(req, res, cached, 30, 60);
     }
 
     const shop = await Shop.findById(req.params.shopId).lean();
@@ -52,7 +73,7 @@ router.get('/shops/:shopId', async (req: Request, res: Response) => {
 
     await catalogCache.set(CACHE_KEY, shop, SHOPS_LIST_TTL);
     res.setHeader('X-Cache', 'MISS');
-    res.json(shop);
+    return sendWithCache(req, res, shop, 30, 60);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch shop' });
   }
@@ -174,7 +195,7 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
     const cached = await catalogCache.get(CACHE_KEY);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
-      return res.json(cached);
+      return sendWithCache(req, res, cached, 30, 60);
     }
 
     const [allCategories, items] = await Promise.all([
@@ -221,7 +242,7 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
     const result = { categories: allEnrichedCategories, categoriesTree: topLevel, items: safeItems };
     await catalogCache.set(CACHE_KEY, result, CATALOG_TTL);
     res.setHeader('X-Cache', 'MISS');
-    res.json(result);
+    return sendWithCache(req, res, result, 30, 60);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch catalog' });
   }
@@ -407,7 +428,7 @@ router.get('/offers', async (req: Request, res: Response) => {
 
     await catalogCache.set(CACHE_KEY, offers, OFFERS_TTL);
     res.setHeader('X-Cache', 'MISS');
-    res.json(offers);
+    return sendWithCache(req, res, offers, 60, 120);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch offers' });
   }

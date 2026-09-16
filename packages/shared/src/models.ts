@@ -178,12 +178,17 @@ OrderSchema.index({ shopId: 1, createdAt: -1 });
 OrderSchema.index({ shopId: 1, isArchived: 1, createdAt: -1 });
 // Status filtering for admin dashboard views
 OrderSchema.index({ shopId: 1, status: 1 });
-// Customer order history
+// Customer order history with archive filter
 OrderSchema.index({ customerId: 1, createdAt: -1 });
+OrderSchema.index({ customerId: 1, isArchived: 1, createdAt: -1 });
+// Rapid duplicate order verification query (customerId + shopId + status + createdAt)
+OrderSchema.index({ customerId: 1, shopId: 1, status: 1, createdAt: -1 });
 // Delivery boy task list: find active orders assigned to them
 OrderSchema.index({ deliveryBoyId: 1, status: 1 });
 // Archive query: Order.updateMany({ status: 'DELIVERED', isArchived: false })
 OrderSchema.index({ status: 1, isArchived: 1 });
+// Shop revenue analytics compound index (shopId + createdAt + totalAmount)
+OrderSchema.index({ shopId: 1, createdAt: -1, totalAmount: 1 });
 
 // Export models (creates them on whichever connection is active)
 export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

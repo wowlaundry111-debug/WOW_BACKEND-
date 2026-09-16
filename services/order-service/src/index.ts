@@ -30,21 +30,25 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       deliveryFee, pickupAddress, deliveryAddress, pickupTime, washPreferences
     } = req.body;
 
-    // Fetch shop isOpen and contactNumber
-    const shop = await Shop.findById(shopId).select('isOpen contactNumber').lean() as any;
+    const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+
+    // Run shop lookup + dedup check + customer lookup in parallel (was 3 sequential round-trips)
+    const [shop, existingRecentOrder, customer] = await Promise.all([
+      Shop.findById(shopId).select('isOpen contactNumber').lean() as Promise<any>,
+      Order.findOne({
+        customerId: req.user!._id,
+        shopId,
+        status: 'PLACED',
+        createdAt: { $gte: thirtySecondsAgo },
+      }).sort({ createdAt: -1 }),
+      User.findById(req.user!._id).select('name phone').lean() as Promise<any>,
+    ]);
+
     if (shop && shop.isOpen === false) {
       return res.status(400).json({ error: 'This branch is currently closed. We are not accepting orders right now.' });
     }
 
     // Prevent accidental duplicate order submissions (e.g. client retries, slow network, or rapid double clicks)
-    const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
-    const existingRecentOrder = await Order.findOne({
-      customerId: req.user!._id,
-      shopId,
-      status: 'PLACED',
-      createdAt: { $gte: thirtySecondsAgo },
-    }).sort({ createdAt: -1 });
-
     if (existingRecentOrder) {
       const isSameTotal = Number(existingRecentOrder.totalAmount) === Number(totalAmount);
       const isSameItemCount = existingRecentOrder.items?.length === (items || []).length;
@@ -57,13 +61,12 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       }
     }
 
+    // shopPhone: prefer shop contactNumber, fall back to ShopAdmin's phone (parallelized)
     let shopPhone = shop?.contactNumber || '';
     if (!shopPhone) {
       const adminUser = await User.findOne({ shopId, role: 'ShopAdmin' }).select('phone').lean() as any;
       shopPhone = adminUser?.phone || '';
     }
-
-    const customer = await User.findById(req.user!._id).select('name phone').lean() as any;
 
     // Stamp category breadcrumbs onto each order line item at creation time
     // so bills always have readable context regardless of future catalog changes.
@@ -228,23 +231,20 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
     const missingDeliveryBoyIds = [...new Set(orders.filter((o: any) => !o.deliveryBoyPhone && o.deliveryBoyId).map((o: any) => o.deliveryBoyId))];
     const missingCustomerIds = [...new Set(orders.filter((o: any) => (!o.customerPhone || o.customerPhone === 'N/A' || !o.customerName || o.customerName === 'Unknown Customer') && o.customerId).map((o: any) => o.customerId))];
 
-    let shopPhoneMap: Record<string, string> = {};
-    if (missingShopIds.length > 0) {
-      const shops = await Shop.find({ _id: { $in: missingShopIds } }).select('_id contactNumber').lean() as any[];
-      shops.forEach((s: any) => { if (s.contactNumber) shopPhoneMap[s._id] = s.contactNumber; });
-    }
+    const [shops, deliveryUsers, customerUsers] = await Promise.all([
+      missingShopIds.length > 0 ? Shop.find({ _id: { $in: missingShopIds } }).select('_id contactNumber').lean() as Promise<any[]> : Promise.resolve([]),
+      missingDeliveryBoyIds.length > 0 ? User.find({ _id: { $in: missingDeliveryBoyIds } }).select('_id phone').lean() as Promise<any[]> : Promise.resolve([]),
+      missingCustomerIds.length > 0 ? User.find({ _id: { $in: missingCustomerIds } }).select('_id phone name').lean() as Promise<any[]> : Promise.resolve([]),
+    ]);
 
-    let deliveryPhoneMap: Record<string, string> = {};
-    if (missingDeliveryBoyIds.length > 0) {
-      const deliveryUsers = await User.find({ _id: { $in: missingDeliveryBoyIds } }).select('_id phone').lean() as any[];
-      deliveryUsers.forEach((u: any) => { if (u.phone) deliveryPhoneMap[u._id] = u.phone; });
-    }
+    const shopPhoneMap: Record<string, string> = {};
+    shops.forEach((s: any) => { if (s.contactNumber) shopPhoneMap[s._id] = s.contactNumber; });
 
-    let customerMap: Record<string, { phone?: string; name?: string }> = {};
-    if (missingCustomerIds.length > 0) {
-      const customerUsers = await User.find({ _id: { $in: missingCustomerIds } }).select('_id phone name').lean() as any[];
-      customerUsers.forEach((c: any) => { customerMap[c._id] = { phone: c.phone, name: c.name }; });
-    }
+    const deliveryPhoneMap: Record<string, string> = {};
+    deliveryUsers.forEach((u: any) => { if (u.phone) deliveryPhoneMap[u._id] = u.phone; });
+
+    const customerMap: Record<string, { phone?: string; name?: string }> = {};
+    customerUsers.forEach((c: any) => { customerMap[c._id] = { phone: c.phone, name: c.name }; });
 
     const enrichedOrders = orders.map((o: any) => ({
       ...o,
