@@ -111,10 +111,13 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       return { ...item, categoryName: cat.name };
     });
 
+    const resolvedCustomerName = customer?.name || req.body.customerName || (req.user as any)?.name || 'Customer';
+    const resolvedCustomerPhone = customer?.phone || req.body.customerPhone || (req.user as any)?.phone || '';
+
     const order = await Order.create({
       customerId: req.user!._id,
-      customerName: customer?.name || 'Unknown Customer',
-      customerPhone: customer?.phone || 'N/A',
+      customerName: resolvedCustomerName,
+      customerPhone: resolvedCustomerPhone,
       shopId,
       shopPhone,
       items: enrichedItems,
@@ -219,9 +222,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
       total = await Order.countDocuments(query);
     }
 
-    // Enrich missing shopPhone or deliveryBoyPhone for older orders
+    // Enrich missing shopPhone, deliveryBoyPhone, or customerPhone for older orders
     const missingShopIds = [...new Set(orders.filter((o: any) => !o.shopPhone && o.shopId).map((o: any) => o.shopId))];
     const missingDeliveryBoyIds = [...new Set(orders.filter((o: any) => !o.deliveryBoyPhone && o.deliveryBoyId).map((o: any) => o.deliveryBoyId))];
+    const missingCustomerIds = [...new Set(orders.filter((o: any) => (!o.customerPhone || o.customerPhone === 'N/A' || !o.customerName || o.customerName === 'Unknown Customer') && o.customerId).map((o: any) => o.customerId))];
 
     let shopPhoneMap: Record<string, string> = {};
     if (missingShopIds.length > 0) {
@@ -235,8 +239,16 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
       deliveryUsers.forEach((u: any) => { if (u.phone) deliveryPhoneMap[u._id] = u.phone; });
     }
 
+    let customerMap: Record<string, { phone?: string; name?: string }> = {};
+    if (missingCustomerIds.length > 0) {
+      const customerUsers = await User.find({ _id: { $in: missingCustomerIds } }).select('_id phone name').lean() as any[];
+      customerUsers.forEach((c: any) => { customerMap[c._id] = { phone: c.phone, name: c.name }; });
+    }
+
     const enrichedOrders = orders.map((o: any) => ({
       ...o,
+      customerName: (o.customerName && o.customerName !== 'Unknown Customer') ? o.customerName : (customerMap[o.customerId]?.name || o.customerName || 'Customer'),
+      customerPhone: (o.customerPhone && o.customerPhone !== 'N/A') ? o.customerPhone : (customerMap[o.customerId]?.phone || o.customerPhone || ''),
       shopPhone: o.shopPhone || shopPhoneMap[o.shopId] || '',
       deliveryBoyPhone: o.deliveryBoyPhone || (o.deliveryBoyId ? deliveryPhoneMap[o.deliveryBoyId] : '') || '',
     }));
