@@ -88,7 +88,9 @@ export const AdminDashboardScreen: React.FC = () => {
 
   // ─── Key Performance Indicators (KPIs) ──────────────────────────────────────
   const totalRevenue = useMemo(() => {
-    return filteredOrders.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+    return filteredOrders
+      .filter((o) => o.status !== 'CANCELLED')
+      .reduce((acc, o) => acc + (o.totalAmount || 0), 0);
   }, [filteredOrders]);
 
   const totalOrdersCount = filteredOrders.length;
@@ -107,7 +109,8 @@ export const AdminDashboardScreen: React.FC = () => {
     return filteredOrders.filter((o) => o.status === 'CANCELLED').length;
   }, [filteredOrders]);
 
-  const avgOrderValue = totalOrdersCount > 0 ? totalRevenue / totalOrdersCount : 0;
+  const nonCancelledOrdersCount = totalOrdersCount - cancelledOrdersCount;
+  const avgOrderValue = nonCancelledOrdersCount > 0 ? totalRevenue / nonCancelledOrdersCount : 0;
 
   const deliveryBoys = users.filter(
     (u) => u.role === 'Delivery' && (!activeShopId || !u.shopId || u.shopId === activeShopId)
@@ -116,13 +119,13 @@ export const AdminDashboardScreen: React.FC = () => {
   // ─── Payment Mode Breakdown ────────────────────────────────────────────────
   const cashRevenue = useMemo(() => {
     return filteredOrders
-      .filter((o) => o.paymentMode === 'COD')
+      .filter((o) => o.status !== 'CANCELLED' && o.paymentMode === 'COD')
       .reduce((acc, o) => acc + (o.totalAmount || 0), 0);
   }, [filteredOrders]);
 
   const onlineRevenue = useMemo(() => {
     return filteredOrders
-      .filter((o) => o.paymentMode === 'UPI' || o.paymentMode === 'CARD' || o.paymentMode === 'ONLINE')
+      .filter((o) => o.status !== 'CANCELLED' && (o.paymentMode === 'UPI' || o.paymentMode === 'CARD' || o.paymentMode === 'ONLINE'))
       .reduce((acc, o) => acc + (o.totalAmount || 0), 0);
   }, [filteredOrders]);
 
@@ -146,7 +149,9 @@ export const AdminDashboardScreen: React.FC = () => {
         const h = Math.floor(d.getHours() / 2) * 2;
         const label = `${String(h).padStart(2, '0')}:00`;
         if (hoursMap[label]) {
-          hoursMap[label].revenue += o.totalAmount || 0;
+          if (o.status !== 'CANCELLED') {
+            hoursMap[label].revenue += o.totalAmount || 0;
+          }
           hoursMap[label].orders += 1;
         }
       });
@@ -159,7 +164,9 @@ export const AdminDashboardScreen: React.FC = () => {
         if (!daysMap[key]) {
           daysMap[key] = { label: key, dateObj: d, revenue: 0, orders: 0 };
         }
-        daysMap[key].revenue += o.totalAmount || 0;
+        if (o.status !== 'CANCELLED') {
+          daysMap[key].revenue += o.totalAmount || 0;
+        }
         daysMap[key].orders += 1;
       });
 
@@ -187,6 +194,7 @@ export const AdminDashboardScreen: React.FC = () => {
   const topCustomers = useMemo(() => {
     const stats: Record<string, { id: string; name: string; orders: number; amount: number }> = {};
     filteredOrders.forEach((o) => {
+      if (o.status === 'CANCELLED') return;
       const customer = users.find((u) => u._id === o.customerId);
       const name = customer?.name || o.customerName || 'Customer';
       const id = o.customerId || name;

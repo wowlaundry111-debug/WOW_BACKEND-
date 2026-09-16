@@ -42,10 +42,12 @@ export const SuperAdminDashboard: React.FC = () => {
   const [accountNo, setAccountNo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+  const totalRevenue = orders
+    .filter((o) => o.status !== 'CANCELLED')
+    .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
   const totalCustomers = users.filter((u) => u.role === 'Customer').length;
   const totalBranches = shops.reduce((sum, s) => sum + (s.branches?.length || 1), 0);
-  const activeOrders = orders.filter((o) => o.status !== 'DELIVERED').length;
+  const activeOrders = orders.filter((o) => o.status !== 'DELIVERED' && o.status !== 'CANCELLED').length;
 
   const handleCreate = async () => {
     if (!name.trim() || !branchLocation.trim() || !adminEmail.trim()) {
@@ -156,7 +158,9 @@ export const SuperAdminDashboard: React.FC = () => {
 
       {shops.map((shop) => {
         const shopOrders = orders.filter((o) => o.shopId === shop._id);
-        const shopRevenue = shopOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+        const shopRevenue = shopOrders
+          .filter((o) => o.status !== 'CANCELLED')
+          .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
         const isOpen = shop.isOpen ?? true;
 
         return (

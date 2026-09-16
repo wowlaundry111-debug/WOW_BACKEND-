@@ -58,6 +58,7 @@ export const COLORS = {
   onSurfaceVariant:       '#575045',
   outline:                '#000000',
   outlineVariant:         '#EBE3D5',
+  gray:                   '#6B7280',
   surfaceVariant:         '#FAF7F2',
 
   inverseSurface:         '#000000',
@@ -199,6 +200,7 @@ export const ORDER_STATUS: Record<OrderStatus, { label: string; color: string; b
   IRONING:          { label: 'Pressing',          color: '#000000', bg: '#FB923C', border: '#000000' },
   OUT_FOR_DELIVERY: { label: 'Out for Delivery',  color: '#000000', bg: '#FB923C', border: '#000000' },
   DELIVERED:        { label: 'Delivered',         color: '#000000', bg: '#B0FF49', border: '#000000' },
+  CANCELLED:        { label: 'Cancelled',         color: '#FFFFFF', bg: '#EF4444', border: '#000000' },
 };
 
 export const ADMIN_TABS = [

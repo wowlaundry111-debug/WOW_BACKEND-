@@ -10,7 +10,8 @@ export type OrderStatus =
   | 'WASHING'
   | 'IRONING'
   | 'OUT_FOR_DELIVERY'
-  | 'DELIVERED';
+  | 'DELIVERED'
+  | 'CANCELLED';
 
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
 

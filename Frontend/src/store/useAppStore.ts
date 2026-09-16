@@ -48,9 +48,10 @@ interface AppState {
   // Async Data Fetching
   initializeAppData: () => Promise<void>;
   login: (identifier: string, password?: string) => Promise<{ success: boolean; message: string }>;
-  sendLoginOtp: (identifier: string, password?: string) => Promise<{ success: boolean; requiresOtp?: boolean; message: string }>;
+  sendLoginOtp: (identifier: string, password?: string) => Promise<{ success: boolean; requiresOtp?: boolean; notRegistered?: boolean; message: string }>;
   verifyLoginOtp: (email: string, otp: string) => Promise<{ success: boolean; message: string }>;
-  register: (name: string, phone: string, email: string, password?: string) => Promise<{ success: boolean; message: string }>;
+  register: (name: string, phone: string, email: string, password?: string) => Promise<{ success: boolean; requiresOtp?: boolean; message: string }>;
+  verifyOtp: (email: string, otp: string) => Promise<{ success: boolean; message: string }>;
   fetchCatalog: (overrideShopId?: string) => Promise<void>;
   fetchOrders: (page?: number) => Promise<void>;
   fetchUsers: () => Promise<void>;
@@ -361,9 +362,10 @@ export const useAppStore = create<AppState>()(
             message: response.data.message || 'Verification code sent to your email',
           };
         } catch (err: any) {
-          const msg = err.response?.data?.error || 'Failed to send verification code';
+          const msg = err.response?.data?.error || err.response?.data?.message || 'Failed to send verification code';
+          const notRegistered = err.response?.status === 404 || err.response?.data?.notRegistered === true;
           set({ isLoading: false, error: msg });
-          return { success: false, message: msg };
+          return { success: false, notRegistered, message: msg };
         }
       },
 
@@ -425,8 +427,13 @@ export const useAppStore = create<AppState>()(
         try {
           set({ isLoading: true, error: null });
           const response = await api.post('/auth/register', { name, phone, email, password });
-          const { user, token } = response.data;
+          set({ isLoading: false });
 
+          if (response.data.requiresOtp) {
+            return { success: true, requiresOtp: true, message: response.data.message };
+          }
+
+          const { user, token } = response.data;
           if (token && user) {
             await setAuthToken(token);
             const defaultShop = get().shops[0]?._id || '';
@@ -441,18 +448,47 @@ export const useAppStore = create<AppState>()(
               shopsLastFetched: 0,
               offersLastFetched: 0,
               catalogLastFetched: 0,
-              isLoading: false,
             });
 
             await get().initializeAppData();
-          } else {
-            set({ isLoading: false });
           }
 
           let message = response.data.message || 'Registered successfully!';
           return { success: true, message };
         } catch (err: any) {
-          const msg = err.response?.data?.error || 'Registration failed';
+          const msg = err.response?.data?.error || err.response?.data?.message || 'Registration failed';
+          set({ isLoading: false, error: msg });
+          return { success: false, message: msg };
+        }
+      },
+
+      verifyOtp: async (email, otp) => {
+        try {
+          set({ isLoading: true, error: null });
+          const response = await api.post('/auth/verify-otp', { email, otp });
+          const { user, token } = response.data;
+
+          if (token) await setAuthToken(token);
+
+          const defaultShop = get().shops[0]?._id || '';
+          const effectiveShop = user.role === 'SuperAdmin'
+            ? ''
+            : (user.shopId || get().currentTenantId || defaultShop);
+
+          set({
+            currentUser: user,
+            currentRole: user.role,
+            currentTenantId: effectiveShop,
+            shopsLastFetched: 0,
+            offersLastFetched: 0,
+            catalogLastFetched: 0,
+            isLoading: false,
+          });
+
+          await get().initializeAppData();
+          return { success: true, message: 'Account verified and created!' };
+        } catch (err: any) {
+          const msg = err.response?.data?.error || err.response?.data?.message || 'OTP verification failed';
           set({ isLoading: false, error: msg });
           return { success: false, message: msg };
         }

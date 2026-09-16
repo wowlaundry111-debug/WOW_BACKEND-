@@ -280,20 +280,27 @@ router.get('/analytics', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), 
             {
               $group: {
                 _id: null,
-                totalRevenue: { $sum: '$totalAmount' },
+                totalRevenue: {
+                  $sum: { $cond: [{ $ne: ['$status', 'CANCELLED'] }, '$totalAmount', 0] }
+                },
                 totalOrders: { $sum: 1 },
-                avgOrderValue: { $avg: '$totalAmount' },
+                avgOrderValue: {
+                  $avg: { $cond: [{ $ne: ['$status', 'CANCELLED'] }, '$totalAmount', '$$REMOVE'] }
+                },
                 cashRevenue: {
-                  $sum: { $cond: [{ $eq: ['$paymentMode', 'COD'] }, '$totalAmount', 0] }
+                  $sum: { $cond: [{ $and: [{ $eq: ['$paymentMode', 'COD'] }, { $ne: ['$status', 'CANCELLED'] }] }, '$totalAmount', 0] }
                 },
                 onlineRevenue: {
-                  $sum: { $cond: [{ $in: ['$paymentMode', ['UPI', 'CARD', 'ONLINE']] }, '$totalAmount', 0] }
+                  $sum: { $cond: [{ $and: [{ $in: ['$paymentMode', ['UPI', 'CARD', 'ONLINE']] }, { $ne: ['$status', 'CANCELLED'] }] }, '$totalAmount', 0] }
                 },
                 deliveredCount: {
                   $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, 1, 0] }
                 },
                 pendingCount: {
-                  $sum: { $cond: [{ $ne: ['$status', 'DELIVERED'] }, 1, 0] }
+                  $sum: { $cond: [{ $and: [{ $ne: ['$status', 'DELIVERED'] }, { $ne: ['$status', 'CANCELLED'] }] }, 1, 0] }
+                },
+                cancelledCount: {
+                  $sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] }
                 }
               }
             }
@@ -302,13 +309,16 @@ router.get('/analytics', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), 
             {
               $group: {
                 _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-                revenue: { $sum: '$totalAmount' },
+                revenue: {
+                  $sum: { $cond: [{ $ne: ['$status', 'CANCELLED'] }, '$totalAmount', 0] }
+                },
                 orders: { $sum: 1 }
               }
             },
             { $sort: { '_id': 1 } }
           ],
           itemsPopularity: [
+            { $match: { status: { $ne: 'CANCELLED' } } },
             { $unwind: '$items' },
             {
               $group: {
