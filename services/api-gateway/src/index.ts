@@ -5,13 +5,15 @@ import cors from 'cors';
 import compression from 'compression';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { RedisStore as RateLimitRedisStore } from 'rate-limit-redis';
+import { createAdapter } from '@socket.io/redis-adapter';
 import dotenv from 'dotenv';
 import path from 'path';
 
 // Load .env from the Backend root directory
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
-import { connectDB, log, requestLogger } from '@wow/shared';
+import { connectDB, log, requestLogger, getRedisClient, closeRedis } from '@wow/shared';
 
 // Import microservice routers
 import authRouter from '@wow/auth-service';
@@ -21,6 +23,12 @@ import uploadRouter from './uploadRoute';
 
 const app = express();
 const server = http.createServer(app);
+
+// ── HTTP server connection tuning ──────────────────────────────────────────────
+// Render's and most load balancers' idle timeout is 60s.
+// Setting keepAliveTimeout slightly above prevents premature connection resets.
+server.keepAliveTimeout = 65_000;  // ms — must be > LB idle timeout (60s)
+server.headersTimeout   = 66_000;  // ms — must be > keepAliveTimeout
 
 // Trust the first reverse proxy hop (Render, Cloudflare, Nginx load balancers)
 // Essential for correct X-Forwarded-For IP resolution and express-rate-limit
@@ -71,6 +79,31 @@ const io = new Server(server, {
   // Max 1MB per socket message — prevents large payload abuse
   maxHttpBufferSize: 1e6,
 });
+
+// ── Socket.IO Redis Adapter (multi-instance room broadcasting) ─────────────────
+// When REDIS_URL is set, room events (io.to('shop:X').emit) are broadcast across
+// ALL connected instances via Redis pub/sub — essential for horizontal scaling.
+// When REDIS_URL is not set, falls back to in-process adapter (single-instance only).
+const redisClient = getRedisClient();
+if (redisClient) {
+  const subClient = redisClient.duplicate();
+
+  const attachSocketAdapter = () => {
+    try {
+      io.adapter(createAdapter(redisClient, subClient));
+      log.info('Socket.IO Redis adapter enabled — room events broadcast across all instances');
+    } catch (err: any) {
+      log.error('Socket.IO Redis adapter attach failed', { error: err.message });
+    }
+  };
+
+  // Attach immediately if already connected, otherwise wait for ready
+  if (redisClient.status === 'ready') {
+    attachSocketAdapter();
+  } else {
+    redisClient.once('ready', attachSocketAdapter);
+  }
+}
 
 // Socket.IO connection handling — clients join their shop room for targeted broadcasts
 io.on('connection', (socket) => {
@@ -125,6 +158,10 @@ app.use(express.json({ limit: '2mb' }));
 app.use(requestLogger());
 
 // ── Tiered Rate Limiting ──────────────────────────────────────────────────────
+//
+// When REDIS_URL is set, stores are backed by Redis — rate limits are shared
+// across ALL instances (no bypass via load-balancer round-robin).
+// When REDIS_URL is not set, falls back to in-memory counters (single-instance safe).
 
 // Helper: shared rate limit response
 const rateLimitHandler = (req: Request, res: Response) => {
@@ -135,6 +172,19 @@ const rateLimitHandler = (req: Request, res: Response) => {
   });
 };
 
+// Helper: build rate limit store (Redis if available, memory otherwise)
+function makeRateLimitStore(prefix: string) {
+  const redis = getRedisClient();
+  if (redis) {
+    return new RateLimitRedisStore({
+      // @ts-ignore — ioredis is compatible with the redis client interface
+      sendCommand: (...args: string[]) => redis.call(...args),
+      prefix: `wow:rl:${prefix}:`,
+    });
+  }
+  return undefined; // express-rate-limit defaults to MemoryStore
+}
+
 // 1. OTP send — 50 requests per 5 minutes per IP
 const otpSendLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -143,6 +193,7 @@ const otpSendLimiter = rateLimit({
   legacyHeaders: false,
   handler: rateLimitHandler,
   validate: { keyGeneratorIpFallback: false },
+  store: makeRateLimitStore('otp-send'),
 });
 
 // 2. OTP verify — 50 requests per 5 minutes per IP
@@ -153,6 +204,7 @@ const otpVerifyLimiter = rateLimit({
   legacyHeaders: false,
   handler: rateLimitHandler,
   validate: { keyGeneratorIpFallback: false },
+  store: makeRateLimitStore('otp-verify'),
 });
 
 // 3. Order creation — 30 orders per minute per IP (burst protection, POST only)
@@ -164,6 +216,7 @@ const orderCreateLimiter = rateLimit({
   handler: rateLimitHandler,
   validate: { keyGeneratorIpFallback: false },
   skip: (req) => req.method !== 'POST',
+  store: makeRateLimitStore('order-create'),
 });
 
 // 4. Global API fallback — 300 requests per minute per IP
@@ -175,6 +228,7 @@ const globalLimiter = rateLimit({
   handler: rateLimitHandler,
   validate: { keyGeneratorIpFallback: false },
   skip: (req) => req.path === '/health' || req.path === '/api/health',
+  store: makeRateLimitStore('global'),
 });
 
 app.use(globalLimiter);
@@ -274,12 +328,13 @@ function gracefulShutdown(signal: string) {
   log.info(`Received ${signal} — starting graceful shutdown`);
 
   // Stop accepting new connections
-  server.close((err) => {
+  server.close(async (err) => {
     if (err) {
       log.error('Error during server close', { error: err.message });
       process.exit(1);
     }
     log.info('HTTP server closed — all connections drained');
+    await closeRedis();
     process.exit(0);
   });
 

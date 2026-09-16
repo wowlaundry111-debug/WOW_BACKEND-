@@ -6,8 +6,9 @@ const emitToShop = (req: Request, shopId: string, event: string, data: any) => {
   const io = req.app.get('io');
   if (io) {
     io.to(`shop:${shopId}`).emit(event, data);
-    // Also emit globally so legacy clients without room support still receive it
-    io.emit(event, data);
+    // NOTE: io.emit() (global broadcast) deliberately removed.
+    // At 10k concurrent sockets, broadcasting every order update to all connections
+    // causes unnecessary CPU/bandwidth load. Use targeted room emits only.
   }
 };
 
@@ -300,7 +301,7 @@ router.get('/analytics', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), 
 
     // Cache analytics per shop+range for 60 seconds — prevents repeated aggregation scans
     const cacheKey = `analytics:${matchQuery.shopId || 'all'}:${range || 'custom'}:${(startDate as string) || ''}:${(endDate as string) || ''}`;
-    const cached = analyticsCache.get(cacheKey);
+    const cached = await analyticsCache.get(cacheKey);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
       return res.json(cached);
@@ -369,7 +370,7 @@ router.get('/analytics', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), 
     ]);
 
     const analyticsResult = result || { kpis: [], trendBuckets: [], itemsPopularity: [] };
-    analyticsCache.set(cacheKey, analyticsResult, 60_000);
+    await analyticsCache.set(cacheKey, analyticsResult, 60_000);
     res.setHeader('X-Cache', 'MISS');
     res.json(analyticsResult);
   } catch (err: any) {

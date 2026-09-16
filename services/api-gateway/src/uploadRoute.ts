@@ -13,7 +13,13 @@ if (process.env.CLOUDINARY_URL) {
   });
 }
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,  // 5MB max — prevents OOM when many uploads run concurrently
+    files: 1,                    // only one file per request
+  },
+});
 
 router.post('/', upload.single('image'), async (req: Request, res: Response) => {
   try {

@@ -415,7 +415,7 @@ router.post('/send-otp', async (req: Request, res: Response) => {
 
   // Generate 6-digit OTP
   const otp = String(Math.floor(100000 + Math.random() * 900000));
-  otpCache.set(targetEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
+  await otpCache.set(targetEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
   log.debug('OTP generated', { email: targetEmail });
 
   // Send OTP email via Resend
@@ -450,18 +450,18 @@ router.post('/login', async (req: Request, res: Response) => {
     const targetEmail = normalizedEmail.includes('@') ? normalizedEmail : null;
     if (!targetEmail) return res.status(400).json({ error: 'Valid email is required with OTP' });
 
-    const cachedOtpEntry = otpCache.get(targetEmail);
-    const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
+    const cachedOtpEntry = await otpCache.get(targetEmail);
+    const storedOtp = cachedOtpEntry?.otp;
 
     if (!storedOtp || String(otp).trim() !== String(storedOtp).trim()) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
 
-    otpCache.delete(targetEmail);
+    await otpCache.delete(targetEmail);
 
     let user = await findUserByIdentifier(targetEmail);
     if (!user) {
-      const pendingData = pendingRegCache.get(targetEmail) as any;
+      const pendingData = await pendingRegCache.get(targetEmail) as any;
       const defaultName = pendingData?.name || targetEmail.split('@')[0];
       const defaultPhone = pendingData?.phone || `99${Math.floor(10000000 + Math.random() * 90000000)}`;
       user = await User.create({
@@ -470,7 +470,7 @@ router.post('/login', async (req: Request, res: Response) => {
         email: targetEmail,
         role: 'Customer',
       });
-      pendingRegCache.delete(targetEmail);
+      await pendingRegCache.delete(targetEmail);
     }
 
     const token = generateToken(user as any);
@@ -558,14 +558,14 @@ router.post('/register', async (req: Request, res: Response) => {
     const otp = String(Math.floor(100000 + Math.random() * 900000));
 
     // Cache pending registration and OTP
-    pendingRegCache.set(normalizedEmail, {
+    await pendingRegCache.set(normalizedEmail, {
       name: name.trim(),
       phone: cleanPhone,
       email: normalizedEmail,
       password: password || '',
     }, 10 * 60 * 1000);
-    otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
-    otpAttemptCache.delete(normalizedEmail);
+    await otpCache.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS }, OTP_TTL_MS);
+    await otpAttemptCache.delete(normalizedEmail);
 
     log.info('Registration OTP generated', { email: normalizedEmail });
 
@@ -599,9 +599,9 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
   const cleanInput = String(rawInput).trim().toLowerCase();
 
   // ── New registration OTP verification flow ───────────────────────────────
-  const pendingData = pendingRegCache.get(cleanInput) as any;
-  const cachedOtpEntry = otpCache.get(cleanInput);
-  const storedOtp = typeof cachedOtpEntry === 'object' && cachedOtpEntry !== null ? cachedOtpEntry.otp : cachedOtpEntry;
+  const pendingData = await pendingRegCache.get(cleanInput) as any;
+  const cachedOtpEntry = await otpCache.get(cleanInput);
+  const storedOtp = cachedOtpEntry?.otp;
 
   if (pendingData && !storedOtp) {
     return res.status(400).json({
@@ -612,13 +612,13 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
   }
 
   if (pendingData && storedOtp) {
-    const attempts = (otpAttemptCache.get(cleanInput) as number) || 0;
+    const attempts = (await otpAttemptCache.get(cleanInput) as number) || 0;
     if (attempts >= OTP_MAX_ATTEMPTS) {
       return res.status(429).json({ error: 'Too many incorrect attempts. Please try again in 15 minutes.' });
     }
 
     if (!storedOtp || String(otp).trim() !== String(storedOtp).trim()) {
-      otpAttemptCache.set(cleanInput, attempts + 1, OTP_LOCK_TTL_MS);
+      await otpAttemptCache.set(cleanInput, attempts + 1, OTP_LOCK_TTL_MS);
       const remaining = OTP_MAX_ATTEMPTS - (attempts + 1);
       return res.status(400).json({
         success: false,
@@ -628,9 +628,9 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
     }
 
     // OTP correct — clean caches
-    pendingRegCache.delete(cleanInput);
-    otpCache.delete(cleanInput);
-    otpAttemptCache.delete(cleanInput);
+    await pendingRegCache.delete(cleanInput);
+    await otpCache.delete(cleanInput);
+    await otpAttemptCache.delete(cleanInput);
 
     try {
       // Guard against duplicate created while OTP was in-flight
@@ -681,7 +681,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
     if (String(otp).trim() !== String(storedOtp).trim()) {
       return res.status(400).json({ success: false, error: 'Invalid verification code' });
     }
-    otpCache.delete(cleanInput);
+    await otpCache.delete(cleanInput);
   }
 
   const token = generateToken(user as any);

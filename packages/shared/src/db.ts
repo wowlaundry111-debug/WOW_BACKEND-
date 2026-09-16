@@ -14,8 +14,8 @@ export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
     try {
       log.info(`Attempting MongoDB connection (attempt ${attempt}/${retries})`);
       const db = await mongoose.connect(MONGODB_URI, {
-        maxPoolSize: 50,
-        minPoolSize: 5,
+        maxPoolSize: 200,
+        minPoolSize: 10,
         serverSelectionTimeoutMS: 30000,
         socketTimeoutMS: 45000,
         connectTimeoutMS: 30000,

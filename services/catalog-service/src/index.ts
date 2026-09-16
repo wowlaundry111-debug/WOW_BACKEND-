@@ -19,7 +19,7 @@ const emitSocketEvent = (req: Request, event: string, data: any) => {
 router.get('/shops', async (req: Request, res: Response) => {
   try {
     const CACHE_KEY = 'shops:list';
-    const cached = catalogCache.get(CACHE_KEY);
+    const cached = await catalogCache.get(CACHE_KEY);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
       return res.json(cached);
@@ -29,7 +29,7 @@ router.get('/shops', async (req: Request, res: Response) => {
       .select('_id name branches isOpen instructions pickupTimings contactNumber washPreferences minOrderValue taxPercent deliveryFee paymentInfo promoBanners promoCode androidAppUrl iosAppUrl')
       .lean();
 
-    catalogCache.set(CACHE_KEY, shops, SHOPS_LIST_TTL);
+    await catalogCache.set(CACHE_KEY, shops, SHOPS_LIST_TTL);
     res.setHeader('X-Cache', 'MISS');
     res.json(shops);
   } catch (err) {
@@ -41,7 +41,7 @@ router.get('/shops', async (req: Request, res: Response) => {
 router.get('/shops/:shopId', async (req: Request, res: Response) => {
   try {
     const CACHE_KEY = `shop:${req.params.shopId}`;
-    const cached = catalogCache.get(CACHE_KEY);
+    const cached = await catalogCache.get(CACHE_KEY);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
       return res.json(cached);
@@ -50,7 +50,7 @@ router.get('/shops/:shopId', async (req: Request, res: Response) => {
     const shop = await Shop.findById(req.params.shopId).lean();
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
 
-    catalogCache.set(CACHE_KEY, shop, SHOPS_LIST_TTL);
+    await catalogCache.set(CACHE_KEY, shop, SHOPS_LIST_TTL);
     res.setHeader('X-Cache', 'MISS');
     res.json(shop);
   } catch (err) {
@@ -69,7 +69,7 @@ router.post('/shops', requireAuth, requireRole(['SuperAdmin']), async (req: Auth
       paymentInfo: paymentInfo || {},
     });
     // Invalidate shop list cache
-    catalogCache.delete('shops:list');
+    await catalogCache.delete('shops:list');
     res.status(201).json(shop);
     emitSocketEvent(req, 'shop_created', shop);
   } catch (err: any) {
@@ -127,17 +127,17 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
           },
           { upsert: true, new: true }
         );
-        catalogCache.delete(`offers:${req.params.shopId}`);
-        catalogCache.delete('offers:all');
+        await catalogCache.delete(`offers:${req.params.shopId}`);
+        await catalogCache.delete('offers:all');
       } catch (syncErr: any) {
         log.warn('Failed to sync Offer model', { error: syncErr.message });
       }
     }
 
     // Invalidate both the list cache and this shop's individual cache
-    catalogCache.delete('shops:list');
-    catalogCache.delete(`shop:${req.params.shopId}`);
-    catalogCache.delete(`catalog:${req.params.shopId}`);
+    await catalogCache.delete('shops:list');
+    await catalogCache.delete(`shop:${req.params.shopId}`);
+    await catalogCache.delete(`catalog:${req.params.shopId}`);
 
     res.json(shop);
     emitSocketEvent(req, 'shop_updated', shop);
@@ -152,9 +152,9 @@ router.delete('/shops/:shopId', requireAuth, requireRole(['SuperAdmin']), async 
   try {
     const shop = await Shop.findByIdAndDelete(req.params.shopId).lean();
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
-    catalogCache.delete('shops:list');
-    catalogCache.delete(`shop:${req.params.shopId}`);
-    catalogCache.delete(`catalog:${req.params.shopId}`);
+    await catalogCache.delete('shops:list');
+    await catalogCache.delete(`shop:${req.params.shopId}`);
+    await catalogCache.delete(`catalog:${req.params.shopId}`);
     res.json({ message: 'Shop deleted successfully' });
     emitSocketEvent(req, 'shop_deleted', { shopId: req.params.shopId });
   } catch (err: any) {
@@ -171,7 +171,7 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
     const { shopId } = req.params;
     const CACHE_KEY = `catalog:${shopId}`;
 
-    const cached = catalogCache.get(CACHE_KEY);
+    const cached = await catalogCache.get(CACHE_KEY);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
       return res.json(cached);
@@ -219,7 +219,7 @@ router.get('/shops/:shopId/catalog', async (req: Request, res: Response) => {
       shopId: String(i.shopId)
     }));
     const result = { categories: allEnrichedCategories, categoriesTree: topLevel, items: safeItems };
-    catalogCache.set(CACHE_KEY, result, CATALOG_TTL);
+    await catalogCache.set(CACHE_KEY, result, CATALOG_TTL);
     res.setHeader('X-Cache', 'MISS');
     res.json(result);
   } catch (err) {
@@ -263,7 +263,7 @@ router.post('/categories', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
 
     const category = await Category.create({ shopId, name, image, isActive: true, parentCategoryId: parentCategoryId || null, singleItemSelection: Boolean(singleItemSelection) });
     // Invalidate catalog cache for this shop
-    catalogCache.delete(`catalog:${shopId}`);
+    await catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(category);
     emitSocketEvent(req, 'category_created', category);
   } catch (err) {
@@ -282,7 +282,7 @@ router.patch('/categories/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdm
     const category = await Category.findByIdAndUpdate(req.params.id, updates, { new: true }).lean() as any;
     if (!category) return res.status(404).json({ error: 'Category not found' });
     // Invalidate catalog cache
-    if (category.shopId) catalogCache.delete(`catalog:${category.shopId}`);
+    if (category.shopId) await catalogCache.delete(`catalog:${category.shopId}`);
     res.json(category);
     emitSocketEvent(req, 'category_updated', category);
   } catch (err) {
@@ -302,7 +302,7 @@ router.delete('/categories/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAd
       await Category.findByIdAndDelete(sub._id);
     }
     await Item.deleteMany({ categoryId: req.params.id });
-    if (category.shopId) catalogCache.delete(`catalog:${category.shopId}`);
+    if (category.shopId) await catalogCache.delete(`catalog:${category.shopId}`);
     res.json({ message: 'Category deleted successfully' });
     emitSocketEvent(req, 'category_deleted', { categoryId: req.params.id });
   } catch (err) {
@@ -336,7 +336,7 @@ router.post('/items', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), asy
     }
 
     const item = await Item.create({ shopId, categoryId, name, price, pricePerKg, pricePerItem, description, image, isActive: true, isBucket: !!isBucket });
-    if (shopId) catalogCache.delete(`catalog:${shopId}`);
+    if (shopId) await catalogCache.delete(`catalog:${shopId}`);
     res.status(201).json(item);
     emitSocketEvent(req, 'item_created', item);
   } catch (err: any) {
@@ -368,7 +368,7 @@ router.patch('/items/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'])
 
     const item = await Item.findByIdAndUpdate(req.params.id, updates, { new: true }).lean() as any;
     if (!item) return res.status(404).json({ error: 'Item not found' });
-    if (item.shopId) catalogCache.delete(`catalog:${item.shopId}`);
+    if (item.shopId) await catalogCache.delete(`catalog:${item.shopId}`);
     res.json(item);
     emitSocketEvent(req, 'item_updated', item);
   } catch (err: any) {
@@ -382,7 +382,7 @@ router.delete('/items/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']
   try {
     const item = await Item.findByIdAndDelete(req.params.id).lean() as any;
     if (!item) return res.status(404).json({ error: 'Item not found' });
-    if (item.shopId) catalogCache.delete(`catalog:${item.shopId}`);
+    if (item.shopId) await catalogCache.delete(`catalog:${item.shopId}`);
     res.json({ message: 'Item deleted successfully' });
     emitSocketEvent(req, 'item_deleted', { itemId: req.params.id });
   } catch (err) {
@@ -395,7 +395,7 @@ router.get('/offers', async (req: Request, res: Response) => {
   try {
     const shopId = req.query.shopId as string;
     const CACHE_KEY = shopId ? `offers:${shopId}` : 'offers:all';
-    const cached = catalogCache.get(CACHE_KEY);
+    const cached = await catalogCache.get(CACHE_KEY);
     if (cached) {
       res.setHeader('X-Cache', 'HIT');
       return res.json(cached);
@@ -405,7 +405,7 @@ router.get('/offers', async (req: Request, res: Response) => {
     if (shopId) query.shopId = shopId;
     const offers = await Offer.find(query).lean();
 
-    catalogCache.set(CACHE_KEY, offers, OFFERS_TTL);
+    await catalogCache.set(CACHE_KEY, offers, OFFERS_TTL);
     res.setHeader('X-Cache', 'MISS');
     res.json(offers);
   } catch (err) {
@@ -427,8 +427,8 @@ router.post('/offers', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), as
       description,
     });
     // Invalidate offers cache
-    catalogCache.delete(`offers:${targetShopId}`);
-    catalogCache.delete('offers:all');
+    await catalogCache.delete(`offers:${targetShopId}`);
+    await catalogCache.delete('offers:all');
     res.status(201).json(offer);
     emitSocketEvent(req, 'offer_created', offer);
   } catch (err: any) {
@@ -451,8 +451,8 @@ router.patch('/offers/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']
     if (updates.code) updates.code = updates.code.toUpperCase();
     const offer = await Offer.findByIdAndUpdate(req.params.id, updates, { new: true }).lean() as any;
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
-    catalogCache.delete(`offers:${offer.shopId}`);
-    catalogCache.delete('offers:all');
+    await catalogCache.delete(`offers:${offer.shopId}`);
+    await catalogCache.delete('offers:all');
     res.json(offer);
     emitSocketEvent(req, 'offer_updated', offer);
   } catch (err) {
@@ -465,8 +465,8 @@ router.delete('/offers/:id', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin'
   try {
     const offer = await Offer.findByIdAndDelete(req.params.id).lean() as any;
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
-    catalogCache.delete(`offers:${offer.shopId}`);
-    catalogCache.delete('offers:all');
+    await catalogCache.delete(`offers:${offer.shopId}`);
+    await catalogCache.delete('offers:all');
     res.json({ message: 'Offer deleted successfully' });
     emitSocketEvent(req, 'offer_deleted', { offerId: req.params.id });
   } catch (err) {

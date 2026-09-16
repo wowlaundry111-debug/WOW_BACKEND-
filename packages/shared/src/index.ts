@@ -5,3 +5,4 @@ export * from './auth';
 export * from './notifications';
 export * from './cache';
 export * from './logger';
+export * from './redis';
