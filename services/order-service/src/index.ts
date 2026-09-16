@@ -75,23 +75,34 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     const categoryIds = [...new Set(catalogItems.map((ci: any) => ci.categoryId))];
     const catalogCategories = await Category.find({ _id: { $in: categoryIds } }).select('_id name parentCategoryId singleItemSelection').lean() as any[];
 
+    // Fetch parent categories so singleItemSelection on parent categories is also enforced
+    const parentCategoryIds = [...new Set(catalogCategories.map((c: any) => c.parentCategoryId).filter(Boolean))];
+    const parentCategories = parentCategoryIds.length > 0
+      ? await Category.find({ _id: { $in: parentCategoryIds } }).select('_id name singleItemSelection').lean() as any[]
+      : [];
+
     // Build quick lookup maps
     const itemCategoryMap: Record<string, string> = {}; // itemId -> categoryId
     catalogItems.forEach((ci: any) => { itemCategoryMap[ci._id] = ci.categoryId; });
     const catNameMap: Record<string, any> = {}; // categoryId -> { name, parentCategoryId, singleItemSelection }
+    parentCategories.forEach((c: any) => { catNameMap[c._id] = c; });
     catalogCategories.forEach((c: any) => { catNameMap[c._id] = c; });
 
-    // Validate single item selection rule
+    // Validate single item selection rule on both subcategory and parent category
     const subCatItemCounts: Record<string, Set<string>> = {};
     for (const item of items || []) {
       const catId = itemCategoryMap[item.itemId];
       const cat = catId ? catNameMap[catId] : null;
-      if (cat && cat.singleItemSelection) {
-        if (!subCatItemCounts[catId]) subCatItemCounts[catId] = new Set();
-        subCatItemCounts[catId].add(item.itemId);
-        if (subCatItemCounts[catId].size > 1) {
+      const parentCat = (cat && cat.parentCategoryId) ? catNameMap[cat.parentCategoryId] : null;
+
+      const restrictedCat = (cat && cat.singleItemSelection) ? cat : (parentCat && parentCat.singleItemSelection ? parentCat : null);
+      if (restrictedCat) {
+        const key = String(restrictedCat._id);
+        if (!subCatItemCounts[key]) subCatItemCounts[key] = new Set();
+        subCatItemCounts[key].add(item.itemId);
+        if (subCatItemCounts[key].size > 1) {
           return res.status(400).json({
-            error: `Only one item type can be selected from the "${cat.name}" category.`
+            error: `Only one item type can be selected from the "${restrictedCat.name}" category.`
           });
         }
       }
