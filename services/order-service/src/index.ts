@@ -34,6 +34,28 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     if (shop && shop.isOpen === false) {
       return res.status(400).json({ error: 'This branch is currently closed. We are not accepting orders right now.' });
     }
+
+    // Prevent accidental duplicate order submissions (e.g. client retries, slow network, or rapid double clicks)
+    const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+    const existingRecentOrder = await Order.findOne({
+      customerId: req.user!._id,
+      shopId,
+      status: 'PLACED',
+      createdAt: { $gte: thirtySecondsAgo },
+    }).sort({ createdAt: -1 });
+
+    if (existingRecentOrder) {
+      const isSameTotal = Number(existingRecentOrder.totalAmount) === Number(totalAmount);
+      const isSameItemCount = existingRecentOrder.items?.length === (items || []).length;
+      if (isSameTotal && isSameItemCount) {
+        log.warn('Duplicate order submission blocked, returning existing order', {
+          customerId: req.user!._id,
+          orderId: existingRecentOrder._id,
+        });
+        return res.status(200).json(existingRecentOrder);
+      }
+    }
+
     let shopPhone = shop?.contactNumber || '';
     if (!shopPhone) {
       const adminUser = await User.findOne({ shopId, role: 'ShopAdmin' }).select('phone').lean() as any;
