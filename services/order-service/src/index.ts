@@ -443,6 +443,52 @@ router.delete('/archive', requireAuth, requireRole(['SuperAdmin']), async (req: 
   }
 });
 
+// Permanently Delete an Order (Admins only: ShopAdmin or SuperAdmin)
+router.delete('/:orderId', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const user = req.user!;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // ShopAdmin can only delete orders from their own shop
+    if (user.role === 'ShopAdmin') {
+      if (String(order.shopId) !== String(user.shopId)) {
+        return res.status(403).json({ error: 'Unauthorized to delete orders from another shop' });
+      }
+    }
+
+    await Order.findByIdAndDelete(orderId);
+
+    // Invalidate analytics cache for this shop
+    try {
+      await analyticsCache.deleteByPrefix(`analytics:${order.shopId}`);
+    } catch (_) {}
+
+    // Emit real-time events to shop, customer, and delivery boy if assigned
+    emitToShop(req, order.shopId, 'order_deleted', { orderId: String(order._id) });
+    emitToUser(req, String(order.customerId), 'order_deleted', { orderId: String(order._id) });
+    if (order.deliveryBoyId) {
+      emitToUser(req, String(order.deliveryBoyId), 'order_deleted', { orderId: String(order._id) });
+    }
+
+    log.info('Order deleted by admin', {
+      orderId,
+      adminId: user._id,
+      adminRole: user.role,
+      shopId: order.shopId,
+    });
+
+    res.json({ success: true, message: 'Order deleted successfully', deletedOrderId: orderId });
+  } catch (err: any) {
+    log.error('Failed to delete order', { error: err.message });
+    res.status(500).json({ error: 'Failed to delete order' });
+  }
+});
+
 // Helper: Recalculate order totals from scratch with full coupon discount re-evaluation
 async function recalculateOrderTotals(order: any, updatedItems?: any[]) {
   const items = updatedItems || order.items || [];
