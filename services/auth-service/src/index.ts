@@ -380,7 +380,7 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     const upgradedRole = (lowerEmail.includes('superadmin') || lowerEmail.startsWith('owner'))
       ? 'SuperAdmin'
       : (lowerEmail.includes('delivery') ? 'Delivery' : 'ShopAdmin');
-    await User.findByIdAndUpdate(user._id, { role: upgradedRole, shopId: user.shopId || 'shop_lawgate' });
+    await User.findByIdAndUpdate(user._id, { role: upgradedRole, shopId: user.shopId || '6a9731d114b3522fed5d8893' });
     user.role = upgradedRole;
   }
 
@@ -659,7 +659,7 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
         email: pendingData.email,
         role: 'Customer',
         password: pendingData.password || '',
-        shopId: 'shop_lawgate',
+        shopId: '6a9731d114b3522fed5d8893',
       });
 
       const token = generateToken(newUser as any);

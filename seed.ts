@@ -6,20 +6,34 @@ import { User, Shop, Category, Item, Offer, connectDB } from '@wow/shared';
 
 const SHOPS = [
   {
-    _id: 'shop_lawgate',
-    name: 'WOW Laundry LPU (Lawgate)',
+    _id: '6a9731d114b3522fed5d8893',
+    name: 'WOW LAUNDRY LPU',
     ownerId: 'super_admin_1',
-    branches: ['LPU Branch', 'Lawgate Main'],
+    branches: ['Lawgate Main', 'Green Valley', 'Mehru'],
     contactNumber: '62808-32724',
-    paymentInfo: { upiId: 'wowlawgate@upi', bankName: 'HDFC Bank', accountNo: '111122223333', qrValue: 'upi://pay?pa=wowlawgate@upi' },
+    paymentInfo: { upiId: '7814508706@okbizaxis', bankName: 'Punjab National Bank', accountNo: '775102100001452', qrValue: 'upi://pay?pa=7814508706@okbizaxis&pn=WOW%20LAUNDRY%20LPU&cu=INR' },
+    deliveryFee: 0,
+    instructions: 'Shop No. 1 GABA PG, Mughlai Point, Law Gate, Maheru, Punjab 144411. Working Hours: 10:00 AM - 11:00 PM',
+  },
+  {
+    _id: 'shop_lawgate',
+    name: 'WOW LAUNDRY JALANDHAR',
+    ownerId: 'super_admin_1',
+    branches: ['Jalandhar City'],
+    contactNumber: '62808-32724',
+    paymentInfo: { upiId: '7814508706@okbizaxis', bankName: 'Punjab National Bank', accountNo: '1775102100001452', qrValue: 'upi://pay?pa=7814508706@okbizaxis&pn=WOW%20LAUNDRY%20JALANDHAR&cu=INR' },
+    deliveryFee: 40,
+    instructions: '11/1 WARE HOUSE, RAMA MANDI, Jalandhar Cantt, Jalandhar, Punjab 144005. Working Hours: 10:00 AM - 11:00 PM',
   },
   {
     _id: 'shop_agi',
-    name: 'WOW Laundry AGI',
+    name: 'WOW LAUNDRY AGI',
     ownerId: 'super_admin_1',
     branches: ['AGI Campus'],
     contactNumber: '62808-32724',
-    paymentInfo: { upiId: 'wowagi@upi', bankName: 'ICICI Bank', accountNo: '444455556666', qrValue: 'upi://pay?pa=wowagi@upi' },
+    paymentInfo: { upiId: '7814508706@okbizaxis', bankName: 'Punjab National Bank', accountNo: '775102100001452', qrValue: 'upi://pay?pa=7814508706@okbizaxis&pn=WOW%20LAUNDRY%20AGI&cu=INR' },
+    deliveryFee: 40,
+    instructions: '11/1 WARE HOUSE, RAMA MANDI, Jalandhar Cantt, Jalandhar, Punjab 144005. Working Hours: 10:00 AM - 11:00 PM',
   }
 ];
 

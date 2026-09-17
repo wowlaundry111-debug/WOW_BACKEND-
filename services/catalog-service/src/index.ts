@@ -41,9 +41,11 @@ catalogCache.delete('shops:list').catch?.(() => {});
 // ── LPU Branch Prioritizer Helpers ───────────────────────────────────────────
 const isLpuBranch = (shop: any) => {
   if (!shop) return false;
+  if (shop.name && /jalandhar/i.test(shop.name)) return false;
+  if (shop.name && /agi/i.test(shop.name)) return false;
   const nameMatch = Boolean(shop.name && /lpu/i.test(shop.name));
-  const idMatch = Boolean(shop._id && (/lpu/i.test(shop._id) || shop._id === 'shop_lawgate'));
-  const branchMatch = Array.isArray(shop.branches) && shop.branches.some((b: string) => /lpu/i.test(b));
+  const idMatch = Boolean(shop._id && (/lpu/i.test(shop._id) || shop._id === '6a9731d114b3522fed5d8893'));
+  const branchMatch = Array.isArray(shop.branches) && shop.branches.some((b: string) => /lpu|lawgate|green valley|mehru/i.test(b));
   const addressMatch = Boolean(shop.address && /lpu/i.test(shop.address));
   return nameMatch || idMatch || branchMatch || addressMatch;
 };
@@ -62,8 +64,8 @@ const sortShopsWithLpuFirst = (shops: any[]) => {
 const sortBranchesWithLpuFirst = (branches: string[]) => {
   if (!Array.isArray(branches)) return [];
   return [...branches].sort((a, b) => {
-    const aIsLpu = /lpu/i.test(a);
-    const bIsLpu = /lpu/i.test(b);
+    const aIsLpu = /lpu|lawgate/i.test(a);
+    const bIsLpu = /lpu|lawgate/i.test(b);
     if (aIsLpu && !bIsLpu) return -1;
     if (!aIsLpu && bIsLpu) return 1;
     return 0;
