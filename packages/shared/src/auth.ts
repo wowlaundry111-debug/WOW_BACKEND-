@@ -61,6 +61,7 @@ export const normalizeRole = (role?: string): string => {
   if (r === 'superadmin') return 'SuperAdmin';
   if (r === 'shopadmin' || r === 'admin') return 'ShopAdmin';
   if (r === 'delivery' || r === 'deliveryboy' || r === 'deliveryagent' || r === 'driver') return 'Delivery';
+  if (r === 'operator' || r === 'machineoperator' || r === 'washoperator' || r === 'laundryoperator') return 'Operator';
   if (r === 'customer' || r === 'user') return 'Customer';
   return role;
 };

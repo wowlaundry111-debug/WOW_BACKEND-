@@ -241,6 +241,14 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
           query.deliveryBoyId = user._id;
         }
       }
+    } else if (user.role === 'Operator') {
+      const targetShopId = (req.query.shopId as string) || user.shopId;
+      if (targetShopId) {
+        query.shopId = targetShopId;
+      } else {
+        const dbUser = await User.findById(user._id).select('shopId').lean() as any;
+        if (dbUser?.shopId) query.shopId = dbUser.shopId;
+      }
     } else if (user.role === 'SuperAdmin') {
       if (req.query.shopId) {
         query.shopId = req.query.shopId;
@@ -611,15 +619,21 @@ async function autoFinalizeKgPrices(order: any) {
 // Status transitions allowed per role
 const ADMIN_ALLOWED_STATUSES = ['ACCEPTED', 'PICKUP_ASSIGNED', 'PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'] as const;
 const DELIVERY_ALLOWED_STATUSES = ['PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
+const OPERATOR_ALLOWED_STATUSES = ['PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_DELIVERY'] as const;
 
-// Update order status (Admin/Delivery)
-router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin', 'Delivery']), async (req: AuthRequest, res: Response) => {
+// Update order status (Admin/Delivery/Operator)
+router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin', 'Delivery', 'Operator']), async (req: AuthRequest, res: Response) => {
   try {
     const { status, paymentMode, paymentStatus } = req.body;
 
     // Delivery agents can set PICKED_UP, OUT_FOR_DELIVERY, or DELIVERED
     if (req.user!.role === 'Delivery' && !DELIVERY_ALLOWED_STATUSES.includes(status as any)) {
       return res.status(403).json({ error: `Delivery agents can only set status to: ${DELIVERY_ALLOWED_STATUSES.join(', ')}` });
+    }
+
+    // Laundry Floor Operators can transition wash bucket stages
+    if (req.user!.role === 'Operator' && !OPERATOR_ALLOWED_STATUSES.includes(status as any)) {
+      return res.status(403).json({ error: `Operators can only set status to: ${OPERATOR_ALLOWED_STATUSES.join(', ')}` });
     }
 
     // Admins status check

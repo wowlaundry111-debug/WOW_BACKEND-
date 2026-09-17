@@ -286,7 +286,7 @@ const OTP_MAX_ATTEMPTS = 5;              // lock after 5 wrong guesses
 const OTP_LOCK_TTL_MS = 15 * 60 * 1000; // 15 minute lockout window
 
 // ── Staff roles that bypass OTP entirely ─────────────────────────────────────
-const STAFF_ROLES = ['SuperAdmin', 'ShopAdmin', 'Delivery'] as const;
+const STAFF_ROLES = ['SuperAdmin', 'ShopAdmin', 'Delivery', 'Operator'] as const;
 
 // ── Helper: Find user by email, phone, or identifier ───────────────────────────
 async function findUserByIdentifier(identifier: string) {
@@ -379,7 +379,7 @@ router.post('/send-otp', async (req: Request, res: Response) => {
   if (isWowDomain && user.role === 'Customer') {
     const upgradedRole = (lowerEmail.includes('superadmin') || lowerEmail.startsWith('owner'))
       ? 'SuperAdmin'
-      : (lowerEmail.includes('delivery') ? 'Delivery' : 'ShopAdmin');
+      : (lowerEmail.includes('operator') ? 'Operator' : (lowerEmail.includes('delivery') ? 'Delivery' : 'ShopAdmin'));
     await User.findByIdAndUpdate(user._id, { role: upgradedRole, shopId: user.shopId || '6a9731d114b3522fed5d8893' });
     user.role = upgradedRole;
   }
@@ -390,9 +390,11 @@ router.post('/send-otp', async (req: Request, res: Response) => {
     userRole === 'SuperAdmin' ||
     userRole === 'ShopAdmin' ||
     userRole === 'Delivery' ||
+    userRole === 'Operator' ||
     user.role === 'SuperAdmin' ||
     user.role === 'ShopAdmin' ||
-    user.role === 'Delivery';
+    user.role === 'Delivery' ||
+    user.role === 'Operator';
 
   const isOfficialAdmin =
     lowerEmail === 'wowlaundry111@gmail.com' ||
@@ -501,9 +503,11 @@ router.post('/login', async (req: Request, res: Response) => {
       userRole === 'SuperAdmin' ||
       userRole === 'ShopAdmin' ||
       userRole === 'Delivery' ||
+      userRole === 'Operator' ||
       user.role === 'SuperAdmin' ||
       user.role === 'ShopAdmin' ||
-      user.role === 'Delivery';
+      user.role === 'Delivery' ||
+      user.role === 'Operator';
     const isOfficialAdmin =
       lowerEmail === 'wowlaundry111@gmail.com' ||
       normalizedEmail === 'wowlaundry111@gmail.com';
@@ -715,11 +719,11 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
     let effectiveShopId = shopId || req.user!.shopId;
 
     if (req.user!.role === 'ShopAdmin') {
-      if (role !== 'Delivery') {
-        return res.status(403).json({ error: 'Shop Admins can only create Delivery staff' });
+      if (role !== 'Delivery' && role !== 'Operator') {
+        return res.status(403).json({ error: 'Shop Admins can only create Delivery or Operator staff' });
       }
       if (req.user!.shopId && shopId && shopId !== req.user!.shopId) {
-        return res.status(403).json({ error: 'Cannot create Delivery staff for other branches' });
+        return res.status(403).json({ error: 'Cannot create staff for other branches' });
       }
       if (!req.user!.shopId && shopId) {
         effectiveShopId = shopId;
@@ -737,7 +741,7 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
     if (existingUser) {
       existingUser.role = role || 'Delivery';
       if (effectiveShopId) existingUser.shopId = effectiveShopId;
-      if (name && (!existingUser.name || existingUser.name === 'Delivery Staff' || existingUser.name === 'Customer')) {
+      if (name && (!existingUser.name || existingUser.name === 'Delivery Staff' || existingUser.name === 'Laundry Operator' || existingUser.name === 'Customer')) {
         existingUser.name = name;
       }
       if (address) existingUser.address = address;
@@ -764,7 +768,8 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
       phone = String(phone).trim();
     }
 
-    const userName = name || normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Delivery Staff';
+    const defaultRoleName = role === 'Operator' ? 'Laundry Operator' : 'Delivery Staff';
+    const userName = name || normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || defaultRoleName;
 
     const user = await User.create({
       name: userName,
@@ -772,7 +777,7 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
       email: normalizedEmail,
       role: role || 'Delivery',
       shopId: effectiveShopId,
-      address: address || 'Shop Branch',
+      address: address || (role === 'Operator' ? 'Laundry Floor' : 'Shop Branch'),
     });
     res.status(201).json(user);
     emitSocketEvent(req, 'user_created', user);
@@ -861,7 +866,7 @@ router.delete('/users/:id', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']
 
     if (req.user!.role === 'ShopAdmin') {
       const effectiveShopId = req.user!.shopId;
-      if (targetUser.role !== 'Delivery') {
+      if (targetUser.role !== 'Delivery' && targetUser.role !== 'Operator') {
         return res.status(403).json({ error: 'Unauthorized to delete this user' });
       }
       if (effectiveShopId && targetUser.shopId && targetUser.shopId !== effectiveShopId) {
@@ -879,7 +884,7 @@ router.delete('/users/:id', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']
 });
 
 // ── GET /users — paginated, shop-scoped ──────────────────────────────────────
-router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Delivery']), async (req: AuthRequest, res: Response) => {
+router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Delivery', 'Operator']), async (req: AuthRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(100, parseInt(req.query.limit as string) || 100);
@@ -888,16 +893,17 @@ router.get('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin', 'Deliv
     const query: Record<string, any> = {};
 
     const callerRole = normalizeRole(req.user!.role);
-    if (callerRole === 'ShopAdmin' || callerRole === 'Delivery') {
+    if (callerRole === 'ShopAdmin' || callerRole === 'Delivery' || callerRole === 'Operator') {
       const effectiveShopId = (req.query.shopId as string) || req.user!.shopId;
       if (effectiveShopId) {
         query.$or = [
           { shopId: effectiveShopId },
           { role: 'Delivery', shopId: { $in: [effectiveShopId, null, '', undefined] } },
+          { role: 'Operator', shopId: { $in: [effectiveShopId, null, '', undefined] } },
           { role: 'Customer' },
         ];
       } else {
-        query.$or = [{ role: { $in: ['Delivery', 'Customer', 'ShopAdmin'] } }];
+        query.$or = [{ role: { $in: ['Delivery', 'Customer', 'ShopAdmin', 'Operator'] } }];
       }
     } else {
       // SuperAdmin: optional filters

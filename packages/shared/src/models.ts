@@ -6,7 +6,7 @@ const UserSchema = new Schema<IUser>({
   name: { type: String, required: true },
   phone: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
-  role: { type: String, enum: ['SuperAdmin', 'ShopAdmin', 'Delivery', 'Customer'], required: true },
+  role: { type: String, enum: ['SuperAdmin', 'ShopAdmin', 'Delivery', 'Customer', 'Operator'], required: true },
   shopId: { type: String, required: false },
   expoPushToken: { type: String, required: false },
   address: { type: String, required: false },
