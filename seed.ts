@@ -7,9 +7,9 @@ import { User, Shop, Category, Item, Offer, connectDB } from '@wow/shared';
 const SHOPS = [
   {
     _id: 'shop_lawgate',
-    name: 'WOW Laundry Lawgate',
+    name: 'WOW Laundry LPU (Lawgate)',
     ownerId: 'super_admin_1',
-    branches: ['Lawgate Main'],
+    branches: ['LPU Branch', 'Lawgate Main'],
     contactNumber: '62808-32724',
     paymentInfo: { upiId: 'wowlawgate@upi', bankName: 'HDFC Bank', accountNo: '111122223333', qrValue: 'upi://pay?pa=wowlawgate@upi' },
   },

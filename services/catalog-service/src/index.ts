@@ -38,6 +38,38 @@ const emitSocketEvent = (req: Request, event: string, data: any) => {
 // Evict any legacy un-sanitized shops:list cache on service startup
 catalogCache.delete('shops:list').catch?.(() => {});
 
+// ── LPU Branch Prioritizer Helpers ───────────────────────────────────────────
+const isLpuBranch = (shop: any) => {
+  if (!shop) return false;
+  const nameMatch = Boolean(shop.name && /lpu/i.test(shop.name));
+  const idMatch = Boolean(shop._id && (/lpu/i.test(shop._id) || shop._id === 'shop_lawgate'));
+  const branchMatch = Array.isArray(shop.branches) && shop.branches.some((b: string) => /lpu/i.test(b));
+  const addressMatch = Boolean(shop.address && /lpu/i.test(shop.address));
+  return nameMatch || idMatch || branchMatch || addressMatch;
+};
+
+const sortShopsWithLpuFirst = (shops: any[]) => {
+  if (!Array.isArray(shops)) return [];
+  return [...shops].sort((a, b) => {
+    const aIsLpu = isLpuBranch(a);
+    const bIsLpu = isLpuBranch(b);
+    if (aIsLpu && !bIsLpu) return -1;
+    if (!aIsLpu && bIsLpu) return 1;
+    return 0;
+  });
+};
+
+const sortBranchesWithLpuFirst = (branches: string[]) => {
+  if (!Array.isArray(branches)) return [];
+  return [...branches].sort((a, b) => {
+    const aIsLpu = /lpu/i.test(a);
+    const bIsLpu = /lpu/i.test(b);
+    if (aIsLpu && !bIsLpu) return -1;
+    if (!aIsLpu && bIsLpu) return 1;
+    return 0;
+  });
+};
+
 // ── Public Sanitizer Helper ───────────────────────────────────────────────────
 // Strips sensitive banking information (accountNo, bankName) from public responses.
 // Only keeps upiId and qrValue if configured (used by delivery collection).
@@ -45,6 +77,9 @@ const sanitizeShopForPublic = (shop: any) => {
   if (!shop) return shop;
   const { paymentInfo, ...rest } = shop;
   const sanitized: any = { ...rest };
+  if (Array.isArray(sanitized.branches)) {
+    sanitized.branches = sortBranchesWithLpuFirst(sanitized.branches);
+  }
   if (paymentInfo && (paymentInfo.upiId || paymentInfo.qrValue)) {
     sanitized.paymentInfo = {
       upiId: paymentInfo.upiId || '',
@@ -59,7 +94,7 @@ const sanitizeShopForPublic = (shop: any) => {
 router.get('/shops/admin/all', requireAuth, requireRole(['SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
     const shops = await Shop.find({}).lean();
-    res.json(shops);
+    res.json(sortShopsWithLpuFirst(shops));
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch admin shops' });
   }
@@ -80,7 +115,8 @@ router.get('/shops', async (req: Request, res: Response) => {
       .select('_id name branches isOpen instructions pickupTimings contactNumber washPreferences minOrderValue taxPercent deliveryFee paymentInfo promoBanners promoCode androidAppUrl iosAppUrl')
       .lean();
 
-    const shops = rawShops.map(sanitizeShopForPublic);
+    const sortedRawShops = sortShopsWithLpuFirst(rawShops);
+    const shops = sortedRawShops.map(sanitizeShopForPublic);
 
     await catalogCache.set(CACHE_KEY, shops, SHOPS_LIST_TTL);
     res.setHeader('X-Cache', 'MISS');
