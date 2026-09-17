@@ -751,22 +751,24 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     const order = await Order.findById(req.params.orderId) as any;
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const itemIds = weightUpdates.map((u: any) => u.itemId);
+    const itemIds = weightUpdates.map((u: any) => String(u.itemId));
     const catalogItems = await Item.find({ _id: { $in: itemIds } }).select('_id pricePerKg').lean() as any[];
     const catalogMap: Record<string, number> = {};
     catalogItems.forEach((ci: any) => {
+      catalogMap[String(ci._id)] = ci.pricePerKg || 0;
       catalogMap[ci._id] = ci.pricePerKg || 0;
     });
 
     // Apply weights to order items
     const updatedItems = order.items.map((it: any) => {
-      const update = weightUpdates.find((u: any) => u.itemId === it.itemId);
-      if (update && it.unit === 'KG') {
+      const update = weightUpdates.find((u: any) => String(u.itemId) === String(it.itemId));
+      const isKg = it.unit === 'KG' || (typeof it.name === 'string' && (it.name.toLowerCase().includes('per kg') || it.name.toLowerCase().includes('/ kg'))) || Boolean(it.kgWeight && it.kgWeight > 0);
+      if (update && (it.unit === 'KG' || isKg)) {
         const kgWeight = Math.max(0, Number(update.kgWeight) || 0);
-        const pricePerKg = catalogMap[it.itemId] || 0;
+        const pricePerKg = catalogMap[String(it.itemId)] || catalogMap[it.itemId] || (it as any).pricePerKg || (it.unit === 'KG' && it.price > 0 && !it.kgWeight ? it.price : 0);
         const kgPrice = Math.round(kgWeight * pricePerKg * 100) / 100;
         const itObj = it.toObject ? it.toObject() : { ...it };
-        return { ...itObj, kgWeight, price: kgPrice };
+        return { ...itObj, kgWeight, price: kgPrice, unit: 'KG' };
       }
       return it.toObject ? it.toObject() : { ...it };
     });
@@ -787,16 +789,20 @@ router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopA
     // Notify customer and shop
     emitToShop(req, updatedOrder.shopId, 'order_updated', updatedOrder);
     emitToUser(req, String(updatedOrder.customerId), 'order_updated', updatedOrder);
+    if (updatedOrder.deliveryBoyId) {
+      emitToUser(req, String(updatedOrder.deliveryBoyId), 'order_updated', updatedOrder);
+    }
 
     // Push notification to customer
     setImmediate(async () => {
       try {
         const customer = await User.findById(updatedOrder.customerId).select('expoPushToken').lean() as any;
         if (customer?.expoPushToken) {
+          const isPickedUpNow = updatedOrder.status === 'PICKED_UP';
           await sendPushNotification(
             [customer.expoPushToken],
-            'Order Weighed at Pickup',
-            `Your laundry has been weighed at pickup. Final bill: ₹${updatedOrder.totalAmount}${updatedOrder.discountAmount > 0 ? ` (Saved ₹${updatedOrder.discountAmount} with coupon)` : ''}`,
+            isPickedUpNow ? 'Order Picked Up & Weighed' : 'Order Weighed',
+            `Your laundry has been weighed${isPickedUpNow ? ' and marked as picked up' : ''}. Final bill: ₹${updatedOrder.totalAmount}${updatedOrder.discountAmount > 0 ? ` (Saved ₹${updatedOrder.discountAmount} with coupon)` : ''}`,
             { orderId: updatedOrder._id }
           );
         }
