@@ -114,7 +114,7 @@ router.get('/shops', async (req: Request, res: Response) => {
     }
 
     const rawShops = await Shop.find({})
-      .select('_id name branches isOpen instructions pickupTimings contactNumber washPreferences minOrderValue taxPercent deliveryFee paymentInfo promoBanners promoCode androidAppUrl iosAppUrl')
+      .select('_id name branches isOpen instructions pickupTimings contactNumber washPreferences minOrderValue taxPercent deliveryFee paymentInfo promoBanners promoCode androidAppUrl iosAppUrl partnerAppUrl')
       .lean();
 
     const sortedRawShops = sortShopsWithLpuFirst(rawShops);
@@ -207,7 +207,7 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
     const allowed = [
       'name', 'branches', 'paymentInfo', 'isOpen', 'instructions',
       'pickupTimings', 'contactNumber', 'washPreferences', 'promoBanners', 'promoCode',
-      'minOrderValue', 'taxPercent', 'deliveryFee', 'androidAppUrl', 'iosAppUrl',
+      'minOrderValue', 'taxPercent', 'deliveryFee', 'androidAppUrl', 'iosAppUrl', 'partnerAppUrl',
     ];
 
     const updates: Record<string, any> = {};

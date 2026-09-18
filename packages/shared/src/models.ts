@@ -64,6 +64,7 @@ const ShopSchema = new Schema<IShop>({
   deliveryFee: { type: Number },
   androidAppUrl: { type: String },
   iosAppUrl: { type: String },
+  partnerAppUrl: { type: String },
 }, { timestamps: true });
 
 const CategorySchema = new Schema<ICategory>({

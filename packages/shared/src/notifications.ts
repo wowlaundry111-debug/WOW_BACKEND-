@@ -9,6 +9,8 @@ export const sendPushNotification = async (
   body: string,
   data: Record<string, any> = {}
 ): Promise<void> => {
+  const brandedTitle = title.toLowerCase().startsWith('wow') ? title : `WoW Laundry — ${title}`;
+
   const messages: ExpoPushMessage[] = pushTokens
     .filter(token => {
       if (!Expo.isExpoPushToken(token)) {
@@ -17,7 +19,15 @@ export const sendPushNotification = async (
       }
       return true;
     })
-    .map(to => ({ to, sound: 'default' as const, title, body, data }));
+    .map(to => ({
+      to,
+      sound: 'default' as const,
+      title: brandedTitle,
+      body,
+      data,
+      channelId: 'wow_laundry_channel',
+      priority: 'high' as const,
+    }));
 
   if (messages.length === 0) return;
 

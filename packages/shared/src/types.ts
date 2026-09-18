@@ -65,6 +65,7 @@ export interface IShop {
   deliveryFee?: number;
   androidAppUrl?: string;
   iosAppUrl?: string;
+  partnerAppUrl?: string;
   createdAt: Date;
   updatedAt: Date;
 }
