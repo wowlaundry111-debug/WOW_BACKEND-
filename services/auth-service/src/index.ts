@@ -347,18 +347,33 @@ router.post('/send-otp', async (req: Request, res: Response) => {
 
   // If user is not registered, return error so client redirects to registration
   if (!user) {
-    return res.status(404).json({
-      success: false,
-      notRegistered: true,
-      error: 'Account not found. Please register first.',
-      message: 'Account not found. Please register first.',
-    });
+    if (normalizedEmail === 'wowlaundry111@gmail.com') {
+      user = await User.create({
+        name: 'WOW Laundry LPU Customer',
+        email: 'wowlaundry111@gmail.com',
+        phone: '6280832724',
+        role: 'Customer',
+        isEmailVerified: true,
+        isPhoneVerified: true,
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        notRegistered: true,
+        error: 'Account not found. Please register first.',
+        message: 'Account not found. Please register first.',
+      });
+    }
   }
 
-  // Auto-promote official admin email to SuperAdmin if needed
+  // Ensure wowlaundry111@gmail.com has Customer role (same as customer page)
   const lowerEmail = (user.email || '').toLowerCase().trim();
-  if (
-    lowerEmail === 'wowlaundry111@gmail.com' ||
+  if (lowerEmail === 'wowlaundry111@gmail.com') {
+    if (user.role !== 'Customer') {
+      await User.findByIdAndUpdate(user._id, { role: 'Customer' });
+      user.role = 'Customer';
+    }
+  } else if (
     lowerEmail === 'superadmin@wow.com' ||
     lowerEmail === 'superadmin@wowlaundry.com'
   ) {
@@ -403,7 +418,8 @@ router.post('/send-otp', async (req: Request, res: Response) => {
   const shouldBypassOtp = isStaffRole || isWowDomain || isOfficialAdmin;
 
   if (shouldBypassOtp) {
-    if (password && user.password && user.password !== password) {
+    // Official admin never requires password or OTP
+    if (!isOfficialAdmin && password && user.password && user.password !== password) {
       return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
     }
 
@@ -491,9 +507,23 @@ router.post('/login', async (req: Request, res: Response) => {
 
   // Direct login for staff or password users
   let user = await findUserByIdentifier(cleanInput);
+  if (!user && (normalizedEmail === 'wowlaundry111@gmail.com' || cleanInput === 'wowlaundry111@gmail.com')) {
+    user = await User.create({
+      name: 'WOW Laundry LPU Customer',
+      email: 'wowlaundry111@gmail.com',
+      phone: '6280832724',
+      role: 'Customer',
+      isEmailVerified: true,
+      isPhoneVerified: true,
+    });
+  }
   if (user) {
-    const userRole = normalizeRole(user.role);
     const lowerEmail = (user.email || '').toLowerCase().trim();
+    if (lowerEmail === 'wowlaundry111@gmail.com' && user.role !== 'Customer') {
+      await User.findByIdAndUpdate(user._id, { role: 'Customer' });
+      user.role = 'Customer';
+    }
+    const userRole = normalizeRole(user.role);
     const isWowDomain =
       lowerEmail.endsWith('@wowlaundry.com') ||
       lowerEmail.endsWith('@wow.com') ||
@@ -515,7 +545,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const shouldBypassOtp = isStaffRole || isWowDomain || isOfficialAdmin;
 
     if (shouldBypassOtp) {
-      if (password && user.password && user.password !== password) {
+      if (!isOfficialAdmin && password && user.password && user.password !== password) {
         return res.status(401).json({ error: 'Invalid password. Please check and try again.' });
       }
       const token = generateToken(user);
@@ -611,6 +641,33 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
   }
 
   const cleanInput = String(rawInput).trim().toLowerCase();
+
+  // Special bypass for official account
+  if (cleanInput === 'wowlaundry111@gmail.com') {
+    let user = await findUserByIdentifier(cleanInput);
+    if (!user) {
+      user = await User.create({
+        name: 'WOW Laundry LPU Customer',
+        email: 'wowlaundry111@gmail.com',
+        phone: '6280832724',
+        role: 'Customer',
+        isEmailVerified: true,
+        isPhoneVerified: true,
+      });
+    } else if (user.role !== 'Customer') {
+      await User.findByIdAndUpdate(user._id, { role: 'Customer' });
+      user.role = 'Customer';
+    }
+    const token = generateToken(user);
+    return res.json({
+      success: true,
+      directLogin: true,
+      requiresOtp: false,
+      user: sanitizeUser(user),
+      token,
+      message: 'Authenticated successfully',
+    });
+  }
 
   // ── New registration OTP verification flow ───────────────────────────────
   const pendingData = await pendingRegCache.get(cleanInput) as any;

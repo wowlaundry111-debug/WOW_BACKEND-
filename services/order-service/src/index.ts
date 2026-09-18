@@ -22,8 +22,8 @@ const emitToUser = (req: Request, userId: string, event: string, data: any) => {
 
 const router = Router();
 
-// Create an order (Customer only)
-router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest, res: Response) => {
+// Create an order (Customer, or Branch Admin placing walk-in order)
+router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin']), async (req: AuthRequest, res: Response) => {
   try {
     const {
       shopId, items, totalAmount, discountAmount, couponCode,
@@ -31,17 +31,23 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       deliveryFee, pickupAddress, deliveryAddress, pickupTime, washPreferences
     } = req.body;
 
+    const userRole = (req.user?.role || '') as string;
+    const isSpecialBranchUser = (req.user?.email || '').toLowerCase().trim() === 'wowlaundry111@gmail.com';
+    const isStaffPlacing = userRole === 'SuperAdmin' || userRole === 'ShopAdmin' || isSpecialBranchUser;
+
     const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
 
     // Run shop lookup + dedup check + customer lookup in parallel (was 3 sequential round-trips)
     const [shop, existingRecentOrder, customer] = await Promise.all([
       Shop.findById(shopId).select('isOpen contactNumber promoCode taxPercent deliveryFee').lean() as Promise<any>,
-      Order.findOne({
-        customerId: req.user!._id,
-        shopId,
-        status: 'PLACED',
-        createdAt: { $gte: thirtySecondsAgo },
-      }).sort({ createdAt: -1 }),
+      (!isStaffPlacing)
+        ? Order.findOne({
+            customerId: req.user!._id,
+            shopId,
+            status: 'PLACED',
+            createdAt: { $gte: thirtySecondsAgo },
+          }).sort({ createdAt: -1 })
+        : Promise.resolve(null),
       User.findById(req.user!._id).select('name phone').lean() as Promise<any>,
     ]);
 
@@ -50,7 +56,8 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     }
 
     // Prevent accidental duplicate order submissions (e.g. client retries, slow network, or rapid double clicks)
-    if (existingRecentOrder) {
+    // Skipped for staff so counter admins can place multiple orders consecutively
+    if (!isStaffPlacing && existingRecentOrder) {
       const isSameTotal = Number(existingRecentOrder.totalAmount) === Number(totalAmount);
       const isSameItemCount = existingRecentOrder.items?.length === (items || []).length;
       if (isSameTotal && isSameItemCount) {
@@ -127,8 +134,41 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       return { ...item, categoryName: cat.name };
     });
 
-    const resolvedCustomerName = customer?.name || req.body.customerName || (req.user as any)?.name || 'Customer';
-    const resolvedCustomerPhone = customer?.phone || req.body.customerPhone || (req.user as any)?.phone || '';
+    const reqCustName = (req.body.customerName || '').trim();
+    const reqCustPhone = (req.body.customerPhone || '').trim();
+    const reqCustAddress = (req.body.customerAddress || deliveryAddress || pickupAddress || '').trim();
+
+    let resolvedCustomerId = String(req.user!._id);
+    let resolvedCustomerName = isStaffPlacing
+      ? (reqCustName || 'Walk-in Customer')
+      : (customer?.name || reqCustName || (req.user as any)?.name || 'Customer');
+    let resolvedCustomerPhone = isStaffPlacing
+      ? reqCustPhone
+      : (customer?.phone || reqCustPhone || (req.user as any)?.phone || '');
+
+    // If staff placed order with customerPhone, check if user exists with this phone to link order to their account
+    if (isStaffPlacing && reqCustPhone) {
+      try {
+        const existingCust = await User.findOne({ phone: reqCustPhone }).select('_id name').lean() as any;
+        if (existingCust) {
+          resolvedCustomerId = String(existingCust._id);
+          if (!reqCustName && existingCust.name) {
+            resolvedCustomerName = existingCust.name;
+          }
+        }
+      } catch (e: any) {
+        log.warn('Could not link customer by phone', { phone: reqCustPhone, error: e.message });
+      }
+    }
+
+    const isWalkInPickup = req.body.isWalkIn === true ||
+      (typeof reqCustAddress === 'string' && (
+        reqCustAddress.toLowerCase().includes('walk-in') ||
+        reqCustAddress.toLowerCase().includes('branch') ||
+        reqCustAddress.toLowerCase().includes('in-store') ||
+        reqCustAddress.toLowerCase().includes('counter')
+      ));
+    const effectiveDeliveryFee = isWalkInPickup ? 0 : (deliveryFee || 0);
 
     // Resolve coupon parameters if couponCode was applied
     let resolvedCouponDiscountPercent = Number(couponDiscountPercent) || 0;
@@ -155,9 +195,10 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     }
 
     const order = await Order.create({
-      customerId: req.user!._id,
+      customerId: resolvedCustomerId,
       customerName: resolvedCustomerName,
       customerPhone: resolvedCustomerPhone,
+      customerAddress: reqCustAddress,
       shopId,
       shopPhone,
       items: enrichedItems,
@@ -169,10 +210,11 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
       couponMaxDiscount: resolvedCouponMaxDiscount,
       couponMinOrderValue: resolvedCouponMinOrderValue || undefined,
       taxAmount,
-      deliveryFee,
-      pickupAddress,
-      deliveryAddress,
+      deliveryFee: effectiveDeliveryFee,
+      pickupAddress: reqCustAddress || pickupAddress,
+      deliveryAddress: reqCustAddress || deliveryAddress,
       pickupTime,
+      adminNotes: req.body.adminNotes || (isStaffPlacing ? `Branch Walk-in Order placed by ${(req.user as any)?.name || req.user?.email || 'Admin'}` : undefined),
       status: 'PLACED',
     });
 
@@ -181,7 +223,10 @@ router.post('/', requireAuth, requireRole(['Customer']), async (req: AuthRequest
     
     // Emit to shop room only — avoids broadcasting to all 1k+ connected sockets
     emitToShop(req, order.shopId, 'order_created', order);
-    emitToUser(req, String(req.user!._id), 'order_created', order);
+    emitToUser(req, String(order.customerId), 'order_created', order);
+    if (String(order.customerId) !== String(req.user!._id)) {
+      emitToUser(req, String(req.user!._id), 'order_created', order);
+    }
 
     // Fire-and-forget: notify shop admins after response is sent
     setImmediate(async () => {
