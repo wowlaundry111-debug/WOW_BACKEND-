@@ -194,6 +194,11 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
       }
     }
 
+    const isKgItem = (i: any) => i.unit === 'KG' || (typeof i.name === 'string' && (i.name.toLowerCase().includes('per kg') || i.name.toLowerCase().includes('/ kg')));
+    const hasKgItems = enrichedItems.some(isKgItem);
+    const allKgWeighed = hasKgItems && enrichedItems.filter(isKgItem).every((i: any) => i.kgWeight && Number(i.kgWeight) > 0);
+    const resolvedKgPriceUpdated = req.body.kgPriceUpdated === true || (hasKgItems && allKgWeighed);
+
     const order = await Order.create({
       customerId: resolvedCustomerId,
       customerName: resolvedCustomerName,
@@ -204,6 +209,7 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
       items: enrichedItems,
       washPreferences,
       totalAmount,
+      kgPriceUpdated: resolvedKgPriceUpdated,
       discountAmount: Number(discountAmount) || 0,
       couponCode: couponCode ? String(couponCode).toUpperCase() : undefined,
       couponDiscountPercent: resolvedCouponDiscountPercent || undefined,
