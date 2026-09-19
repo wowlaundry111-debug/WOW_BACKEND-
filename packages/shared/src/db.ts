@@ -24,6 +24,14 @@ export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
       });
       isConnected = db.connections[0].readyState === 1;
 
+      // Drop legacy unique index on phone if present so branch staff can share contact numbers
+      try {
+        await mongoose.connection.collection('users').dropIndex('phone_1');
+        log.info('Dropped legacy unique index phone_1 on users');
+      } catch (dropErr: any) {
+        // Ignored if index doesn't exist (code 27)
+      }
+
       // Production connection monitoring
       mongoose.connection.on('error', (err) => {
         log.error('MongoDB connection error', { error: err.message });

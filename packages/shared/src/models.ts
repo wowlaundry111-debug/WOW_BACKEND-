@@ -4,7 +4,7 @@ import { IUser, IShop, ICategory, IItem, IOrder, IOffer } from './types';
 const UserSchema = new Schema<IUser>({
   _id: { type: String, default: () => new mongoose.Types.ObjectId().toHexString() },
   name: { type: String, required: true },
-  phone: { type: String, required: true, unique: true },
+  phone: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   role: { type: String, enum: ['SuperAdmin', 'ShopAdmin', 'Delivery', 'Customer', 'Operator'], required: true },
   shopId: { type: String, required: false },

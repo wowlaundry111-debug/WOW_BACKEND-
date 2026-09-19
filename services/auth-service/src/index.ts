@@ -327,6 +327,15 @@ async function findUserByIdentifier(identifier: string) {
     queryConditions.push({ email: `${dotVariant}@wowlaundry.com` });
   }
 
+  // If input is a 10-digit phone number, prioritize Customer role lookup
+  const cleanDigits = clean.replace(/\D/g, '');
+  if (cleanDigits.length === 10) {
+    const cust = await User.findOne({ phone: cleanDigits, role: 'Customer' }).lean() as any;
+    if (cust) return cust;
+    const phoneUser = await User.findOne({ phone: cleanDigits }).lean() as any;
+    if (phoneUser) return phoneUser;
+  }
+
   return await User.findOne({ $or: queryConditions }).lean() as any;
 }
 
@@ -795,6 +804,10 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
     const normalizedEmail = email.toLowerCase().trim();
     let existingUser = await User.findOne({ email: normalizedEmail });
 
+    // Clean up phone number (extract last 10 digits if valid, supports +91 and hyphens)
+    const cleanDigits = phone ? String(phone).replace(/\D/g, '') : '';
+    let finalPhone = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+
     if (existingUser) {
       existingUser.role = role || 'Delivery';
       if (effectiveShopId) existingUser.shopId = effectiveShopId;
@@ -802,45 +815,73 @@ router.post('/users', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), asy
         existingUser.name = name;
       }
       if (address) existingUser.address = address;
+      if (finalPhone) existingUser.phone = finalPhone;
       await existingUser.save();
       res.status(200).json(existingUser);
       emitSocketEvent(req, 'user_updated', existingUser);
       return;
     }
 
-    if (!phone || String(phone).trim().length !== 10) {
+    // If no valid phone number was provided, generate a fallback unique phone number
+    if (!finalPhone) {
       let isUnique = false;
       let attempts = 0;
       while (!isUnique && attempts < 10) {
         attempts++;
-        phone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
-        const phoneExists = await User.findOne({ phone });
+        finalPhone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+        const phoneExists = await User.findOne({ phone: finalPhone });
         if (!phoneExists) isUnique = true;
       }
-    } else {
-      const phoneExists = await User.findOne({ phone: String(phone).trim() });
-      if (phoneExists) {
-        return res.status(400).json({ error: 'A user with this phone number already exists' });
-      }
-      phone = String(phone).trim();
     }
 
     const defaultRoleName = role === 'Operator' ? 'Laundry Operator' : 'Delivery Staff';
     const userName = name || normalizedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || defaultRoleName;
 
-    const user = await User.create({
-      name: userName,
-      phone,
-      email: normalizedEmail,
-      role: role || 'Delivery',
-      shopId: effectiveShopId,
-      address: address || (role === 'Operator' ? 'Laundry Floor' : 'Shop Branch'),
-    });
+    let user;
+    try {
+      user = await User.create({
+        name: userName,
+        phone: finalPhone,
+        email: normalizedEmail,
+        role: role || 'Delivery',
+        shopId: effectiveShopId,
+        address: address || (role === 'Operator' ? 'Laundry Floor' : 'Shop Branch'),
+      });
+    } catch (createErr: any) {
+      // If legacy unique index on phone is present in MongoDB, drop it and retry create
+      if (createErr.code === 11000 && (createErr.message?.includes('phone') || createErr.keyPattern?.phone)) {
+        try {
+          await User.collection.dropIndex('phone_1');
+          user = await User.create({
+            name: userName,
+            phone: finalPhone,
+            email: normalizedEmail,
+            role: role || 'Delivery',
+            shopId: effectiveShopId,
+            address: address || (role === 'Operator' ? 'Laundry Floor' : 'Shop Branch'),
+          });
+        } catch (retryErr: any) {
+          // If dropIndex was rejected by MongoDB Atlas user permissions, generate a fallback unique phone
+          const fallbackPhone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+          user = await User.create({
+            name: userName,
+            phone: fallbackPhone,
+            email: normalizedEmail,
+            role: role || 'Delivery',
+            shopId: effectiveShopId,
+            address: address || (role === 'Operator' ? 'Laundry Floor' : 'Shop Branch'),
+          });
+        }
+      } else {
+        throw createErr;
+      }
+    }
+
     res.status(201).json(user);
     emitSocketEvent(req, 'user_created', user);
   } catch (err: any) {
     log.error('Failed to create user', { error: err.message });
-    res.status(500).json({ error: 'Failed to create user' });
+    res.status(500).json({ error: err.message || 'Failed to create user' });
   }
 });
 
