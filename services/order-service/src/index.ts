@@ -6,9 +6,7 @@ const emitToShop = (req: Request, shopId: string, event: string, data: any) => {
   const io = req.app.get('io');
   if (io) {
     io.to(`shop:${shopId}`).emit(event, data);
-    // NOTE: io.emit() (global broadcast) deliberately removed.
-    // At 10k concurrent sockets, broadcasting every order update to all connections
-    // causes unnecessary CPU/bandwidth load. Use targeted room emits only.
+    io.to('role:SuperAdmin').emit(event, data);
   }
 };
 
@@ -234,19 +232,32 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
       emitToUser(req, String(req.user!._id), 'order_created', order);
     }
 
-    // Fire-and-forget: notify shop admins after response is sent
+    // Fire-and-forget: notify customer & shop admins after response is sent
     setImmediate(async () => {
       try {
-        const shopAdmins = await User.find({ shopId, role: 'ShopAdmin' })
-          .select('expoPushToken')
-          .lean() as any[];
+        const [shopAdmins, customerUser] = await Promise.all([
+          User.find({ shopId, role: 'ShopAdmin' }).select('expoPushToken').lean() as Promise<any[]>,
+          User.findById(order.customerId).select('expoPushToken').lean() as Promise<any>,
+        ]);
+
+        // 1. Notify Customer of successful order placement
+        if (customerUser?.expoPushToken) {
+          await sendPushNotification(
+            [customerUser.expoPushToken],
+            'Order Placed Successfully',
+            `Your order #${String(order._id).slice(-6).toUpperCase()} of ₹${totalAmount} has been placed. We'll pick up your laundry soon!`,
+            { orderId: order._id, status: 'PLACED' }
+          );
+        }
+
+        // 2. Notify Shop Admins of new incoming order
         const adminTokens = shopAdmins.map((a: any) => a.expoPushToken).filter(Boolean) as string[];
         if (adminTokens.length > 0) {
           await sendPushNotification(
             adminTokens,
             'New Order Placed',
-            `A new order of ₹${totalAmount} has been placed.`,
-            { orderId: order._id }
+            `New order #${String(order._id).slice(-6).toUpperCase()} of ₹${totalAmount} has been placed.`,
+            { orderId: order._id, status: 'PLACED' }
           );
         }
       } catch (e: any) {
@@ -721,12 +732,26 @@ router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAd
     // Fire-and-forget notifications
     setImmediate(async () => {
       try {
-        const customer = await User.findById(updatedOrder.customerId).select('expoPushToken').lean() as any;
+        const [customer, deliveryBoy] = await Promise.all([
+          User.findById(updatedOrder.customerId).select('expoPushToken').lean() as Promise<any>,
+          updatedOrder.deliveryBoyId ? User.findById(updatedOrder.deliveryBoyId).select('expoPushToken').lean() as Promise<any> : Promise.resolve(null),
+        ]);
+
         if (customer?.expoPushToken) {
           await sendPushNotification(
             [customer.expoPushToken],
             'Order Status Updated',
-            `Your order is now: ${status.replace(/_/g, ' ')}`,
+            `Your order #${String(updatedOrder._id).slice(-6).toUpperCase()} is now: ${status.replace(/_/g, ' ')}`,
+            { orderId: updatedOrder._id, status }
+          );
+        }
+
+        // Notify delivery agent if order is ready for dispatch/delivery
+        if ((status === 'READY_FOR_DELIVERY' || status === 'OUT_FOR_DELIVERY') && deliveryBoy?.expoPushToken) {
+          await sendPushNotification(
+            [deliveryBoy.expoPushToken],
+            'Order Ready for Delivery',
+            `Order #${String(updatedOrder._id).slice(-6).toUpperCase()} is ${status.replace(/_/g, ' ')}. Please proceed with delivery.`,
             { orderId: updatedOrder._id, status }
           );
         }
@@ -740,7 +765,7 @@ router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAd
             await sendPushNotification(
               adminTokens,
               'Order Status Updated',
-              `Order #${String(updatedOrder._id).slice(-4)} is now: ${status.replace(/_/g, ' ')}`,
+              `Order #${String(updatedOrder._id).slice(-6).toUpperCase()} is now: ${status.replace(/_/g, ' ')}`,
               { orderId: updatedOrder._id, status }
             );
           }
@@ -1011,6 +1036,37 @@ router.patch('/:orderId/payment', requireAuth, requireRole(['ShopAdmin', 'SuperA
     if (paidOrder?.shopId) emitToShop(req, paidOrder.shopId, 'order_updated', paidOrder);
     if (paidOrder?.customerId) emitToUser(req, String(paidOrder.customerId), 'order_updated', paidOrder);
 
+    // Fire-and-forget push notifications for payment completion and delivery
+    setImmediate(async () => {
+      try {
+        const [customer, shopAdmins] = await Promise.all([
+          User.findById(paidOrder.customerId).select('expoPushToken').lean() as Promise<any>,
+          User.find({ shopId: paidOrder.shopId, role: 'ShopAdmin' }).select('expoPushToken').lean() as Promise<any[]>,
+        ]);
+
+        if (customer?.expoPushToken) {
+          await sendPushNotification(
+            [customer.expoPushToken],
+            'Order Delivered & Payment Received',
+            `Your order #${String(paidOrder._id).slice(-6).toUpperCase()} has been delivered! Payment of ₹${paidOrder.totalAmount} received via ${paymentMode}. Thank you for choosing WoW Laundry!`,
+            { orderId: paidOrder._id, status: 'DELIVERED' }
+          );
+        }
+
+        const adminTokens = shopAdmins.map((a: any) => a.expoPushToken).filter(Boolean) as string[];
+        if (adminTokens.length > 0) {
+          await sendPushNotification(
+            adminTokens,
+            'Order Delivered & Paid',
+            `Order #${String(paidOrder._id).slice(-6).toUpperCase()} marked DELIVERED. Payment of ₹${paidOrder.totalAmount} recorded via ${paymentMode}.`,
+            { orderId: paidOrder._id, status: 'DELIVERED' }
+          );
+        }
+      } catch (e: any) {
+        log.error('Failed to send payment/delivery notification', { error: e.message });
+      }
+    });
+
     res.json(paidOrder);
   } catch (err) {
     res.status(500).json({ error: 'Failed to record payment' });
@@ -1076,20 +1132,35 @@ router.patch('/:orderId/cancel', requireAuth, async (req: AuthRequest, res: Resp
       emitToUser(req, String(updatedOrder.deliveryBoyId), 'order_updated', updatedOrder);
     }
 
-    // Fire-and-forget push notification to shop admins
+    // Fire-and-forget push notification
     setImmediate(async () => {
       try {
-        const shopAdmins = await User.find({ shopId: updatedOrder.shopId, role: 'ShopAdmin' })
-          .select('expoPushToken')
-          .lean() as any[];
-        const adminTokens = shopAdmins.map((a: any) => a.expoPushToken).filter(Boolean) as string[];
-        if (adminTokens.length > 0) {
+        const [shopAdmins, customer] = await Promise.all([
+          User.find({ shopId: updatedOrder.shopId, role: 'ShopAdmin' }).select('expoPushToken').lean() as Promise<any[]>,
+          User.findById(updatedOrder.customerId).select('expoPushToken').lean() as Promise<any>,
+        ]);
+
+        // If cancelled by staff or admin, notify customer
+        if (user.role !== 'Customer' && customer?.expoPushToken) {
           await sendPushNotification(
-            adminTokens,
+            [customer.expoPushToken],
             'Order Cancelled',
-            `Order #${String(updatedOrder._id).slice(-6).toUpperCase()} was cancelled by ${user.role === 'Customer' ? 'customer' : 'admin'}.`,
+            `Your order #${String(updatedOrder._id).slice(-6).toUpperCase()} was cancelled. Reason: ${reason || 'Cancelled by store'}.`,
             { orderId: updatedOrder._id, status: 'CANCELLED' }
           );
+        }
+
+        // If cancelled by customer, notify shop admins
+        if (user.role === 'Customer') {
+          const adminTokens = shopAdmins.map((a: any) => a.expoPushToken).filter(Boolean) as string[];
+          if (adminTokens.length > 0) {
+            await sendPushNotification(
+              adminTokens,
+              'Order Cancelled',
+              `Order #${String(updatedOrder._id).slice(-6).toUpperCase()} was cancelled by customer. Reason: ${reason || 'Cancelled by customer'}.`,
+              { orderId: updatedOrder._id, status: 'CANCELLED' }
+            );
+          }
         }
       } catch (e: any) {
         log.error('Failed to send cancellation notification', { error: e.message });

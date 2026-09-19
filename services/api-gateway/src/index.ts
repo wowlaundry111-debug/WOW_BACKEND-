@@ -105,7 +105,7 @@ if (redisClient) {
   }
 }
 
-// Socket.IO connection handling — clients join their shop room for targeted broadcasts
+// Socket.IO connection handling — clients join their shop, user, and role rooms for targeted broadcasts
 io.on('connection', (socket) => {
   const shopId = socket.handshake.query.shopId as string;
   const role = socket.handshake.query.role as string;
@@ -117,8 +117,19 @@ io.on('connection', (socket) => {
   if (userId) {
     socket.join(`user:${userId}`);
   }
+  if (role) {
+    socket.join(`role:${role}`);
+  }
 
-  log.debug('Socket connected', { id: socket.id, shopId, role });
+  // Dynamic room subscription when user authenticates or switches shops
+  socket.on('join', (data: { shopId?: string; userId?: string; role?: string }) => {
+    if (data?.shopId) socket.join(`shop:${data.shopId}`);
+    if (data?.userId) socket.join(`user:${data.userId}`);
+    if (data?.role) socket.join(`role:${data.role}`);
+    log.debug('Socket joined rooms', { id: socket.id, data });
+  });
+
+  log.debug('Socket connected', { id: socket.id, shopId, role, userId });
 
   socket.on('disconnect', (reason) => {
     log.debug('Socket disconnected', { id: socket.id, reason });

@@ -33,13 +33,22 @@ export const sendPushNotification = async (
 
   const chunks = expo.chunkPushNotifications(messages);
 
-  // Send all chunks in parallel — do NOT await sequentially
   Promise.allSettled(
     chunks.map(chunk => expo.sendPushNotificationsAsync(chunk))
   ).then(results => {
     results.forEach((result, i) => {
       if (result.status === 'rejected') {
         log.error(`Push notification chunk ${i} failed`, { error: result.reason?.message || result.reason });
+      } else {
+        const tickets = result.value;
+        for (const ticket of tickets) {
+          if (ticket.status === 'error') {
+            log.error('Expo push ticket reported error', {
+              message: ticket.message,
+              details: (ticket as any).details,
+            });
+          }
+        }
       }
     });
   }).catch(err => {
