@@ -57,6 +57,7 @@ export interface IShop {
   instructions?: string;
   pickupTimings?: string[];
   contactNumber?: string;
+  email?: string;
   washPreferences?: IWashPreference[];
   promoBanners?: IPromoBanner[];
   promoCode?: IShopPromoCode;

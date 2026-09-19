@@ -37,6 +37,7 @@ const ShopSchema = new Schema<IShop>({
   instructions: { type: String },
   pickupTimings: [{ type: String }],
   contactNumber: { type: String },
+  email: { type: String },
   washPreferences: [{
     id: { type: String },
     name: { type: String },

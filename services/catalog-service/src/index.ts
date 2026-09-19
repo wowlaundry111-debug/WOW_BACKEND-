@@ -168,12 +168,14 @@ router.get('/shops/:shopId', async (req: Request, res: Response) => {
 // ── POST /shops — create shop (SuperAdmin only) ───────────────────────────────
 router.post('/shops', requireAuth, requireRole(['SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
-    const { name, branches, paymentInfo } = req.body;
+    const { name, branches, paymentInfo, email, contactNumber } = req.body;
     const shop = await Shop.create({
       name,
       ownerId: req.user?._id || 'super_admin_1',
       branches: branches || [],
       paymentInfo: paymentInfo || {},
+      email: email || '',
+      contactNumber: contactNumber || '',
     });
     // Invalidate shop list cache
     await catalogCache.delete('shops:list');
@@ -206,7 +208,7 @@ router.patch('/shops/:shopId', requireAuth, requireRole(['SuperAdmin', 'ShopAdmi
 
     const allowed = [
       'name', 'branches', 'paymentInfo', 'isOpen', 'instructions',
-      'pickupTimings', 'contactNumber', 'washPreferences', 'promoBanners', 'promoCode',
+      'pickupTimings', 'contactNumber', 'email', 'washPreferences', 'promoBanners', 'promoCode',
       'minOrderValue', 'taxPercent', 'deliveryFee', 'androidAppUrl', 'iosAppUrl', 'partnerAppUrl',
     ];
 
