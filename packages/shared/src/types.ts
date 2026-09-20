@@ -151,6 +151,7 @@ export interface IOrder {
   deliveryAddress: string;
   pickupTime?: string;
   adminNotes?: string;
+  isWalkIn?: boolean;
   isArchived?: boolean;
   archivedAt?: Date;
   createdAt: Date;

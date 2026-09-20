@@ -31,7 +31,7 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
 
     const userRole = (req.user?.role || '') as string;
     const isSpecialBranchUser = (req.user?.email || '').toLowerCase().trim() === 'wowlaundry111@gmail.com';
-    const isStaffPlacing = userRole === 'SuperAdmin' || userRole === 'ShopAdmin' || isSpecialBranchUser;
+    const isStaffPlacing = userRole === 'SuperAdmin' || userRole === 'ShopAdmin' || userRole === 'Operator' || isSpecialBranchUser;
 
     const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
 
@@ -137,12 +137,12 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
     const reqCustAddress = (req.body.customerAddress || deliveryAddress || pickupAddress || '').trim();
 
     let resolvedCustomerId = String(req.user!._id);
-    let resolvedCustomerName = isStaffPlacing
-      ? (reqCustName || 'Walk-in Customer')
-      : (customer?.name || reqCustName || (req.user as any)?.name || 'Customer');
-    let resolvedCustomerPhone = isStaffPlacing
-      ? reqCustPhone
-      : (customer?.phone || reqCustPhone || (req.user as any)?.phone || '');
+    let resolvedCustomerName = reqCustName || (isStaffPlacing
+      ? 'Walk-in Customer'
+      : (customer?.name || (req.user as any)?.name || 'Customer'));
+    let resolvedCustomerPhone = reqCustPhone || (isStaffPlacing
+      ? ''
+      : (customer?.phone || (req.user as any)?.phone || ''));
 
     // If staff placed order with customerPhone, check if user exists with this phone to link order to their account
     if (isStaffPlacing && reqCustPhone) {
@@ -159,13 +159,18 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
       }
     }
 
-    const isWalkInPickup = req.body.isWalkIn === true ||
+    const isWalkInPickup = Boolean(
+      req.body.isWalkIn === true ||
+      isStaffPlacing ||
+      Boolean(reqCustName || reqCustPhone) ||
       (typeof reqCustAddress === 'string' && (
         reqCustAddress.toLowerCase().includes('walk-in') ||
         reqCustAddress.toLowerCase().includes('branch') ||
         reqCustAddress.toLowerCase().includes('in-store') ||
-        reqCustAddress.toLowerCase().includes('counter')
-      ));
+        reqCustAddress.toLowerCase().includes('counter') ||
+        reqCustAddress.toLowerCase().includes('drop-off')
+      ))
+    );
     const effectiveDeliveryFee = isWalkInPickup ? 0 : (deliveryFee || 0);
 
     // Resolve coupon parameters if couponCode was applied
@@ -196,6 +201,7 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
     const hasKgItems = enrichedItems.some(isKgItem);
     const allKgWeighed = hasKgItems && enrichedItems.filter(isKgItem).every((i: any) => i.kgWeight && Number(i.kgWeight) > 0);
     const resolvedKgPriceUpdated = req.body.kgPriceUpdated === true || (hasKgItems && allKgWeighed);
+    const initialStatus = isWalkInPickup ? 'PICKED_UP' : 'PLACED';
 
     const order = await Order.create({
       customerId: resolvedCustomerId,
@@ -218,8 +224,9 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
       pickupAddress: reqCustAddress || pickupAddress,
       deliveryAddress: reqCustAddress || deliveryAddress,
       pickupTime,
+      isWalkIn: isWalkInPickup,
       adminNotes: req.body.adminNotes || (isStaffPlacing ? `Branch Walk-in Order placed by ${(req.user as any)?.name || req.user?.email || 'Admin'}` : undefined),
-      status: 'PLACED',
+      status: initialStatus,
     });
 
     // Respond immediately — notifications fire in background
@@ -232,21 +239,25 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
       emitToUser(req, String(req.user!._id), 'order_created', order);
     }
 
-    // Fire-and-forget: notify customer & shop admins after response is sent
+    // Fire-and-forget: notify customer, shop admins & floor operators after response is sent
     setImmediate(async () => {
       try {
-        const [shopAdmins, customerUser] = await Promise.all([
+        const [shopAdmins, shopOperators, customerUser] = await Promise.all([
           User.find({ shopId, role: 'ShopAdmin' }).select('expoPushToken').lean() as Promise<any[]>,
+          User.find({ shopId, role: 'Operator' }).select('expoPushToken').lean() as Promise<any[]>,
           User.findById(order.customerId).select('expoPushToken').lean() as Promise<any>,
         ]);
 
         // 1. Notify Customer of successful order placement
         if (customerUser?.expoPushToken) {
+          const custMsg = isWalkInPickup
+            ? `Your branch order #${String(order._id).slice(-6).toUpperCase()} of ₹${totalAmount} has been registered and is now in the wash cycle!`
+            : `Your order #${String(order._id).slice(-6).toUpperCase()} of ₹${totalAmount} has been placed. We'll pick up your laundry soon!`;
           await sendPushNotification(
             [customerUser.expoPushToken],
-            'Order Placed Successfully',
-            `Your order #${String(order._id).slice(-6).toUpperCase()} of ₹${totalAmount} has been placed. We'll pick up your laundry soon!`,
-            { orderId: order._id, status: 'PLACED' }
+            isWalkInPickup ? 'Branch Order Registered' : 'Order Placed Successfully',
+            custMsg,
+            { orderId: order._id, status: initialStatus }
           );
         }
 
@@ -255,10 +266,23 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
         if (adminTokens.length > 0) {
           await sendPushNotification(
             adminTokens,
-            'New Order Placed',
-            `New order #${String(order._id).slice(-6).toUpperCase()} of ₹${totalAmount} has been placed.`,
-            { orderId: order._id, status: 'PLACED' }
+            isWalkInPickup ? 'Branch Walk-in Order (In Wash Cycle)' : 'New Order Placed',
+            `Order #${String(order._id).slice(-6).toUpperCase()} of ₹${totalAmount} ${isWalkInPickup ? 'is directly in wash cycle' : 'placed'}.`,
+            { orderId: order._id, status: initialStatus }
           );
+        }
+
+        // 3. Notify Wash Floor Operators if this is a branch walk-in order
+        if (isWalkInPickup) {
+          const operatorTokens = shopOperators.map((o: any) => o.expoPushToken).filter(Boolean) as string[];
+          if (operatorTokens.length > 0) {
+            await sendPushNotification(
+              operatorTokens,
+              'New Branch Order on Wash Floor',
+              `Order #${String(order._id).slice(-6).toUpperCase()} is ready on the wash floor for processing.`,
+              { orderId: order._id, status: 'PICKED_UP' }
+            );
+          }
         }
       } catch (e: any) {
         log.error('Failed to send new-order notification', { error: e.message });
@@ -325,6 +349,64 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
       .skip(skip)
       .limit(limit)
       .lean();
+
+    // Auto-advance any branch walk-in orders that were erroneously created with PLACED/ACCEPTED/PICKUP_ASSIGNED
+    let staffUserIds = new Set<string>();
+    try {
+      const staffUsers = await User.find({
+        $or: [
+          { role: { $in: ['ShopAdmin', 'SuperAdmin', 'Operator'] } },
+          { email: /wowlaundry/i },
+          { name: /wow laundry/i }
+        ]
+      }).select('_id').lean() as any[];
+      staffUserIds = new Set(staffUsers.map((u: any) => String(u._id)));
+    } catch (e: any) {
+      log.warn('Could not query staff users for walk-in auto-advance', { error: e.message });
+    }
+
+    const misplacedWalkInIds: string[] = [];
+    orders.forEach((o: any) => {
+      const isBranch = Boolean(
+        o.isWalkIn ||
+        staffUserIds.has(String(o.customerId)) ||
+        (o.adminNotes && (o.adminNotes.toLowerCase().includes('branch') || o.adminNotes.toLowerCase().includes('walk-in') || o.adminNotes.toLowerCase().includes('counter') || o.adminNotes.toLowerCase().includes('drop-off'))) ||
+        (o.customerAddress && (
+          o.customerAddress.toLowerCase().includes('branch') ||
+          o.customerAddress.toLowerCase().includes('walk-in') ||
+          o.customerAddress.toLowerCase().includes('in-store') ||
+          o.customerAddress.toLowerCase().includes('counter') ||
+          o.customerAddress.toLowerCase().includes('drop-off')
+        )) ||
+        (o.pickupAddress && (
+          o.pickupAddress.toLowerCase().includes('branch') ||
+          o.pickupAddress.toLowerCase().includes('walk-in') ||
+          o.pickupAddress.toLowerCase().includes('in-store') ||
+          o.pickupAddress.toLowerCase().includes('counter') ||
+          o.pickupAddress.toLowerCase().includes('drop-off')
+        )) ||
+        (o.deliveryAddress && (
+          o.deliveryAddress.toLowerCase().includes('branch') ||
+          o.deliveryAddress.toLowerCase().includes('walk-in') ||
+          o.deliveryAddress.toLowerCase().includes('in-store') ||
+          o.deliveryAddress.toLowerCase().includes('counter') ||
+          o.deliveryAddress.toLowerCase().includes('drop-off')
+        ))
+      );
+      if (isBranch) {
+        o.isWalkIn = true;
+        if (['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED'].includes(o.status)) {
+          o.status = 'PICKED_UP';
+          misplacedWalkInIds.push(String(o._id));
+        }
+      }
+    });
+    if (misplacedWalkInIds.length > 0) {
+      Order.updateMany(
+        { _id: { $in: misplacedWalkInIds } },
+        { $set: { status: 'PICKED_UP', isWalkIn: true } }
+      ).exec().catch((e: any) => log.warn('Could not auto-advance misplaced walk-in orders', { error: e.message }));
+    }
 
     // Skip expensive countDocuments when we can infer total from results
     // (page 1 with fewer results than limit means we have all records)

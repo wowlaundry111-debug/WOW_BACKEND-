@@ -173,6 +173,7 @@ const OrderSchema = new Schema<IOrder>({
   deliveryAddress: { type: String },
   pickupTime: { type: String },
   adminNotes: { type: String },
+  isWalkIn: { type: Boolean, default: false },
   isArchived: { type: Boolean, default: false },
   archivedAt: { type: Date },
 }, { timestamps: true });
