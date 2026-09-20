@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import { isValidObjectId } from 'mongoose';
 import {
   User,
   generateToken,
@@ -940,6 +941,7 @@ router.put('/users/me', requireAuth, async (req: AuthRequest, res: Response) => 
 // ── PATCH /users/:id — SuperAdmin update any user ────────────────────────────
 router.patch('/users/:id', requireAuth, requireRole(['SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid user ID format' });
     const allowed = ['name', 'phone', 'email', 'role', 'shopId', 'address', 'isActive'];
     const updates: Record<string, any> = {};
     for (const key of allowed) {
@@ -959,6 +961,7 @@ router.patch('/users/:id', requireAuth, requireRole(['SuperAdmin']), async (req:
 // ── DELETE /users/:id ─────────────────────────────────────────────────────────
 router.delete('/users/:id', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), async (req: AuthRequest, res: Response) => {
   try {
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid user ID format' });
     const targetUser = await User.findById(req.params.id).select('role shopId').lean() as any;
     if (!targetUser) return res.status(404).json({ error: 'User not found' });
 

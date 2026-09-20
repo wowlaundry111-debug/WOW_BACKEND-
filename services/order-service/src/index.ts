@@ -1,5 +1,31 @@
 import { Router, Request, Response } from 'express';
+import { isValidObjectId } from 'mongoose';
 import { Order, Shop, User, Item, Category, Offer, requireAuth, requireRole, AuthRequest, sendPushNotification, analyticsCache, log } from '@wow/shared';
+
+// ── Module-level TTL cache: staff user IDs ────────────────────────────────────
+// Avoids running a full User.find() with regex on EVERY GET /orders call.
+// Cache is refreshed at most once every 60 seconds per process.
+let _staffUserIdsCache: Set<string> = new Set();
+let _staffCacheExpiry = 0;
+const STAFF_CACHE_TTL_MS = 60_000;
+
+async function getStaffUserIds(): Promise<Set<string>> {
+  if (Date.now() < _staffCacheExpiry) return _staffUserIdsCache;
+  try {
+    const staffUsers = await User.find({
+      $or: [
+        { role: { $in: ['ShopAdmin', 'SuperAdmin', 'Operator'] } },
+        { email: /wowlaundry/i },
+        { name: /wow laundry/i },
+      ],
+    }).select('_id').lean() as any[];
+    _staffUserIdsCache = new Set(staffUsers.map((u: any) => String(u._id)));
+    _staffCacheExpiry = Date.now() + STAFF_CACHE_TTL_MS;
+  } catch (e: any) {
+    log.warn('Could not refresh staff user ID cache', { error: e.message });
+  }
+  return _staffUserIdsCache;
+}
 
 // Helper: emit to a specific shop's room only (not all sockets)
 const emitToShop = (req: Request, shopId: string, event: string, data: any) => {
@@ -351,19 +377,8 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
       .lean();
 
     // Auto-advance any branch walk-in orders that were erroneously created with PLACED/ACCEPTED/PICKUP_ASSIGNED
-    let staffUserIds = new Set<string>();
-    try {
-      const staffUsers = await User.find({
-        $or: [
-          { role: { $in: ['ShopAdmin', 'SuperAdmin', 'Operator'] } },
-          { email: /wowlaundry/i },
-          { name: /wow laundry/i }
-        ]
-      }).select('_id').lean() as any[];
-      staffUserIds = new Set(staffUsers.map((u: any) => String(u._id)));
-    } catch (e: any) {
-      log.warn('Could not query staff users for walk-in auto-advance', { error: e.message });
-    }
+    // Uses module-level 60s TTL cache — avoids a full User.find() regex query on every paginated order fetch.
+    const staffUserIds = await getStaffUserIds();
 
     const misplacedWalkInIds: string[] = [];
     orders.forEach((o: any) => {
@@ -599,6 +614,7 @@ router.delete('/archive', requireAuth, requireRole(['SuperAdmin']), async (req: 
 router.delete('/:orderId', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
     const { orderId } = req.params;
+    if (!isValidObjectId(orderId)) return res.status(400).json({ error: 'Invalid order ID format' });
     const user = req.user!;
 
     const order = await Order.findById(orderId);
@@ -735,7 +751,7 @@ async function autoFinalizeKgPrices(order: any) {
   const kgItems = (order.items || []).filter((it: any) => it.unit === 'KG');
   if (kgItems.length === 0) {
     order.kgPriceUpdated = true;
-    if (order.save) await order.save();
+    if (typeof order.save === 'function') await order.save();
     return order;
   }
 
@@ -756,7 +772,7 @@ async function autoFinalizeKgPrices(order: any) {
   });
 
   await recalculateOrderTotals(order, updatedItems);
-  if (order.save) await order.save();
+  if (typeof order.save === 'function') await order.save();
   return order;
 }
 
@@ -769,6 +785,7 @@ const OPERATOR_ALLOWED_STATUSES = ['PICKED_UP', 'WASHING', 'IRONING', 'OUT_FOR_D
 router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin', 'Delivery', 'Operator']), async (req: AuthRequest, res: Response) => {
   try {
     const { status, paymentMode, paymentStatus } = req.body;
+    if (!isValidObjectId(req.params.orderId)) return res.status(400).json({ error: 'Invalid order ID format' });
 
     // Delivery agents can set PICKED_UP, OUT_FOR_DELIVERY, or DELIVERED
     if (req.user!.role === 'Delivery' && !DELIVERY_ALLOWED_STATUSES.includes(status as any)) {
@@ -864,6 +881,7 @@ router.patch('/:orderId/status', requireAuth, requireRole(['ShopAdmin', 'SuperAd
 // Assign delivery boy (Admin)
 router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
+    if (!isValidObjectId(req.params.orderId)) return res.status(400).json({ error: 'Invalid order ID format' });
     let { deliveryBoyId, deliveryBoyName } = req.body;
     if (!deliveryBoyId) {
       return res.status(400).json({ error: 'deliveryBoyId is required' });
@@ -941,6 +959,7 @@ router.patch('/:orderId/assign', requireAuth, requireRole(['ShopAdmin', 'SuperAd
 // Update admin details (Total Amount & Admin Notes)
 router.patch('/:orderId/admin-details', requireAuth, requireRole(['ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
+    if (!isValidObjectId(req.params.orderId)) return res.status(400).json({ error: 'Invalid order ID format' });
     const allowed = ['totalAmount', 'adminNotes'];
     const updateData: Record<string, any> = {};
     for (const key of allowed) {
@@ -961,6 +980,7 @@ router.patch('/:orderId/admin-details', requireAuth, requireRole(['ShopAdmin', '
 // After update, totalAmount is recalculated and kgPriceUpdated is set to true.
 router.patch('/:orderId/kg-weight', requireAuth, requireRole(['Delivery', 'ShopAdmin', 'SuperAdmin']), async (req: AuthRequest, res: Response) => {
   try {
+    if (!isValidObjectId(req.params.orderId)) return res.status(400).json({ error: 'Invalid order ID format' });
     const { items: weightUpdates, markPickedUp } = req.body;
     if (!Array.isArray(weightUpdates) || weightUpdates.length === 0) {
       return res.status(400).json({ error: 'items array with { itemId, kgWeight } entries is required' });

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { log } from './logger';
 
 let isConnected = false;
+let _listenersAttached = false;
 
 export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
   if (isConnected) {
@@ -32,18 +33,21 @@ export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
         // Ignored if index doesn't exist (code 27)
       }
 
-      // Production connection monitoring
-      mongoose.connection.on('error', (err) => {
-        log.error('MongoDB connection error', { error: err.message });
-      });
-      mongoose.connection.on('disconnected', () => {
-        isConnected = false;
-        log.warn('MongoDB disconnected — Mongoose will retry automatically');
-      });
-      mongoose.connection.on('reconnected', () => {
-        isConnected = true;
-        log.info('MongoDB reconnected');
-      });
+      // Attach production monitoring listeners exactly ONCE — prevents listener stacking on retries
+      if (!_listenersAttached) {
+        _listenersAttached = true;
+        mongoose.connection.on('error', (err) => {
+          log.error('MongoDB connection error', { error: err.message });
+        });
+        mongoose.connection.on('disconnected', () => {
+          isConnected = false;
+          log.warn('MongoDB disconnected — Mongoose will retry automatically');
+        });
+        mongoose.connection.on('reconnected', () => {
+          isConnected = true;
+          log.info('MongoDB reconnected');
+        });
+      }
 
       log.info('MongoDB connected successfully');
       return;
@@ -59,4 +63,6 @@ export const connectDB = async (retries = 5, delayMs = 3000): Promise<void> => {
     }
   }
 };
+
+
 
