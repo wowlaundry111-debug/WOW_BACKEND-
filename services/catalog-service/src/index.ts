@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { Category, Item, Shop, Offer, requireAuth, requireRole, AuthRequest, catalogCache, log } from '@wow/shared';
 
@@ -11,7 +12,6 @@ const OFFERS_TTL       = 60_000;  // 60 seconds
 // ── HTTP Cache Headers Helper ─────────────────────────────────────────────────
 // stale-while-revalidate: browser/CDN serves old response INSTANTLY while
 // refreshing in the background. Repeat loads feel like 0ms.
-import crypto from 'crypto';
 
 function setCacheHeaders(res: Response, data: unknown, maxAge: number, staleWhileRevalidate: number) {
   const etag = `"${crypto.createHash('sha1').update(JSON.stringify(data)).digest('hex').slice(0, 16)}"`;
