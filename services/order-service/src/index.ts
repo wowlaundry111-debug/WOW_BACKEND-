@@ -325,7 +325,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, parseInt(req.query.limit as string) || 50);
+    const limit = Math.min(500, parseInt(req.query.limit as string) || 200);
     const skip = (page - 1) * limit;
 
     const query: Record<string, any> = { isArchived: { $ne: true } };
