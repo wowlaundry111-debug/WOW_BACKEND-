@@ -56,8 +56,12 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
     } = req.body;
 
     const userRole = (req.user?.role || '') as string;
+    // Only wowlaundry111@gmail.com is the dedicated branch counter account that triggers instant PICKED_UP
     const isSpecialBranchUser = (req.user?.email || '').toLowerCase().trim() === 'wowlaundry111@gmail.com';
+    // Staff placing = can bypass duplicate check & place multiple orders; but does NOT auto-set PICKED_UP
     const isStaffPlacing = userRole === 'SuperAdmin' || userRole === 'ShopAdmin' || userRole === 'Operator' || isSpecialBranchUser;
+    // ONLY wowlaundry111@gmail.com triggers direct-to-PICKED_UP (in-wash) on order creation per requirements
+    const isDirectWashTrigger = isSpecialBranchUser;
 
     const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
 
@@ -186,17 +190,11 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
     }
 
     const isWalkInPickup = Boolean(
-      req.body.isWalkIn === true ||
-      isStaffPlacing ||
-      Boolean(reqCustName || reqCustPhone) ||
-      (typeof reqCustAddress === 'string' && (
-        reqCustAddress.toLowerCase().includes('walk-in') ||
-        reqCustAddress.toLowerCase().includes('branch') ||
-        reqCustAddress.toLowerCase().includes('in-store') ||
-        reqCustAddress.toLowerCase().includes('counter') ||
-        reqCustAddress.toLowerCase().includes('drop-off')
-      ))
+      isSpecialBranchUser ||
+      req.body.isWalkIn === true
     );
+    // Explicit rule: Only wowlaundry111@gmail.com goes directly into PICKED_UP (in-wash).
+    // All normal customer orders and other staff-placed orders start at PLACED.
     const effectiveDeliveryFee = isWalkInPickup ? 0 : (deliveryFee || 0);
 
     // Resolve coupon parameters if couponCode was applied
@@ -227,7 +225,7 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
     const hasKgItems = enrichedItems.some(isKgItem);
     const allKgWeighed = hasKgItems && enrichedItems.filter(isKgItem).every((i: any) => i.kgWeight && Number(i.kgWeight) > 0);
     const resolvedKgPriceUpdated = req.body.kgPriceUpdated === true || (hasKgItems && allKgWeighed);
-    const initialStatus = isWalkInPickup ? 'PICKED_UP' : 'PLACED';
+    const initialStatus = isSpecialBranchUser ? 'PICKED_UP' : 'PLACED';
 
     const order = await Order.create({
       customerId: resolvedCustomerId,
@@ -251,7 +249,7 @@ router.post('/', requireAuth, requireRole(['Customer', 'SuperAdmin', 'ShopAdmin'
       deliveryAddress: reqCustAddress || deliveryAddress,
       pickupTime,
       isWalkIn: isWalkInPickup,
-      adminNotes: req.body.adminNotes || (isStaffPlacing ? `Branch Walk-in Order placed by ${(req.user as any)?.name || req.user?.email || 'Admin'}` : undefined),
+      adminNotes: req.body.adminNotes || (isSpecialBranchUser ? `Branch Walk-in Order placed by ${(req.user as any)?.name || req.user?.email || 'Branch'}` : (isStaffPlacing ? `Staff-placed Order by ${(req.user as any)?.name || req.user?.email || 'Admin'}` : undefined)),
       status: initialStatus,
     });
 
@@ -362,7 +360,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
         if (dbUser?.shopId) query.shopId = dbUser.shopId;
       }
     } else if (user.role === 'SuperAdmin') {
-      if (req.query.shopId) {
+      if (req.query.shopId && req.query.shopId !== 'all' && req.query.shopId !== 'undefined') {
         query.shopId = req.query.shopId;
       }
     }
@@ -375,53 +373,6 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
       .skip(skip)
       .limit(limit)
       .lean();
-
-    // Auto-advance any branch walk-in orders that were erroneously created with PLACED/ACCEPTED/PICKUP_ASSIGNED
-    // Uses module-level 60s TTL cache — avoids a full User.find() regex query on every paginated order fetch.
-    const staffUserIds = await getStaffUserIds();
-
-    const misplacedWalkInIds: string[] = [];
-    orders.forEach((o: any) => {
-      const isBranch = Boolean(
-        o.isWalkIn ||
-        staffUserIds.has(String(o.customerId)) ||
-        (o.adminNotes && (o.adminNotes.toLowerCase().includes('branch') || o.adminNotes.toLowerCase().includes('walk-in') || o.adminNotes.toLowerCase().includes('counter') || o.adminNotes.toLowerCase().includes('drop-off'))) ||
-        (o.customerAddress && (
-          o.customerAddress.toLowerCase().includes('branch') ||
-          o.customerAddress.toLowerCase().includes('walk-in') ||
-          o.customerAddress.toLowerCase().includes('in-store') ||
-          o.customerAddress.toLowerCase().includes('counter') ||
-          o.customerAddress.toLowerCase().includes('drop-off')
-        )) ||
-        (o.pickupAddress && (
-          o.pickupAddress.toLowerCase().includes('branch') ||
-          o.pickupAddress.toLowerCase().includes('walk-in') ||
-          o.pickupAddress.toLowerCase().includes('in-store') ||
-          o.pickupAddress.toLowerCase().includes('counter') ||
-          o.pickupAddress.toLowerCase().includes('drop-off')
-        )) ||
-        (o.deliveryAddress && (
-          o.deliveryAddress.toLowerCase().includes('branch') ||
-          o.deliveryAddress.toLowerCase().includes('walk-in') ||
-          o.deliveryAddress.toLowerCase().includes('in-store') ||
-          o.deliveryAddress.toLowerCase().includes('counter') ||
-          o.deliveryAddress.toLowerCase().includes('drop-off')
-        ))
-      );
-      if (isBranch) {
-        o.isWalkIn = true;
-        if (['PLACED', 'ACCEPTED', 'PICKUP_ASSIGNED'].includes(o.status)) {
-          o.status = 'PICKED_UP';
-          misplacedWalkInIds.push(String(o._id));
-        }
-      }
-    });
-    if (misplacedWalkInIds.length > 0) {
-      Order.updateMany(
-        { _id: { $in: misplacedWalkInIds } },
-        { $set: { status: 'PICKED_UP', isWalkIn: true } }
-      ).exec().catch((e: any) => log.warn('Could not auto-advance misplaced walk-in orders', { error: e.message }));
-    }
 
     // Skip expensive countDocuments when we can infer total from results
     // (page 1 with fewer results than limit means we have all records)
@@ -474,8 +425,8 @@ router.get('/analytics', requireAuth, requireRole(['SuperAdmin', 'ShopAdmin']), 
 
     if (req.user!.role === 'ShopAdmin') {
       const targetShopId = (req.query.shopId as string) || req.user!.shopId;
-      if (targetShopId) matchQuery.shopId = targetShopId;
-    } else if (req.query.shopId) {
+      if (targetShopId && targetShopId !== 'all' && targetShopId !== 'undefined') matchQuery.shopId = targetShopId;
+    } else if (req.query.shopId && req.query.shopId !== 'all' && req.query.shopId !== 'undefined') {
       matchQuery.shopId = req.query.shopId;
     }
 
